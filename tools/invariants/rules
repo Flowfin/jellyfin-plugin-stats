@@ -1,0 +1,37 @@
+# The invariants this plan holds that a grep can hold.
+#
+# One rule per block, blank line between blocks, four fields each:
+#
+#   id       the rule name, and also the directory under near-miss/ that holds
+#            the file this rule must fire on
+#   paths    a grep --include glob deciding which files the rule reads
+#   pattern  an extended regular expression; a match anywhere in a scanned file
+#            fails the lint
+#   why      what failure the rule prevents, and the issue that argues for it
+#
+# Adding a rule is adding a block here and a file under near-miss/<id>/. The
+# self test derives everything else from the id, so a rule without a near miss
+# fails the run rather than passing quietly.
+#
+# This directory is not scanned. A rule file naturally contains the strings its
+# rules refuse, and a lint that reads itself refuses itself.
+
+id: no-query-from-the-request
+paths: *.cs
+pattern: \[From(Query|Route|Body|Form|Header)\][^,)]*\b([Ss]ql|[Qq]uery|[Ww]here|[Oo]rderBy|[Cc]olumns|[Ss]elect|[Gg]roupBy|[Hh]aving)\b
+why: An endpoint that takes a query fragment, a sort column or a column list from the caller lets the caller decide what the database does. Every report endpoint here takes named values and nothing else. Issue #55.
+
+id: no-sql-built-by-concatenation
+paths: *.cs
+pattern: \$?"[^"]*\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|ORDER BY|GROUP BY)\b[^"]*("[[:space:]]*\+|\{)
+why: A statement assembled from strings is a statement whose shape depends on its input. Parameters are passed as parameters, always. Issue #55, and the store issues it is built on.
+
+id: no-identifying-network-or-path-detail-in-the-store
+paths: *.cs
+pattern: (RemoteEndPoint|UserAgent|User-Agent|\b[Ii]tem\.Path\b)
+why: A network address, a user agent and a library file path are the fields that turn playback statistics into a record of where somebody was and what their disk holds. They are refused at the source rather than dropped later. Issues #27 and #48.
+
+id: no-test-that-needs-a-display-elevation-or-a-certificate-store
+paths: *
+pattern: (Selenium|Playwright|WebDriver|ChromeDriver|puppeteer|DISPLAY=|dev-certs|X509Store|StoreName\.(Root|My)|\brunas\b|\bnetsh\b|\bsc\.exe\b)
+why: Every test here runs on a plain runner with no screen, no administrator and no change to the machine it runs on. A test that needs one of those is refused by the headless policy, not worked around. Issue #21.
