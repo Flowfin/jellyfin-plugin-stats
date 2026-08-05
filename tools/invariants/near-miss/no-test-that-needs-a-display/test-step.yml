@@ -1,0 +1,9 @@
+# Near miss for no-test-that-needs-a-display.
+#
+# One test in the suite needs a screen. Rather than reopen why, the step that
+# runs the whole suite is wrapped in a virtual framebuffer, which is a two-word
+# change to a workflow file that nobody reads again. Every other test now runs
+# under a display too, and the policy has been lost without a decision.
+
+- name: Run the tests
+  run: xvfb-run --auto-servernum dotnet test --no-build

@@ -31,7 +31,22 @@ paths: *.cs
 pattern: (RemoteEndPoint|UserAgent|User-Agent|\b[Ii]tem\.Path\b)
 why: A network address, a user agent and a library file path are the fields that turn playback statistics into a record of where somebody was and what their disk holds. They are refused at the source rather than dropped later. Issues #27 and #48.
 
-id: no-test-that-needs-a-display-elevation-or-a-certificate-store
+id: no-test-that-drives-a-browser
 paths: *
-pattern: (Selenium|Playwright|WebDriver|ChromeDriver|puppeteer|DISPLAY=|dev-certs|X509Store|StoreName\.(Root|My)|\brunas\b|\bnetsh\b|\bsc\.exe\b)
-why: Every test here runs on a plain runner with no screen, no administrator and no change to the machine it runs on. A test that needs one of those is refused by the headless policy, not worked around. Issue #21.
+pattern: (Selenium|Playwright|WebDriver|ChromeDriver|GeckoDriver|puppeteer)
+why: A browser driven by a test needs a display or a downloaded browser and a running server. The page work is kept in modules with no document access and unit tested directly, and the endpoints are tested in process. docs/headless-tests.md, issue #21.
+
+id: no-test-that-needs-a-display
+paths: *
+pattern: ([Xx]vfb|DISPLAY=|xdotool|\bXvnc\b)
+why: A runner has no screen, and a test that borrows a virtual one has moved the problem rather than removed it. docs/headless-tests.md, issue #21.
+
+id: no-test-that-asks-for-elevation
+paths: *
+pattern: (\brunas\b|\bnetsh\b|\bsc\.exe\b|requireAdministrator|Start-Process[^\n]*-Verb)
+why: A test that needs administrator changes the machine it runs on, and on the machine somebody is sitting at it raises a consent prompt in front of them. docs/headless-tests.md, issue #21.
+
+id: no-test-that-touches-a-certificate-store
+paths: *
+pattern: (dev-certs|X509Store|StoreName\.(Root|My)|\bcertmgr\b|\bcertutil\b)
+why: Trusting a certificate is a change to the machine that outlives the run, and it is the change a failing https test most invites. Endpoint tests run in process, over no socket at all. docs/headless-tests.md, issue #21.

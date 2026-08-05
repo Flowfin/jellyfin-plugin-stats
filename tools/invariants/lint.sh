@@ -37,6 +37,11 @@ flush_rule() {
 }
 
 while IFS= read -r line || [ -n "$line" ]; do
+    # A clone on Windows checks this file out with carriage returns, which turn
+    # every blank separator line into a line the parser cannot place and every
+    # pattern into one with a stray byte on the end. Measured on such a clone,
+    # where the run stopped at the first blank line.
+    line=${line%$'\r'}
     case "$line" in
         '#'*)      continue ;;
         '')        flush_rule ;;
