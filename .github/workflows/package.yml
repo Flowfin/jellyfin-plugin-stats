@@ -50,7 +50,7 @@ jobs:
         id: jprm
         uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
         with:
-          dotnet-target: 'net6.0'
+          dotnet-target: 'net9.0'
 
       - name: Upload the package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
