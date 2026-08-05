@@ -11,9 +11,24 @@ on:
     types:
       - update-prep-command
 
+# Deny by default, and nothing below asks for more. The called workflow gates
+# its only job on the repository name, which is not this repository, so the job
+# is skipped here and exercises no scope. Granting the write scopes it would
+# need elsewhere would change what this workflow can do, which is not what this
+# change is for.
+permissions: {}
+
+# Release drafting is not cancel-safe: a superseded run may already have pushed
+# the prepare branch, so runs queue instead of being cancelled.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/changelog.yaml@master
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/changelog.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     with:
       repository-name: jellyfin/jellyfin-plugin-template
     secrets:

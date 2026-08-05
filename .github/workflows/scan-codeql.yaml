@@ -13,8 +13,22 @@ on:
     - cron: '24 2 * * 4'
   workflow_dispatch:
 
+# Deny by default, and nothing below asks for more. The called workflow gates
+# its only job on the repository name, which is not this repository, so the job
+# is skipped here and exercises no scope. The scopes an analysis would need
+# belong to the change that makes it run.
+permissions: {}
+
+# A newer run on the same ref supersedes an in-flight one. This is an analysis,
+# not a publish, so cancelling a superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/scan-codeql.yaml@master
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/scan-codeql.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     with:
       repository-name: jellyfin/jellyfin-plugin-template
