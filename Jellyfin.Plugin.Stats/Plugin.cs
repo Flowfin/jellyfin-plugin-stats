@@ -26,10 +26,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "Stats";
+    public override string Name => "Playback Statistics";
 
     /// <inheritdoc />
-    public override Guid Id => Guid.Parse("eb5d7894-8eef-4b36-aa6f-5d124e828ce1");
+    /// <remarks>
+    /// This value and the <c>guid</c> in build.yaml are one identity and have to
+    /// stay equal. It is what a server and a catalogue tell this plugin apart
+    /// by, and until this change both files carried the upstream template's.
+    /// </remarks>
+    public override Guid Id => Guid.Parse("29e90267-52ee-4bec-b4fb-870b8f5ddc53");
 
     /// <summary>
     /// Gets the current plugin instance.
