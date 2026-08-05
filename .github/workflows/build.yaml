@@ -13,6 +13,20 @@ on:
       - '**/*.md'
   workflow_dispatch:
 
+# Deny by default at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# A newer run on the same ref supersedes an in-flight one. This is a build, not
+# a publish, so cancelling a superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@master
+    timeout-minutes: 15
+    # The called workflow checks out this repository and builds it. Nothing in
+    # it writes, so read is the whole grant.
+    permissions:
+      contents: read
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
