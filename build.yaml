@@ -14,3 +14,8 @@ category: "Administration"
 owner: "iderex"
 artifacts:
 - "Jellyfin.Plugin.Stats.dll"
+# Required by the packaging tool: without this key it fails with KeyError.
+# The entries themselves are in CHANGELOG.md, which is the one place they are
+# written.
+changelog: >
+  The entries for each release are in CHANGELOG.md in the repository.
