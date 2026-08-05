@@ -5,8 +5,20 @@ on:
     - cron: '0 0 1 * *'
   workflow_dispatch:
 
+# Deny by default, and deliberately nothing more. The called workflow would
+# delete every label this repository holds that a list in another repository
+# does not, so the scope that makes that possible is not granted here.
+permissions: {}
+
+# Two label runs must not interleave, so runs queue.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/sync-labels.yaml@master
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/sync-labels.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

@@ -23,10 +23,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    timeout-minutes: 15
-    # The called workflow checks out this repository and builds it. Nothing in
-    # it writes, so read is the whole grant.
+    # The called workflow checks out this repository and builds it. Nothing in it
+    # writes, so read is the whole grant.
     permissions:
       contents: read
     uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
