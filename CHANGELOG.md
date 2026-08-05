@@ -7,7 +7,7 @@ the file the plugin package carries to a server and to a catalogue, so it is the
 one a wrong number is most expensive in. `Directory.Build.props` reads the number
 back out of it, and the assembly, file and package versions all come from there:
 
-    dotnet build Jellyfin.Plugin.Template/Jellyfin.Plugin.Template.csproj \
+    dotnet build Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj \
       -getProperty:Version -getProperty:AssemblyVersion -getProperty:FileVersion
 
 Bump the version in `build.yaml` and add the entry here in the same change.
