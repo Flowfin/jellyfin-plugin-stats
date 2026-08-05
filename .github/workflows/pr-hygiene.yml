@@ -42,6 +42,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only the judging script is needed, and nothing here pushes, so the
+          # history is not fetched and the token is not persisted.
+          persist-credentials: false
+
       - name: Read the pull request through the API
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
