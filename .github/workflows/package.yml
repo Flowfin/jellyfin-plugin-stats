@@ -1,0 +1,133 @@
+# The artifact a user installs is a zip, and it is the one thing in this project
+# nobody can inspect after the fact. Two jobs, on every pull request, neither of
+# which publishes anything.
+#
+# package builds it with the same tool and the same manifest the release will
+# use, so a change that breaks packaging is refused here rather than discovered
+# at a release.
+#
+# sbom describes what that zip is made of: the files inside it, and the
+# dependency closure the assembly was compiled against.
+name: Package
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Deny by default; both jobs below only read.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    # The check-run name the ruleset can match once this has run green.
+    name: Package the plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the token is not persisted.
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      # The same action the release path runs, at the same pin, reading the same
+      # build.yaml. A packaging failure therefore shows up on the pull request
+      # that caused it.
+      - name: Build the plugin package
+        id: jprm
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
+        with:
+          dotnet-target: 'net9.0'
+
+      - name: Upload the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin-package
+          retention-days: 7
+          if-no-files-found: error
+          path: ${{ steps.jprm.outputs.artifact }}
+
+  sbom:
+    # The check-run name the ruleset can match once this has run green.
+    name: Software bill of materials
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Download the package built by the job above
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plugin-package
+          path: package
+
+      # What the user actually receives, listed from the bytes rather than from
+      # the manifest that asked for them.
+      - name: List what the package contains
+        run: |
+          set -euo pipefail
+          mkdir -p sbom
+          for zip in package/*.zip; do
+            echo "== ${zip}"
+            unzip -l "${zip}" | tee -a sbom/package-contents.txt
+          done
+
+      # An exact version: a bill of materials that changes because its generator
+      # moved is a diff nobody can read.
+      - name: Install the bill of materials generator
+        run: dotnet tool install --global CycloneDX --version 6.2.0
+
+      - name: Generate the bill of materials
+        run: |
+          set -euo pipefail
+          dotnet CycloneDX Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj \
+            --output sbom \
+            --filename sbom.json \
+            --output-format Json \
+            --set-name Jellyfin.Plugin.Stats \
+            --set-type Library
+
+      - name: Say what is in it
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          with open("sbom/sbom.json", encoding="utf-8") as handle:
+              bom = json.load(handle)
+          components = bom.get("components", [])
+          print("CycloneDX {0}, {1} components".format(bom["specVersion"], len(components)))
+          for component in sorted(components, key=lambda c: c.get("name", "")):
+              print("  {0} {1}".format(component.get("name"), component.get("version")))
+          PY
+
+      - name: Upload the bill of materials
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin-sbom
+          retention-days: 7
+          if-no-files-found: error
+          path: sbom/
