@@ -13,6 +13,21 @@ on:
       - '**/*.md'
   workflow_dispatch:
 
+# Deny by default at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# A newer run on the same ref supersedes an in-flight one. This is a test run,
+# not a publish, so cancelling a superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/test.yaml@master
+    # The called workflow checks out this repository, restores and runs the
+    # tests. Nothing in it writes, so read is the whole grant.
+    permissions:
+      contents: read
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/test.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master

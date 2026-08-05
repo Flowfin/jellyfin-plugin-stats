@@ -6,9 +6,22 @@ on:
       - released
   workflow_dispatch:
 
+# Deny by default, and nothing below asks for more. This repository holds none
+# of the deploy secrets the called workflow requires, so the publish path it
+# describes cannot run here. The scopes it would need belong to the change that
+# makes publishing work.
+permissions: {}
+
+# A publish must never be cancelled part way through, so runs queue.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     with:
       version: ${{ github.event.release.tag_name }}
       is-unstable: ${{ github.event.release.prerelease }}
