@@ -21,7 +21,7 @@ public class ConfigurationPageTests
         // from, so this fails for the same reason the page would fail to load.
         var expected = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
-            "{0}.Configuration.configurationPage.html",
+            "{0}.Configuration.configPage.html",
             pluginType.Namespace);
 
         var embedded = pluginType.Assembly.GetManifestResourceNames();
