@@ -21,15 +21,20 @@ Two server lines are supported: Jellyfin 10.11, which runs on .NET 9, and
 Jellyfin 12.0, which runs on .NET 10. One artifact is built per line, and a
 server outside those lines is not supported.
 
-Not built yet. The project produces a single assembly today and the packaging
-metadata still declares the 10.9 line it was templated from:
+The plugin compiles for both, and the packaging workflow makes one archive per
+line so a server is offered the one that declares its own version:
 
-    grep -n 'targetAbi\|framework' build.yaml
-    5:targetAbi: "10.9.0.0"
-    6:framework: "net8.0"
+    grep -n 'TargetFrameworks' Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj
+    10:    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
 
-The multi-target build is issue #4, and the support matrix that will hold the
-version detail is issue #79.
+    grep -n 'Build the package for' .github/workflows/package.yml
+    58:      - name: Build the package for the 10.11 line
+    92:      - name: Build the package for the 12.0 line
+
+What is not proved is the floor of each line. The build resolves whatever
+package version the project asks for, so nothing here shows the plugin still
+compiles against the oldest server release in a line it claims. That is issue
+#17, and the support matrix holding the version detail is issue #79.
 
 ## What it stores and who can see it
 
@@ -39,21 +44,35 @@ played on, and whether the server transcoded and why. A user reads their own
 history; everyone else reads aggregates that name nobody. No network address,
 no user agent and no library file path is kept.
 
-Not built yet. Nothing is written to disk today, because the store, the write
-path and the retention sweep are still open issues. A server running this
-plugin as it stands records nothing at all.
+Not built yet, and the paragraph above describes the design rather than today.
+The plugin now subscribes to the server's playback events, and the sink those
+events reach discards every one of them:
+
+    grep -n 'AddSingleton<IPlaybackEventSink' Jellyfin.Plugin.Stats/PluginServiceRegistrator.cs
+    27:        serviceCollection.AddSingleton<IPlaybackEventSink, DiscardingPlaybackEventSink>();
+
+So a server running this plugin as it stands keeps no playback data at all. The
+store, the write path and the retention sweep are open issues, and until they
+land the sentences above are a plan and not a description.
 
 ## Installing
 
-There is no release yet, and the route by which the plugin will reach users is
-undecided (issue #10). When there is one, it will be a plugin archive per
-server line, installed the way any other Jellyfin plugin is.
+There is no release yet:
+
+    gh api repos/iderex/jellyfin-plugin-stats/releases --jq 'length'
+    0
+
+When there is one it will be distributed through this repository's own plugin
+manifest rather than the official catalogue, so installing means adding a
+repository URL to the server and then installing the plugin from it. One
+archive per server line, and the server picks the one matching its version.
 
 ## Configuration
 
-The plugin's settings page appears on the server dashboard under Plugins. It is
-still the placeholder page inherited from the upstream plugin template; the real
-one is issue #65, and the reference for every setting is issue #78.
+The plugin's settings page appears on the server dashboard under Plugins. Every
+field on it is still the upstream template's, so there is nothing on it worth
+setting; the real page is issue #65, and the reference for every setting is
+issue #78.
 
 ## Building from source
 
