@@ -53,10 +53,10 @@
         curl -s https://api.nuget.org/v3-flatcontainer/jellyfin.controller/12.0.0-rc4/jellyfin.controller.nuspec
   -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.5">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinFloorNet9)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.5">
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinFloorNet9)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
   </ItemGroup>
