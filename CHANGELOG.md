@@ -24,3 +24,10 @@ first release exists.
   other. The number the compiled assembly already carried is the one kept,
   because no release has been made and the higher number in the package
   manifest advertised one that does not exist.
+
+- The plugin builds for both supported server lines: 10.11 on .NET 9 and 12.0
+  on .NET 10, each against the Jellyfin packages that line publishes. It
+  previously targeted one framework, compiled against a 10.9 server and
+  declared a target abi no supported server has. Packaging now produces one
+  package per line and reads the abi back out of each zip, so a package
+  carrying the wrong line's abi fails the run instead of reaching a server.
