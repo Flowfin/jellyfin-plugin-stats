@@ -50,3 +50,8 @@ id: no-test-that-touches-a-certificate-store
 paths: *
 pattern: (dev-certs|X509Store|StoreName\.(Root|My)|\bcertmgr\b|\bcertutil\b)
 why: Trusting a certificate is a change to the machine that outlives the run, and it is the change a failing https test most invites. Endpoint tests run in process, over no socket at all. docs/headless-tests.md, issue #21.
+
+id: no-outbound-http-client
+paths: *.cs
+pattern: (HttpClient|IHttpClientFactory|HttpMessageInvoker|SocketsHttpHandler|WebClient|HttpWebRequest|WebRequest\.Create)
+why: This plugin reads the server it runs inside and talks to nothing outside it. Proving that by watching the network needs a network namespace and root, which the headless policy refuses, so the client that would make the call is refused instead. That is a stronger statement than one observed quiet run, because it holds for runs nobody watched. docs/headless-tests.md, issue #21.

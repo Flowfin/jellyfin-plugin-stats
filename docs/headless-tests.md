@@ -41,20 +41,22 @@ fixtures carrying recorded transcoding fields, fed through a fake session.
 
 **Proving the plugin talks to no external service by watching the network.** It
 needs a network namespace and root. Replaced by an invariant rule that refuses
-an outbound HTTP client in the plugin project at all, which is a stronger
-statement than one observed quiet run. That rule is not written yet; the rule
-file is where it will be, and until it is there, this paragraph describes an
-intention rather than a mechanism.
+an outbound HTTP client at all, which is a stronger statement than one observed
+quiet run because it holds for the runs nobody watched. That rule is
+`no-outbound-http-client` and it reads every tracked C# file, so it is wider than
+the plugin project: a client added to the suite is refused on the same line as
+one added to the plugin.
 
 ## What holds it
 
-Four rules in `tools/invariants/rules`, each with a near miss beside it that
+Five rules in `tools/invariants/rules`, each with a near miss beside it that
 fires it:
 
 - `no-test-that-drives-a-browser`
 - `no-test-that-needs-a-display`
 - `no-test-that-asks-for-elevation`
 - `no-test-that-touches-a-certificate-store`
+- `no-outbound-http-client`
 
 They run on every pull request as `Enforce greppable invariants`, over every
 tracked file rather than over the test project alone, because the way each of
@@ -72,8 +74,18 @@ release checklist as a reading. It is not a test, it does not gate anything by
 itself, and calling it one would be the first step in believing the pages are
 covered.
 
-## What has not been shown
+## What has been run, and what is still not shown
 
-`dotnet test` has not been run on a runner with no display and no administrator,
-because this repository has no test project yet. That is issue #20, and until it
-lands the policy above is held by the four rules and by nothing else.
+The suite exists now, and `dotnet test` runs on every pull request as the
+required `call / test` context, on a hosted `ubuntu-24.04` image. The run that
+came with this paragraph is named in that pull request's body. The job is five
+steps, a checkout, a .NET setup, a restore, a build and the test command, and
+none of them opens a display, asks for elevation or writes outside the
+workspace.
+
+What that does not show is a runner where those things are unavailable. Whether
+the hosted image has a display, and whether it would grant elevation to a test
+that asked, have not been measured here. So a green run is evidence that the
+suite does not need either, and it is not evidence that the runner would refuse
+them. The policy is held by the rules and by what the job does, and not by the
+runner turning anything down.
