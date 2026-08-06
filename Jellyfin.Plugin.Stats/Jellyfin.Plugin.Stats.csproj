@@ -67,6 +67,26 @@
     </PackageReference>
   </ItemGroup>
 
+  <!--
+    IHostedService, and the AddHostedService that registers one, are declared in
+    Microsoft.Extensions.Hosting.Abstractions. The server loads that assembly
+    from the ASP.NET Core shared framework it already runs on, but it does not
+    declare it as a package dependency:
+
+        grep -oE '<dependency id="[^"]*"' ~/.nuget/packages/jellyfin.controller/10.11.11/jellyfin.controller.nuspec
+
+    so it is absent from the restored graph and the type does not compile
+    against Jellyfin.Controller alone. A framework reference resolves it from
+    the targeting pack for the compile and adds nothing to the restored package
+    graph, which is why packages.lock.json is unchanged by this. A package
+    reference would have been the other way to get the type, and it would put a
+    copy of an assembly the server already has into the plugin package unless
+    every one of its assets were excluded by hand.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="All" />
