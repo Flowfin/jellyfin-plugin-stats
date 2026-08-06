@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    The coverage threshold and the list of what it may skip. Kept in a file of
+    its own so that a change to either is a diff nobody has to find inside a
+    project file, and so the reason for each exclusion sits next to it.
+  -->
+  <Import Project="coverage.props" />
+
   <PropertyGroup>
     <!--
       Two entries because the plugin has two. This list follows the plugin's, so
@@ -30,6 +37,17 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!--
+      The msbuild flavour rather than the collector, because only this one
+      refuses. The collector writes a report and leaves the judgement to
+      whatever reads it later, which on this repository is nothing; this one
+      fails the test target below the threshold in coverage.props, so every
+      route that runs the tests enforces it.
+    -->
+    <PackageReference Include="coverlet.msbuild" Version="10.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

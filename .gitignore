@@ -3,3 +3,7 @@ obj/
 .vs/
 .idea/
 artifacts
+
+# Coverage reports. The threshold that judges them is tracked, in
+# Jellyfin.Plugin.Stats.Tests/coverage.props; the reports themselves are output.
+coverage/
