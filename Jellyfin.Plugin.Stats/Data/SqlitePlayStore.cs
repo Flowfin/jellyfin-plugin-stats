@@ -33,41 +33,6 @@ public sealed class SqlitePlayStore : IPlayStore
     /// </summary>
     public const string FileName = "plays.db";
 
-    /// <summary>
-    /// The schema this build writes. It is stamped on every row, which is what
-    /// lets a reader tell what shape a row is in without asking the file.
-    /// Versioning the file itself, and migrating between versions, is issue #28.
-    /// </summary>
-    public const int SchemaVersion = 1;
-
-    private const string CreateSchema =
-        @"CREATE TABLE IF NOT EXISTS plays (
-              Id INTEGER PRIMARY KEY,
-              SchemaVersion INTEGER NOT NULL,
-              UserId TEXT NOT NULL,
-              ItemId TEXT NOT NULL,
-              ItemType TEXT NOT NULL,
-              ParentId TEXT NULL,
-              ItemName TEXT NOT NULL,
-              ItemRuntimeTicks INTEGER NULL,
-              StartedUtcTicks INTEGER NOT NULL,
-              EndedUtcTicks INTEGER NOT NULL,
-              WatchedDurationTicks INTEGER NOT NULL,
-              ReachedTheEnd INTEGER NOT NULL,
-              ClientName TEXT NOT NULL,
-              DeviceId TEXT NOT NULL,
-              DeviceName TEXT NOT NULL,
-              PlayMethod INTEGER NOT NULL,
-              TranscodeVideoCodec TEXT NULL,
-              TranscodeAudioCodec TEXT NULL,
-              TranscodeVideoWasDirect INTEGER NOT NULL,
-              TranscodeAudioWasDirect INTEGER NOT NULL,
-              TranscodePeakBitrate INTEGER NULL,
-              TranscodeTypicalBitrate INTEGER NULL,
-              TranscodeHardwareAcceleration TEXT NULL,
-              TranscodeReasons TEXT NOT NULL
-          )";
-
     private const string InsertPlay =
         @"INSERT INTO plays (
               SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
@@ -140,10 +105,19 @@ public sealed class SqlitePlayStore : IPlayStore
         _connection = new SqliteConnection(connectionString);
         _connection.Open();
 
-        using var command = _connection.CreateCommand();
-        command.CommandText = CreateSchema;
-        command.ExecuteNonQuery();
+        // Opening is migrating. A store is created by running every step over
+        // an empty file and an existing one by running the steps it has not had
+        // yet, so there is one route rather than a create path and an upgrade
+        // path that can disagree about what the schema is.
+        SchemaMigrator.MigrateToLatest(_connection, SchemaMigrations.All);
     }
+
+    /// <summary>
+    /// Gets the schema this build writes. It is stamped on every row, which is
+    /// what lets a reader tell what shape a row is in without asking the file
+    /// what version it is at.
+    /// </summary>
+    public static int SchemaVersion => SchemaMigrations.Latest;
 
     /// <inheritdoc />
     public void Add(PlayRecord play)
