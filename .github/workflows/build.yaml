@@ -6,11 +6,14 @@ on:
       - master
     paths-ignore:
       - '**/*.md'
+  # No path filter here, unlike the push trigger above. This workflow produces a
+  # context the ruleset requires, and a workflow that does not run reports
+  # nothing, so filtering the pull request trigger leaves a required context
+  # that never arrives and a pull request that can never be merged. A run on a
+  # documentation change is the price of a gate that can close.
   pull_request:
     branches:
       - master
-    paths-ignore:
-      - '**/*.md'
   workflow_dispatch:
 
 # Deny by default at workflow level; the job below grants only what it needs.
