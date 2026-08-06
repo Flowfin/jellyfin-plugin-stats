@@ -31,3 +31,8 @@ jobs:
     permissions:
       contents: read
     uses: jellyfin/jellyfin-meta-plugins/.github/workflows/test.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
+    with:
+      # The suite targets net9.0 and net10.0, one per supported server line. The
+      # 9 SDK cannot build the second, and the 10 runtime runs the first because
+      # the test project sets RollForward, so one install covers both legs.
+      dotnet-version: '10.0.x'
