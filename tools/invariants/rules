@@ -55,3 +55,8 @@ id: no-outbound-http-client
 paths: *.cs
 pattern: (HttpClient|IHttpClientFactory|HttpMessageInvoker|SocketsHttpHandler|WebClient|HttpWebRequest|WebRequest\.Create)
 why: This plugin reads the server it runs inside and talks to nothing outside it. Proving that by watching the network needs a network namespace and root, which the headless policy refuses, so the client that would make the call is refused instead. That is a stronger statement than one observed quiet run, because it holds for runs nobody watched. docs/headless-tests.md, issue #21.
+
+id: no-statement-that-drops-a-table
+paths: *.cs
+pattern: [Dd][Rr][Oo][Pp][[:space:]]+[Tt][Aa][Bb][Ll][Ee]
+why: The closest prior art answers a schema change by dropping the table and recreating it, so a user who upgrades loses their history and hears about it from a log line. Migrations here move data and never discard it. The standard SQLite table rebuild ends in a drop, so a migration that genuinely needs one has to argue this rule out of this file in a diff rather than doing it quietly. Issue #28.
