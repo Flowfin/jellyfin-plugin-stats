@@ -31,6 +31,11 @@ paths: *.cs
 pattern: (RemoteEndPoint|UserAgent|User-Agent|\b[Ii]tem\.Path\b)
 why: A network address, a user agent and a library file path are the fields that turn playback statistics into a record of where somebody was and what their disk holds. They are refused at the source rather than dropped later. Issues #27 and #48.
 
+id: no-name-in-a-log-message
+paths: *.cs
+pattern: "[^"]*\{[A-Za-z]*(UserName|Username|ItemName|ItemTitle|SeriesName|EpisodeName|AlbumName|ClientName|DeviceName)\}
+why: A log is read by more people than the database is, it is copied into bug reports, and it outlives every retention setting this plan can enforce, so the messages carry identifiers and not names. The pattern refuses the placeholder rather than the call, because a message template in this tree sits on a line of its own and a rule reading the call would not see it. That makes the rule stricter than the policy it enforces, which allows a title at debug level, and it names the placeholders rather than every one ending in a name, because a generic type parameter inside a cref ends in one too and that was measured. The near miss is the closest prior art's own start-up block, which writes the item title, the client and the device out at information level, one line each. Issue #48.
+
 id: no-test-that-drives-a-browser
 paths: *
 pattern: (Selenium|Playwright|WebDriver|ChromeDriver|GeckoDriver|puppeteer)
