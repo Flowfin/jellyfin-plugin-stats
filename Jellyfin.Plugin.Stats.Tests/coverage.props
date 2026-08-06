@@ -1,0 +1,83 @@
+<Project>
+
+  <!--
+    The coverage threshold and everything it may skip, in the tree rather than
+    in a workflow input. A number passed on a command line is a number that can
+    be lowered by whoever is standing at the console, and nothing would show it
+    in a diff.
+
+    Every route runs this. The properties sit in the project rather than in an
+    argument, so `dotnet test` enforces the threshold in an editor, on a
+    machine somebody types on, and in the workflow, and there is one number
+    rather than one per route.
+
+    THE THRESHOLD ONLY GOES UP. It is set to what the suite reaches now, not to
+    a round number somebody would like. Raising it when the suite improves is
+    the point; lowering it to make a red run green is the failure this file
+    exists against, and a lowered number is a line in a diff with an author on
+    it.
+  -->
+
+  <PropertyGroup>
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <CoverletOutput>$(MSBuildThisFileDirectory)coverage/</CoverletOutput>
+
+    <!--
+      Line and branch together. A line threshold alone passes a suite that
+      walks every line down one side of every condition, which is most of the
+      way to testing nothing about the conditions.
+    -->
+    <ThresholdType>line,branch,method</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+
+    <!--
+      One number per type above, in that order, and each is what the suite
+      actually reaches rounded down to a whole percent. Measured by running
+      `dotnet test` in Release, which prints the table they come from:
+
+          | Module                | Line  | Branch | Method |
+          | Jellyfin.Plugin.Stats | 5.26% | 100%   | 20%    |
+
+      They are low because the assembly they are about is nineteen lines of
+      plugin entry point and a configuration class the template left behind.
+      That is what a percentage over a nearly empty assembly is worth, and it
+      is stated here rather than dressed up: the number this issue really wants
+      is the one the suite reaches once there is something to cover, and the
+      milestones that add it are held behind the store question in #10.
+
+      The rounding is down to the whole percent and no further. A round number
+      well under the measurement is room to lose coverage without anything
+      saying so.
+    -->
+    <Threshold>5,100,20</Threshold>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Coverage is measured over the plugin assembly. The suite is not the thing
+      being covered, and the packages under it are somebody else's code, so
+      including either would report a number about the wrong assembly. This is
+      the scope of the measurement rather than an exclusion from it; the
+      exclusions are the item group below.
+    -->
+    <Include>[Jellyfin.Plugin.Stats]*</Include>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      One line per exclusion, each naming a type and carrying its reason on the
+      same line. A whole directory or a whole assembly is not allowed here: an
+      exclusion that wide is a hole rather than an exclusion, and it hides
+      everything that will later be added inside it.
+
+      There are none today. The list exists so that the first one has to be
+      argued for in a diff rather than added to a command line.
+    -->
+  </ItemGroup>
+
+  <PropertyGroup>
+    <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+  </PropertyGroup>
+
+</Project>
