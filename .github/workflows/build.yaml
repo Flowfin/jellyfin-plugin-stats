@@ -31,3 +31,13 @@ jobs:
     permissions:
       contents: read
     uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
+    with:
+      # The plugin targets net9.0 and net10.0, one per supported server line,
+      # and the 9 SDK cannot build the second of those at all. The 10 SDK builds
+      # both: it restores the net9.0 reference pack rather than needing a 9
+      # install, which was measured on a machine carrying only 10.0.301.
+      dotnet-version: '10.0.x'
+      # The artifact this call uploads is the 10.11 line's, which is the line
+      # build.yaml declares. The 12.0 artifact is built by the packaging
+      # workflow, which carries a leg per line.
+      dotnet-target: 'net9.0'

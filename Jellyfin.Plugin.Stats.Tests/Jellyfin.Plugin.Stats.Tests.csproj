@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <!--
-      One entry today because the plugin has one. This list follows the plugin's
-      and is the line to change when the second server line is added to it, so
-      the suite runs on every framework the plugin ships on.
+      Two entries because the plugin has two. This list follows the plugin's, so
+      the suite runs on every framework the plugin ships on rather than on one
+      of them while the other ships untested.
     -->
-    <TargetFrameworks>net9.0</TargetFrameworks>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <RootNamespace>Jellyfin.Plugin.Stats.Tests</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>false</ImplicitUsings>
@@ -41,10 +41,18 @@
     package. Here there is no server, so the suite carries them: without them
     the first touch of a plugin type fails to load MediaBrowser.Common. The
     versions are the plugin's; when the plugin's move, these move with them.
+    They are conditioned the same way and for the same reason, and a version
+    left behind here is not a quiet mismatch: it is a package downgrade against
+    the project reference, which NU1605 refuses.
   -->
-  <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.9.11" />
-    <PackageReference Include="Jellyfin.Model" Version="10.9.11" />
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4" />
   </ItemGroup>
 
   <ItemGroup>

@@ -41,24 +41,106 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '9.0.x'
+          # The plugin targets net9.0 and net10.0, one per supported server
+          # line, and the 9 SDK cannot build the second of those.
+          dotnet-version: '10.0.x'
 
       # The same action the release path runs, at the same pin, reading the same
       # build.yaml. A packaging failure therefore shows up on the pull request
       # that caused it.
-      - name: Build the plugin package
-        id: jprm
+      #
+      # Twice, because the plugin ships to two server lines and a server reads
+      # one targetAbi out of the package it is offered. The tool reads exactly
+      # one manifest per run, so the second run reads a manifest with two keys
+      # replaced. The two outputs are separate directories because the zip is
+      # named from the plugin slug and the version, which are the same on both
+      # lines, so one directory would have the second run overwrite the first.
+      - name: Build the package for the 10.11 line
+        id: jprm-1011
         uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
         with:
           dotnet-target: 'net9.0'
+          output: './artifacts/jellyfin-10.11'
 
-      - name: Upload the package
+      # Only targetAbi and framework, and the step fails if either key is not
+      # found, so a rename in build.yaml stops the run instead of packaging the
+      # 12.0 artifact with the 10.11 line's abi. The version line is not touched
+      # and build.yaml stays the one place a version is written.
+      - name: Point the manifest at the 12.0 line
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import sys
+
+          with open("build.yaml", encoding="utf-8") as handle:
+              text = handle.read()
+
+          for key, value in (("targetAbi", "12.0.0.0"), ("framework", "net10.0")):
+              pattern = re.compile(r'(?m)^{0}:[ ]*"[^"]*"$'.format(key))
+              text, count = pattern.subn('{0}: "{1}"'.format(key, value), text)
+              if count != 1:
+                  sys.exit(
+                      "build.yaml: expected one {0} line to replace, found {1}".format(key, count)
+                  )
+
+          with open("build.yaml", "w", encoding="utf-8") as handle:
+              handle.write(text)
+          PY
+          grep -E '^(targetAbi|framework|version):' build.yaml
+
+      - name: Build the package for the 12.0 line
+        id: jprm-120
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
+        with:
+          dotnet-target: 'net10.0'
+          output: './artifacts/jellyfin-12.0'
+
+      # Read out of the zip a user would install rather than out of the manifest
+      # that asked for it. A zip carrying the wrong line's abi installs on the
+      # wrong server, and nothing else in this run would notice.
+      - name: Each package declares its own line
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+          import zipfile
+
+          expected = {
+              "artifacts/jellyfin-10.11": "10.11.0.0",
+              "artifacts/jellyfin-12.0": "12.0.0.0",
+          }
+
+          import glob
+          import os
+
+          failed = False
+          for directory, abi in sorted(expected.items()):
+              zips = sorted(glob.glob(os.path.join(directory, "*.zip")))
+              if len(zips) != 1:
+                  print("FAIL {0}: expected one zip, found {1}".format(directory, len(zips)))
+                  failed = True
+                  continue
+              with zipfile.ZipFile(zips[0]) as archive:
+                  meta = json.loads(archive.read("meta.json").decode("utf-8"))
+              found = meta.get("targetAbi")
+              if found != abi:
+                  print("FAIL {0}: targetAbi is {1}, expected {2}".format(zips[0], found, abi))
+                  failed = True
+              else:
+                  print("ok   {0} declares targetAbi {1}".format(zips[0], found))
+
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Upload the packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: plugin-package
           retention-days: 7
           if-no-files-found: error
-          path: ${{ steps.jprm.outputs.artifact }}
+          path: artifacts/
 
   sbom:
     # The check-run name the ruleset can match once this has run green.
@@ -77,24 +159,35 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '9.0.x'
+          # The generator restores the project, which targets net9.0 and
+          # net10.0, so it needs the SDK that can build both.
+          dotnet-version: '10.0.x'
 
-      - name: Download the package built by the job above
+      - name: Download the packages built by the job above
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: plugin-package
           path: package
 
       # What the user actually receives, listed from the bytes rather than from
-      # the manifest that asked for them.
-      - name: List what the package contains
+      # the manifest that asked for them. One zip per server line, found rather
+      # than named, so a line added to the packaging job appears here without a
+      # second edit.
+      - name: List what the packages contain
         run: |
           set -euo pipefail
           mkdir -p sbom
-          for zip in package/*.zip; do
+          found=0
+          while IFS= read -r zip; do
+            found=$((found + 1))
             echo "== ${zip}"
             unzip -l "${zip}" | tee -a sbom/package-contents.txt
-          done
+          done < <(find package -name '*.zip' | sort)
+          if [ "${found}" -eq 0 ]; then
+            echo "No package was downloaded to list." >&2
+            exit 1
+          fi
+          echo "${found} package(s) listed."
 
       # An exact version: a bill of materials that changes because its generator
       # moved is a diff nobody can read.

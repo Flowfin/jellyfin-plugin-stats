@@ -1,7 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!--
+      One entry per supported server line: 10.11 runs on .NET 9 and 12.0 runs
+      on .NET 10. The framework is not a preference here, it is what the server
+      the assembly is loaded into runs, so the list moves only when the set of
+      supported lines does.
+    -->
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <RootNamespace>Jellyfin.Plugin.Stats</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -30,11 +36,33 @@
     <RestoreLockedMode>true</RestoreLockedMode>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.9.11" >
+  <!--
+    The server supplies these assemblies at run time, which is what
+    ExcludeAssets runtime says: they are compiled against and never travel in
+    the package. The version therefore has to be the one the server on that
+    line actually loads, so each line names its own and the two are chosen by
+    the framework being built rather than by a symbol in the source.
+
+    Jellyfin.Controller 10.11.x declares a dependency group for net9.0 only and
+    12.0.0-rc4 declares one for net10.0 only, so a reference under the wrong
+    framework does not resolve at all:
+
+        curl -s https://api.nuget.org/v3-flatcontainer/jellyfin.controller/12.0.0-rc4/jellyfin.controller.nuspec
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.9.11">
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
   </ItemGroup>
