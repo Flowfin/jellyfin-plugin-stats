@@ -1,6 +1,6 @@
 ---
 name: "Playback Statistics"
-guid: "29e90267-52ee-4bec-b4fb-870b8f5ddc54"
+guid: "29e90267-52ee-4bec-b4fb-870b8f5ddc53"
 version: "0.0.0.0"
 targetAbi: "10.9.0.0"
 framework: "net8.0"
