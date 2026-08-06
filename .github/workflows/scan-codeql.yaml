@@ -5,10 +5,16 @@ on:
     branches: [ master ]
     paths-ignore:
       - '**/*.md'
+  # No path filter here, unlike the push trigger above, and the same reason
+  # test.yaml gives for the same absence. This workflow produces a context the
+  # ruleset requires, and a workflow that does not run reports nothing, so a
+  # filter here leaves a required context that never arrives and a pull request
+  # that can never be merged. An analysis of a documentation change is the price
+  # of a gate that can close. #86 removed this filter from the build and test
+  # workflows when their contexts were the required ones; CodeQL was added to
+  # the required set afterwards and brought the same defect back with it.
   pull_request:
     branches: [ master ]
-    paths-ignore:
-      - '**/*.md'
   schedule:
     - cron: '24 2 * * 4'
   workflow_dispatch:
