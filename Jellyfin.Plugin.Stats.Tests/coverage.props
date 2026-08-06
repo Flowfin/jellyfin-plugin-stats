@@ -34,23 +34,34 @@
     <!--
       One number per type above, in that order, and each is what the suite
       actually reaches rounded down to a whole percent. Measured by running
-      `dotnet test` in Release, which prints the table they come from:
+      `dotnet test` in Release, which prints the table they come from.
 
-          | Module                | Line  | Branch | Method |
-          | Jellyfin.Plugin.Stats | 5.26% | 100%   | 20%    |
+      THE SAME SUITE MEASURES DIFFERENTLY ON THE TWO PLATFORMS IT RUNS ON, and
+      the number here is the lower of them, because that is the one the gate
+      that refuses will see:
 
-      They are low because the assembly they are about is nineteen lines of
-      plugin entry point and a configuration class the template left behind.
-      That is what a percentage over a nearly empty assembly is worth, and it
-      is stated here rather than dressed up: the number this issue really wants
-      is the one the suite reaches once there is something to cover, and the
-      milestones that add it are held behind the store question in #10.
+          on the runner        | Jellyfin.Plugin.Stats | 4.34% | 100% | 20% |
+          on a Windows clone   | Jellyfin.Plugin.Stats | 5.26% | 100% | 20% |
+
+      One covered line out of twenty three, against one out of nineteen. The
+      same source, so the two builds disagree about how many lines can be
+      covered at all. Why they disagree is not established here, and a threshold
+      taken from the higher one would have turned the runner red for a reason
+      nobody changed. That already happened once, on the first push of this
+      change.
+
+      They are low because the assembly they are about is a plugin entry point
+      and a configuration class the template left behind. That is what a
+      percentage over a nearly empty assembly is worth, and it is stated here
+      rather than dressed up: the number this issue really wants is the one the
+      suite reaches once there is something to cover, and the milestones that
+      add it are held behind the store question in #10.
 
       The rounding is down to the whole percent and no further. A round number
       well under the measurement is room to lose coverage without anything
       saying so.
     -->
-    <Threshold>5,100,20</Threshold>
+    <Threshold>4,100,20</Threshold>
   </PropertyGroup>
 
   <PropertyGroup>
