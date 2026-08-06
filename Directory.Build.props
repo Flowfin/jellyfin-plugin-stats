@@ -1,7 +1,39 @@
 <Project>
+    <!--
+      The version is written in exactly one tracked file, build.yaml, because that
+      is the file the plugin package carries to a server and to a catalogue. Every
+      assembly version below is read back out of it, so the packaged version and
+      the compiled version cannot drift apart.
+
+      Two matches rather than one capture group: MSBuild converts the returned
+      Match to its string, so the first pulls out the version line and the second
+      pulls the number out of that line.
+    -->
     <PropertyGroup>
-        <Version>0.0.0.0</Version>
-        <AssemblyVersion>0.0.0.0</AssemblyVersion>
-        <FileVersion>0.0.0.0</FileVersion>
+        <PluginManifestPath>$(MSBuildThisFileDirectory)build.yaml</PluginManifestPath>
+        <PluginManifestText>$([System.IO.File]::ReadAllText($(PluginManifestPath)))</PluginManifestText>
+        <PluginManifestVersionLine>$([System.Text.RegularExpressions.Regex]::Match($(PluginManifestText), '(?m)^version:[ ]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'))</PluginManifestVersionLine>
+        <PluginManifestVersion>$([System.Text.RegularExpressions.Regex]::Match($(PluginManifestVersionLine), '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'))</PluginManifestVersion>
+        <Version>$(PluginManifestVersion)</Version>
+        <AssemblyVersion>$(PluginManifestVersion)</AssemblyVersion>
+        <FileVersion>$(PluginManifestVersion)</FileVersion>
     </PropertyGroup>
+
+    <!--
+      A version that could not be read leaves these properties empty, and the SDK
+      then substitutes its own default without saying so. That was measured while
+      writing this: a three-part version in build.yaml produced a build that
+      succeeded and stamped the SDK default. Refuse instead, so a malformed or
+      moved version line stops the build at the file that holds it.
+
+      The condition reads PluginManifestVersion and not Version, because the SDK
+      has already filled Version in by the time any target runs, so a guard on
+      Version can never fire. That was the first shape of this guard and it
+      passed the regression it was written for.
+    -->
+    <Target Name="RefuseAVersionThatCouldNotBeReadFromTheManifest"
+            BeforeTargets="BeforeBuild">
+        <Error Condition="'$(PluginManifestVersion)' == ''"
+               Text="No four-part version line was found in $(PluginManifestPath). That file is the one place the version is written, and Directory.Build.props reads it from there." />
+    </Target>
 </Project>

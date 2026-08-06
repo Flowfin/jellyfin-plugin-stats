@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The coverage threshold and the list of what it may skip. Kept in a file of
+    its own so that a change to either is a diff nobody has to find inside a
+    project file, and so the reason for each exclusion sits next to it.
+  -->
+  <Import Project="coverage.props" />
+
+  <PropertyGroup>
+    <!--
+      Two entries because the plugin has two. This list follows the plugin's, so
+      the suite runs on every framework the plugin ships on rather than on one
+      of them while the other ships untested.
+    -->
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Jellyfin.Plugin.Stats.Tests</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>false</ImplicitUsings>
+    <!--
+      The tests are not part of what a user installs. IsPublishable keeps this
+      project out of the publish output the packaging tool reads, and IsPackable
+      keeps it from ever becoming a package of its own.
+    -->
+    <IsPublishable>false</IsPublishable>
+    <IsPackable>false</IsPackable>
+    <!--
+      The suite targets the framework the plugin ships on, and a machine that
+      only has a newer runtime installed can still run it. Without this the test
+      host refuses to start anywhere the exact runtime is absent, and the repair
+      would be installing a runtime rather than running the tests.
+    -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!--
+      The msbuild flavour rather than the collector, because only this one
+      refuses. The collector writes a report and leaves the judgement to
+      whatever reads it later, which on this repository is nothing; this one
+      fails the test target below the threshold in coverage.props, so every
+      route that runs the tests enforces it.
+    -->
+    <PackageReference Include="coverlet.msbuild" Version="10.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!--
+    The plugin references these with ExcludeAssets runtime, because at a user's
+    server they are the server's own assemblies and must not travel in the
+    package. Here there is no server, so the suite carries them: without them
+    the first touch of a plugin type fails to load MediaBrowser.Common. The
+    versions are the plugin's; when the plugin's move, these move with them.
+    They are conditioned the same way and for the same reason, and a version
+    left behind here is not a quiet mismatch: it is a package downgrade against
+    the project reference, which NU1605 refuses.
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jellyfin.Plugin.Stats\Jellyfin.Plugin.Stats.csproj" />
+  </ItemGroup>
+
+</Project>

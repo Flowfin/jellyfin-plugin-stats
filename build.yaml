@@ -1,16 +1,26 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
-version: "1.0.0.0"
-targetAbi: "10.9.0.0"
-framework: "net8.0"
-overview: "Short description about your plugin"
+name: "Playback Statistics"
+guid: "29e90267-52ee-4bec-b4fb-870b8f5ddc53"
+version: "0.0.0.0"
+# The 10.11 server line, which runs on .NET 9. This file is one manifest and
+# jprm reads one targetAbi out of it, so the 12.0 line's artifact is packaged
+# from a copy of this file with these two keys replaced; the packaging workflow
+# is where that happens and it replaces nothing else. The version above stays
+# the one place a version is written.
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+overview: "Playback statistics, kept private to the user they are about"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
-category: "General"
-owner: "jellyfin"
+  Records what was played on this server and shows it back as statistics: usage
+  over time, the clients and devices people play from, and how often the server
+  had to transcode. Personal detail is visible only to the user it is about
+  unless that user chooses otherwise, and server-wide views name nobody.
+category: "Administration"
+owner: "iderex"
 artifacts:
-- "Jellyfin.Plugin.Template.dll"
+- "Jellyfin.Plugin.Stats.dll"
+# Required by the packaging tool: without this key it fails with KeyError.
+# The entries themselves are in CHANGELOG.md, which is the one place they are
+# written.
 changelog: >
-  changelog
+  The entries for each release are in CHANGELOG.md in the repository.

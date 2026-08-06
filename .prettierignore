@@ -1,0 +1,16 @@
+# Prettier is adopted here for the assets this plugin ships into the dashboard,
+# and for nothing else yet. Everything is ignored and the page assets are added
+# back a level at a time, because an ignore file cannot re-include a file whose
+# parent directory is still ignored.
+#
+# Widening this to the workflows, the documents or the manifest is a separate
+# change: those files are written by other issues in this plan and reformatting
+# them here would bury real edits under whitespace.
+/*
+!/Jellyfin.Plugin.Stats
+/Jellyfin.Plugin.Stats/*
+!/Jellyfin.Plugin.Stats/Configuration
+/Jellyfin.Plugin.Stats/Configuration/*
+!/Jellyfin.Plugin.Stats/Configuration/*.html
+!/Jellyfin.Plugin.Stats/Configuration/*.css
+!/Jellyfin.Plugin.Stats/Configuration/*.js

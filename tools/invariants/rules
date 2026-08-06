@@ -1,0 +1,57 @@
+# The invariants this plan holds that a grep can hold.
+#
+# One rule per block, blank line between blocks, four fields each:
+#
+#   id       the rule name, and also the directory under near-miss/ that holds
+#            the file this rule must fire on
+#   paths    a grep --include glob deciding which files the rule reads
+#   pattern  an extended regular expression; a match anywhere in a scanned file
+#            fails the lint
+#   why      what failure the rule prevents, and the issue that argues for it
+#
+# Adding a rule is adding a block here and a file under near-miss/<id>/. The
+# self test derives everything else from the id, so a rule without a near miss
+# fails the run rather than passing quietly.
+#
+# This directory is not scanned. A rule file naturally contains the strings its
+# rules refuse, and a lint that reads itself refuses itself.
+
+id: no-query-from-the-request
+paths: *.cs
+pattern: \[From(Query|Route|Body|Form|Header)\][^,)]*\b([Ss]ql|[Qq]uery|[Ww]here|[Oo]rderBy|[Cc]olumns|[Ss]elect|[Gg]roupBy|[Hh]aving)\b
+why: An endpoint that takes a query fragment, a sort column or a column list from the caller lets the caller decide what the database does. Every report endpoint here takes named values and nothing else. Issue #55.
+
+id: no-sql-built-by-concatenation
+paths: *.cs
+pattern: \$?"[^"]*\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|ORDER BY|GROUP BY)\b[^"]*("[[:space:]]*\+|\{)
+why: A statement assembled from strings is a statement whose shape depends on its input. Parameters are passed as parameters, always. Issue #55, and the store issues it is built on.
+
+id: no-identifying-network-or-path-detail-in-the-store
+paths: *.cs
+pattern: (RemoteEndPoint|UserAgent|User-Agent|\b[Ii]tem\.Path\b)
+why: A network address, a user agent and a library file path are the fields that turn playback statistics into a record of where somebody was and what their disk holds. They are refused at the source rather than dropped later. Issues #27 and #48.
+
+id: no-test-that-drives-a-browser
+paths: *
+pattern: (Selenium|Playwright|WebDriver|ChromeDriver|GeckoDriver|puppeteer)
+why: A browser driven by a test needs a display or a downloaded browser and a running server. The page work is kept in modules with no document access and unit tested directly, and the endpoints are tested in process. docs/headless-tests.md, issue #21.
+
+id: no-test-that-needs-a-display
+paths: *
+pattern: ([Xx]vfb|DISPLAY=|xdotool|\bXvnc\b)
+why: A runner has no screen, and a test that borrows a virtual one has moved the problem rather than removed it. docs/headless-tests.md, issue #21.
+
+id: no-test-that-asks-for-elevation
+paths: *
+pattern: (\brunas\b|\bnetsh\b|\bsc\.exe\b|requireAdministrator|Start-Process[^\n]*-Verb)
+why: A test that needs administrator changes the machine it runs on, and on the machine somebody is sitting at it raises a consent prompt in front of them. docs/headless-tests.md, issue #21.
+
+id: no-test-that-touches-a-certificate-store
+paths: *
+pattern: (dev-certs|X509Store|StoreName\.(Root|My)|\bcertmgr\b|\bcertutil\b)
+why: Trusting a certificate is a change to the machine that outlives the run, and it is the change a failing https test most invites. Endpoint tests run in process, over no socket at all. docs/headless-tests.md, issue #21.
+
+id: no-outbound-http-client
+paths: *.cs
+pattern: (HttpClient|IHttpClientFactory|HttpMessageInvoker|SocketsHttpHandler|WebClient|HttpWebRequest|WebRequest\.Create)
+why: This plugin reads the server it runs inside and talks to nothing outside it. Proving that by watching the network needs a network namespace and root, which the headless policy refuses, so the client that would make the call is refused instead. That is a stronger statement than one observed quiet run, because it holds for runs nobody watched. docs/headless-tests.md, issue #21.

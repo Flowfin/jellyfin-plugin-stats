@@ -1,0 +1,72 @@
+# Pull request hygiene. This plan is built out of issues, and without this
+# nothing refuses a change that names none of them, so the link between a diff
+# and the reason it exists rests on whoever wrote the body remembering.
+#
+# Two tiers. The failing tier refuses a pull request whose body names no issue
+# and a commit subject that names none. The warning tier annotates a large diff
+# and plugin code changed without a matching test change, and never refuses:
+# both are judgements about whether a change is too big or under-tested, and a
+# machine reading a diff cannot make either one.
+#
+# First-party by choice: no review service and no bot, so nothing outside this
+# repository decides whether a change may land.
+#
+# Every value the check reads comes out of the API as JSON and is read by
+# Python from a file. No body, label, title or filename is ever interpolated
+# into a shell command, because a pull request body is attacker-controlled text
+# on a public repository and `run:` blocks are the one place where that text
+# would be executed rather than read.
+name: PR hygiene
+
+on:
+  pull_request:
+    # edited is in the list because the body is one of the inputs: a pull
+    # request repaired by editing its body must be able to go green without an
+    # empty commit.
+    types: [opened, edited, synchronize, reopened]
+
+# Read-only. The check reads the pull request and writes annotations, which the
+# runner emits; it never writes to the repository.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    # The check-run name the ruleset can match once this has run green.
+    name: Pull request hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only the judging script is needed, and nothing here pushes, so the
+          # history is not fetched and the token is not persisted.
+          persist-credentials: false
+
+      - name: Read the pull request through the API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${PR_REPO}/pulls/${PR_NUMBER}" > pr.json
+          # One JSON object per line rather than one array, because --paginate
+          # concatenates arrays and the result of two pages is not valid JSON.
+          gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/commits" \
+            --jq '.[] | {sha: .sha, message: .commit.message, parents: (.parents | length)}' \
+            > commits.json
+          gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | {filename: .filename, changes: .changes}' \
+            > files.json
+
+      - name: Judge
+        env:
+          PR_REPO: ${{ github.repository }}
+        run: python3 .github/workflows/pr-hygiene.py

@@ -13,8 +13,27 @@ on:
     - cron: '24 2 * * 4'
   workflow_dispatch:
 
+# Deny by default at workflow level; the job below grants only what it needs.
+permissions: {}
+
+# A newer run on the same ref supersedes an in-flight one. This is an analysis,
+# not a publish, so cancelling a superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # No timeout-minutes: GitHub refuses the key on a job that calls a reusable
+  # workflow, and the refusal is quoted in the pull request that added this line.
   call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/scan-codeql.yaml@master
+    permissions:
+      # Check the repository out and build it for the analysis.
+      contents: read
+      # Write the analysis result into the code scanning tab.
+      security-events: write
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/scan-codeql.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     with:
-      repository-name: jellyfin/jellyfin-plugin-template
+      # The called workflow runs its job only where this matches the repository
+      # it is running in. It named the template, so the analysis was skipped on
+      # every run this repository has ever made.
+      repository-name: iderex/jellyfin-plugin-stats

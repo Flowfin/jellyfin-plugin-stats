@@ -1,0 +1,65 @@
+# Known vulnerabilities in the resolved dependency graph, transitive included.
+#
+# Dependency review reads what a pull request changes, so a package that turns
+# bad while nothing in the tree moves is invisible to it. This runs on every
+# pull request, on the default branch, and on a schedule, so a newly published
+# advisory reds the branch without anybody pushing.
+#
+# The build leg itself is a call to a shared upstream workflow, which has no
+# place to add a step, so the scan is its own job here.
+name: Vulnerable dependencies
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    # Daily. An advisory published today is seen tomorrow at the latest.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+# Read-only: restore and report, nothing is written back.
+permissions:
+  contents: read
+
+concurrency:
+  group: vulnerable-dependencies-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vulnerable-dependencies:
+    name: Scan the dependency graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          # The plugin targets one framework per supported server line, and the
+          # 9 SDK cannot restore the newer of the two at all. The 10 SDK
+          # restores both, so the scan reads the whole graph rather than half
+          # of it. A version behind the project's frameworks does not report a
+          # smaller graph, it fails to restore and reports nothing.
+          dotnet-version: 10.0.x
+
+      - name: List vulnerable packages, transitive included
+        run: |
+          set -euo pipefail
+          # The command reports and exits zero whether or not it found
+          # anything, so the verdict is read out of its output. Every
+          # vulnerable package is printed on a line whose first non-blank
+          # character is '>', with its resolved version, the severity and the
+          # advisory URL.
+          report=$(dotnet list package --vulnerable --include-transitive)
+          echo "$report"
+          if echo "$report" | grep -qE '^[[:space:]]*>'; then
+            echo "::error::The resolved dependency graph carries a known vulnerability. The package, its resolved version and the advisory are named above."
+            exit 1
+          fi
+          echo "No package in the resolved graph carries a known advisory."
