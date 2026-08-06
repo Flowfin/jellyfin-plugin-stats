@@ -68,6 +68,56 @@
   </ItemGroup>
 
   <!--
+    The store. Issue #10 chose a SQLite file of the plugin's own through this
+    package, over an Entity Framework context and over the server's database,
+    and the reasons are written there.
+
+    It travels in the package, unlike the two references above, because the
+    server does not supply it. Neither server line declares it anywhere in the
+    graph the plugin restores from:
+
+        grep -c 'Microsoft.Data.Sqlite' Jellyfin.Plugin.Stats/packages.lock.json
+
+    counts it only as this reference and what it pulls in. The closest prior art
+    ships its own SQLite stack in its package for the same reason.
+
+    The version follows the server line rather than being one number for both,
+    the same way the two references above do. Each line already carries a
+    Microsoft.Extensions.* graph pinned to its own major, so a package from the
+    other major would pull a second copy of those assemblies into a process that
+    already has one.
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.11" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+  </ItemGroup>
+
+  <!--
+    The native SQLite binary, named here rather than left to the version the
+    bundle above asks for. Both server lines resolve it to a version inside a
+    high severity advisory, and the restore refuses rather than warning:
+
+        gh api advisories/GHSA-2m69-gcr7-jv3q
+
+    reports SQLitePCLRaw.lib.e_sqlite3 vulnerable at "&lt;= 2.1.11", high
+    severity, with no patched version declared.
+
+    2.1.12 is the first version outside that range and the last of that line, so
+    this raises the native library and leaves the managed bundle and provider
+    where the two Microsoft.Data.Sqlite versions put them.
+
+    This reference exists only for that advisory. When the bundle's own default
+    moves past it, this goes, and the way to tell is that removing it leaves the
+    restore green.
+  -->
+  <ItemGroup>
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+  </ItemGroup>
+
+  <!--
     IHostedService, and the AddHostedService that registers one, are declared in
     Microsoft.Extensions.Hosting.Abstractions. The server loads that assembly
     from the ASP.NET Core shared framework it already runs on, but it does not
