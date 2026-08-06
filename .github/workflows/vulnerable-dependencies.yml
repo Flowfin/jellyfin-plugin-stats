@@ -41,7 +41,12 @@ jobs:
       - name: Set up the SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
-          dotnet-version: 9.0.x
+          # The plugin targets one framework per supported server line, and the
+          # 9 SDK cannot restore the newer of the two at all. The 10 SDK
+          # restores both, so the scan reads the whole graph rather than half
+          # of it. A version behind the project's frameworks does not report a
+          # smaller graph, it fails to restore and reports nothing.
+          dotnet-version: 10.0.x
 
       - name: List vulnerable packages, transitive included
         run: |
