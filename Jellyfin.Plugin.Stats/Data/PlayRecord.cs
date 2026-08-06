@@ -103,4 +103,10 @@ public sealed record PlayRecord
     /// Gets what the transcoding state of the session came to over the play.
     /// </summary>
     public required TranscodeSummary Transcode { get; init; }
+
+    /// <summary>
+    /// Gets the version of the server that recorded the play, which would be
+    /// handy when reading a support request.
+    /// </summary>
+    public string? ServerVersion { get; init; }
 }
