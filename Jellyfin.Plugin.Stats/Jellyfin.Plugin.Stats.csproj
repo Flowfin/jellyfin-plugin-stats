@@ -8,6 +8,26 @@
     <Nullable>enable</Nullable>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <CodeAnalysisRuleSet>../jellyfin.ruleset</CodeAnalysisRuleSet>
+    <!--
+      packages.lock.json records the graph that was actually restored, direct
+      and transitive, and it is tracked. RestoreLockedMode then refuses a
+      restore whose graph does not match it, so a package that moved under a
+      version range, a feed serving different bytes, or a reference edited
+      without regenerating the file stops the build instead of resolving
+      quietly and building green.
+
+      The property is set here rather than passed as a locked mode flag on a
+      command line, because the packaged build is run by the plugin repository
+      manager and this repository passes it no arguments. A property in the
+      project holds on every route: the packaged build, the test run, an editor,
+      and a command somebody types.
+
+      Changing a reference is therefore two edits, and the second one is:
+
+          dotnet restore Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj -p:RestoreForceEvaluate=true
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode>true</RestoreLockedMode>
   </PropertyGroup>
 
   <ItemGroup>
