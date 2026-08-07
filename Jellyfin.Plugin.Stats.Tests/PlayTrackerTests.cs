@@ -459,7 +459,11 @@ public class PlayTrackerTests
         const int Reports = 2160;
         for (var i = 1; i <= Reports; i++)
         {
-            sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(10 * i), at: Eight.AddSeconds(10 * i));
+            // Counted as a double rather than multiplied as an int and widened
+            // afterwards, which is the shape the analysis reads as an overflow
+            // waiting to be given a larger loop.
+            var second = 10d * i;
+            sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(second), at: Eight.AddSeconds(second));
         }
 
         sessions.RaisePlaybackStopped(session, TimeSpan.FromHours(6), at: Eight.AddHours(6));
