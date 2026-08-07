@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  The near miss for no-server-value-in-a-page-asset.
+
+  This is the page issue #61 asks for, the one a signed-in user opens about
+  themselves, written the way it is natural to write it. The heading greets the
+  user by name and the summary line carries their totals, and both are left for
+  the server to fill in before the page is sent. Everything else on it is
+  correct: the numbers are fetched after load through ApiClient, the request is
+  authorized, and nothing is stored that should not be.
+
+  It is wrong because of who receives it. The endpoint that returns a page's
+  content carries no authorization attribute and the server configures no
+  fallback policy, so this page is handed to anybody who asks for it by name,
+  signed in or not. A greeting filled in by the server turns a public asset into
+  a statement about one person, and the same two lines would ship a completed
+  count and a watched total with it.
+
+  The one character version of this mistake is the pair of braces. Writing the
+  heading as a placeholder the page script fills in after its authorized request
+  returns is the correct page and looks almost identical in a diff.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Your year</title>
+    </head>
+    <body>
+        <div id="StatsYourYearPage" data-role="page" class="page type-interior">
+            <div data-role="content">
+                <div class="content-primary">
+                    <h1 class="sectionTitle">{{ UserName }}, here is your year</h1>
+                    <p class="fieldDescription">
+                        You finished {{CompletedCount}} of them, and the server sent
+                        {{ TranscodedShare }} of your watching through a transcode.
+                    </p>
+                    <div id="StatsYourYearChart"></div>
+                </div>
+            </div>
+            <script type="text/javascript">
+                document
+                    .querySelector('#StatsYourYearPage')
+                    .addEventListener('pageshow', function () {
+                        Dashboard.showLoadingMsg();
+                        ApiClient.getJSON(
+                            ApiClient.getUrl('Stats/Self/Year/' + new Date().getFullYear()),
+                        ).then(function (year) {
+                            document.querySelector('#StatsYourYearChart').textContent =
+                                year.WatchedSeconds;
+                            Dashboard.hideLoadingMsg();
+                        });
+                    });
+            </script>
+        </div>
+    </body>
+</html>
