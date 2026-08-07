@@ -39,9 +39,12 @@
   <!--
     The server supplies these assemblies at run time, which is what
     ExcludeAssets runtime says: they are compiled against and never travel in
-    the package. The version therefore has to be the one the server on that
-    line actually loads, so each line names its own and the two are chosen by
-    the framework being built rather than by a symbol in the source.
+    the package. The version therefore has to be one the server on that line
+    actually loads, and the only version that holds for every server on a line
+    is its oldest, so each line references its floor. The floors are declared in
+    Directory.Build.props and no version is written here; a literal in this file
+    is what the ABI floor jobs refuse. Which floor applies is chosen by the
+    framework being built rather than by a symbol in the source.
 
     Jellyfin.Controller 10.11.x declares a dependency group for net9.0 only and
     12.0.0-rc4 declares one for net10.0 only, so a reference under the wrong
@@ -50,19 +53,19 @@
         curl -s https://api.nuget.org/v3-flatcontainer/jellyfin.controller/12.0.0-rc4/jellyfin.controller.nuspec
   -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.11">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinFloorNet9)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.11">
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinFloorNet9)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinFloorNet10)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4">
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinFloorNet10)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
   </ItemGroup>

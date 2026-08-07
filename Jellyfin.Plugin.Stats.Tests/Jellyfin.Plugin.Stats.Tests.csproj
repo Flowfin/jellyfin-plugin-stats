@@ -58,10 +58,25 @@
     server they are the server's own assemblies and must not travel in the
     package. Here there is no server, so the suite carries them: without them
     the first touch of a plugin type fails to load MediaBrowser.Common. The
-    versions are the plugin's; when the plugin's move, these move with them.
-    They are conditioned the same way and for the same reason, and a version
-    left behind here is not a quiet mismatch: it is a package downgrade against
-    the project reference, which NU1605 refuses.
+    versions are not the plugin's any more, and the difference is deliberate.
+
+    The plugin references the floor of each line, in Directory.Build.props,
+    because the floor is the only version every server on a line loads. The
+    suite cannot follow it down on the 10.11 line: IUserManager in 10.11.0
+    declares five members that 10.11.11 does not, so FakeUserManager, written
+    against 10.11.11, does not compile against the floor.
+
+        dotnet build Jellyfin.Plugin.Stats.Tests/Jellyfin.Plugin.Stats.Tests.csproj -f net9.0 -p:JellyfinFloorNet9=10.11.0
+        error CS0535: FakeUserManager does not implement IUserManager.RenameUser(User, string)
+        error CS0535: ... ResetPassword(User), ChangePassword(User, string), Users, UsersIds
+
+    These are upgrades against the plugin's references, not downgrades, so
+    NU1605 is not in play here; the direction that NU1605 refuses is the suite
+    naming an older version than the plugin, and that is still refused.
+
+    Moving the suite to the floor means growing the fake to the floor's
+    interface, which is a change to the fakes rather than to the build, and it
+    is written into issue #17 rather than done here.
   -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
     <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
@@ -69,8 +84,8 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4" />
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4" />
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinFloorNet10)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinFloorNet10)" />
   </ItemGroup>
 
   <ItemGroup>
