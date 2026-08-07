@@ -41,23 +41,6 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </summary>
     private const int RowSchemaVersion = 1;
 
-    /// <summary>
-    /// What the transcode part of a row holds until issue #37 samples it. It
-    /// invents nothing: no codec, no bitrate and no reason, rather than a
-    /// plausible looking summary nobody measured.
-    /// </summary>
-    private static readonly TranscodeSummary NotSampled = new()
-    {
-        VideoCodec = null,
-        AudioCodec = null,
-        VideoWasDirect = false,
-        AudioWasDirect = false,
-        PeakBitrate = null,
-        TypicalBitrate = null,
-        HardwareAcceleration = null,
-        Reasons = Array.Empty<string>()
-    };
-
     private readonly Dictionary<string, OpenPlay> _open = new(StringComparer.Ordinal);
     private readonly object _gate = new();
     private readonly IFinishedPlaySink _sink;
@@ -217,6 +200,7 @@ public sealed class PlayTracker : IPlaybackEventSink
     private sealed class OpenPlay
     {
         private readonly WatchedTime _watched;
+        private readonly TranscodeFold _transcode = new();
         private readonly Guid _userId;
         private readonly Guid _itemId;
         private readonly string _itemType;
@@ -245,6 +229,7 @@ public sealed class PlayTracker : IPlaybackEventSink
             _playMethod = MethodOf(args.Session.PlayState.PlayMethod);
             _startedUtc = HeardFrom(args);
             _watched = new WatchedTime(new DateTimeOffset(_startedUtc), PositionOf(args));
+            _transcode.Observe(args.Session.TranscodingInfo);
         }
 
         /// <summary>
@@ -257,9 +242,17 @@ public sealed class PlayTracker : IPlaybackEventSink
         /// <summary>
         /// Folds one progress report, or the stop, into the play.
         /// </summary>
+        /// <remarks>
+        /// The transcoding state is sampled here rather than stored, so the
+        /// number of rows a play produces does not move with how long it ran or
+        /// how often the client reported.
+        /// </remarks>
         /// <param name="args">The event.</param>
         public void Observe(PlaybackProgressEventArgs args)
-            => _watched.Observe(new DateTimeOffset(HeardFrom(args)), PositionOf(args), args.IsPaused);
+        {
+            _watched.Observe(new DateTimeOffset(HeardFrom(args)), PositionOf(args), args.IsPaused);
+            _transcode.Observe(args.Session.TranscodingInfo);
+        }
 
         /// <summary>
         /// Closes the play and produces its row.
@@ -293,7 +286,7 @@ public sealed class PlayTracker : IPlaybackEventSink
                 DeviceId = _deviceId,
                 DeviceName = _deviceName,
                 PlayMethod = _playMethod,
-                Transcode = NotSampled
+                Transcode = _transcode.Finish()
             };
         }
 
