@@ -23,6 +23,8 @@ using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using ServerPlayMethod = MediaBrowser.Model.Session.PlayMethod;
@@ -335,24 +337,285 @@ public class PlayTrackerTests
     }
 
     [Fact]
-    public void ARowInventsNoTranscodeDetail()
+    public void ADirectPlaySaysSoAndInventsNoTranscodeDetail()
     {
         var sessions = new FakeSessionManager();
         var rows = Watching(sessions, out _);
         var session = APlay(sessions);
 
         sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(5), at: Eight.AddMinutes(5));
         sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
 
-        // Sampling the transcoding state is issue #37. Until it lands the
-        // summary says nothing rather than saying something plausible.
         var transcode = Assert.Single(rows.Rows).Transcode;
+
+        // Both streams reached the client as they were. The server was asked on
+        // every sample and reported no transcode on any of them, so this is a
+        // measurement rather than a field nobody filled in.
+        Assert.True(transcode.VideoWasDirect);
+        Assert.True(transcode.AudioWasDirect);
+
+        // And nothing else is claimed. A codec, a bitrate or a reason here
+        // would be invented: no transcode ran, so the server named none.
         Assert.Null(transcode.VideoCodec);
         Assert.Null(transcode.AudioCodec);
         Assert.Null(transcode.PeakBitrate);
         Assert.Null(transcode.TypicalBitrate);
         Assert.Null(transcode.HardwareAcceleration);
         Assert.Empty(transcode.Reasons);
+    }
+
+    [Fact]
+    public void ATranscodeThatChangesHalfwayThroughIsOneRowCarryingBothHalves()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        session.TranscodingInfo = Transcoding(
+            videoCodec: "h264",
+            audioCodec: "aac",
+            bitrate: 3_000_000,
+            reasons: TranscodeReason.VideoCodecNotSupported);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(5), at: Eight.AddMinutes(5));
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+
+        // The client changes what it can take and the server renegotiates: a
+        // different codec pair, a higher bitrate, the graphics card doing the
+        // work, and a second reason for doing it at all.
+        session.TranscodingInfo = Transcoding(
+            videoCodec: "hevc",
+            audioCodec: "eac3",
+            bitrate: 6_000_000,
+            acceleration: HardwareAccelerationType.qsv,
+            reasons: TranscodeReason.AudioCodecNotSupported);
+
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(15), at: Eight.AddMinutes(15));
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(20), at: Eight.AddMinutes(20));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+
+        // What the play ended up using, and the highest it ever reached.
+        Assert.Equal("hevc", transcode.VideoCodec);
+        Assert.Equal("eac3", transcode.AudioCodec);
+        Assert.Equal(6_000_000, transcode.PeakBitrate);
+
+        // Three samples at the first bitrate against two at the second, so the
+        // typical is the first even though the play ended on the second.
+        Assert.Equal(3_000_000, transcode.TypicalBitrate);
+
+        Assert.Equal("qsv", transcode.HardwareAcceleration);
+        Assert.False(transcode.VideoWasDirect);
+        Assert.False(transcode.AudioWasDirect);
+
+        // Both halves, in the order the play showed them.
+        Assert.Equal(
+            new[] { "VideoCodecNotSupported", "AudioCodecNotSupported" },
+            transcode.Reasons);
+    }
+
+    [Fact]
+    public void APlayThatBeginsDirectAndFallsBackIsNotRecordedAsDirect()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(5), at: Eight.AddMinutes(5));
+
+        session.TranscodingInfo = Transcoding(reasons: TranscodeReason.VideoBitrateNotSupported);
+
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(15), at: Eight.AddMinutes(15));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+
+        // Direct for the first half is not direct. A row that said otherwise
+        // would put this play on the wrong side of the transcode ratio.
+        Assert.False(transcode.VideoWasDirect);
+        Assert.False(transcode.AudioWasDirect);
+        Assert.Equal("h264", transcode.VideoCodec);
+        Assert.Equal(new[] { "VideoBitrateNotSupported" }, transcode.Reasons);
+    }
+
+    [Fact]
+    public void TheNumberOfRowsAPlayProducesDoesNotGrowWithItsLength()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out var tracker);
+        var session = APlay(sessions);
+
+        session.TranscodingInfo = Transcoding(
+            bitrate: 3_000_000,
+            reasons: TranscodeReason.ContainerNotSupported);
+
+        sessions.RaisePlaybackStart(session, Eight);
+
+        // Six hours of progress reports ten seconds apart, which is a long film
+        // on a client that checks in as often as the server asks it to.
+        const int Reports = 2160;
+        for (var i = 1; i <= Reports; i++)
+        {
+            sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(10 * i), at: Eight.AddSeconds(10 * i));
+        }
+
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromHours(6), at: Eight.AddHours(6));
+
+        // One row out of two thousand one hundred and sixty two samples, and
+        // the summary is the same shape it would be after three.
+        var row = Assert.Single(rows.Rows);
+        Assert.Equal(TimeSpan.FromHours(6), row.WatchedDuration);
+        Assert.Equal(3_000_000, row.Transcode.PeakBitrate);
+        Assert.Equal(3_000_000, row.Transcode.TypicalBitrate);
+
+        // The reason arrived on every one of those samples and is listed once.
+        Assert.Equal(new[] { "ContainerNotSupported" }, row.Transcode.Reasons);
+        Assert.Equal(0, tracker.OpenPlays);
+    }
+
+    [Fact]
+    public void ARemuxIsDirectVideoAndTranscodedAudio()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        session.TranscodingInfo = Transcoding(
+            videoCodec: "h264",
+            audioCodec: "aac",
+            reasons: TranscodeReason.AudioCodecNotSupported,
+            videoDirect: true);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+
+        // The two streams are answered separately. Folding them into one flag
+        // would count a remux as a full transcode.
+        Assert.True(transcode.VideoWasDirect);
+        Assert.False(transcode.AudioWasDirect);
+        Assert.Null(transcode.PeakBitrate);
+        Assert.Null(transcode.TypicalBitrate);
+    }
+
+    [Fact]
+    public void SoftwareTranscodingReportsNoHardwareAcceleration()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        // The server names the software path with a member of the same enum
+        // rather than by leaving the field empty, and a row that stored that
+        // name would report hardware acceleration nobody had.
+        session.TranscodingInfo = Transcoding(acceleration: HardwareAccelerationType.none);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+
+        Assert.Null(Assert.Single(rows.Rows).Transcode.HardwareAcceleration);
+    }
+
+    [Fact]
+    public void ASampleThatNamesNoCodecLeavesTheOneAlreadyReported()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        session.TranscodingInfo = Transcoding(videoCodec: "hevc", audioCodec: "eac3");
+
+        sessions.RaisePlaybackStart(session, Eight);
+
+        // The server rewrites the whole state at once, so a sample carrying a
+        // bitrate and no codecs is it having nothing to say about the streams
+        // rather than the streams having stopped being what they were.
+        session.TranscodingInfo = Transcoding(videoCodec: null, audioCodec: string.Empty, bitrate: 5_000_000);
+
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+        Assert.Equal("hevc", transcode.VideoCodec);
+        Assert.Equal("eac3", transcode.AudioCodec);
+        Assert.Equal(5_000_000, transcode.PeakBitrate);
+    }
+
+    [Fact]
+    public void APlayThatRenegotiatesMoreBitratesThanAreTrackedStillReportsThePeak()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        // Two samples at the first value, then sixty three more distinct ones,
+        // which is the whole of what the fold keeps a count for.
+        session.TranscodingInfo = Transcoding(bitrate: 1_000_000);
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(10), at: Eight.AddSeconds(10));
+
+        var second = 10;
+        for (var i = 1; i <= 63; i++)
+        {
+            second += 10;
+            session.TranscodingInfo = Transcoding(bitrate: 1_000_000 + (i * 1_000));
+            sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(second), at: Eight.AddSeconds(second));
+        }
+
+        // One more distinct value, arriving with no room left, and sampled more
+        // often than any value that did get room.
+        session.TranscodingInfo = Transcoding(bitrate: 1_064_000);
+        for (var i = 0; i < 3; i++)
+        {
+            second += 10;
+            sessions.RaisePlaybackProgress(session, TimeSpan.FromSeconds(second), at: Eight.AddSeconds(second));
+        }
+
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromSeconds(second + 10), at: Eight.AddSeconds(second + 10));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+
+        // The peak is a maximum and needs no table, so a value the table had no
+        // room for still moves it.
+        Assert.Equal(1_064_000, transcode.PeakBitrate);
+
+        // The typical is drawn from the values the table did hold. The most
+        // sampled value of the play is not among them and does not win, which
+        // is what the bound costs and is why it is written down.
+        Assert.Equal(1_000_000, transcode.TypicalBitrate);
+    }
+
+    [Fact]
+    public void AVideoReEncodedForPartOfThePlayIsNotDirect()
+    {
+        var sessions = new FakeSessionManager();
+        var rows = Watching(sessions, out _);
+        var session = APlay(sessions);
+
+        session.TranscodingInfo = Transcoding(videoCodec: "h264", audioCodec: "aac");
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(5), at: Eight.AddMinutes(5));
+
+        // The server renegotiates to passing the video through and carries on
+        // re-encoding the audio. The video was still re-encoded for five
+        // minutes, and a summary taken from the last sample would say it never
+        // was.
+        session.TranscodingInfo = Transcoding(
+            videoCodec: "h264",
+            audioCodec: "aac",
+            reasons: TranscodeReason.AudioCodecNotSupported,
+            videoDirect: true);
+
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(15), at: Eight.AddMinutes(15));
+
+        var transcode = Assert.Single(rows.Rows).Transcode;
+        Assert.False(transcode.VideoWasDirect);
+        Assert.False(transcode.AudioWasDirect);
     }
 
     [Fact]
@@ -417,6 +680,32 @@ public class PlayTrackerTests
         sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
 
         return Assert.Single(rows.Rows);
+    }
+
+    /// <summary>
+    /// A transcoding state as the server writes it on the session, with the
+    /// fields a test is not about left at what a transcode usually carries.
+    /// </summary>
+    private static TranscodingInfo Transcoding(
+        string? videoCodec = "h264",
+        string? audioCodec = "aac",
+        int? bitrate = null,
+        HardwareAccelerationType? acceleration = null,
+        TranscodeReason reasons = default,
+        bool videoDirect = false,
+        bool audioDirect = false)
+    {
+        return new TranscodingInfo
+        {
+            VideoCodec = videoCodec,
+            AudioCodec = audioCodec,
+            Container = "ts",
+            Bitrate = bitrate,
+            HardwareAccelerationType = acceleration,
+            TranscodeReasons = reasons,
+            IsVideoDirect = videoDirect,
+            IsAudioDirect = audioDirect
+        };
     }
 
     private sealed class RecordingPlaySink : IFinishedPlaySink
