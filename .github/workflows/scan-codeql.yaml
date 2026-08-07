@@ -5,10 +5,16 @@ on:
     branches: [ master ]
     paths-ignore:
       - '**/*.md'
+  # KEIN paths-ignore hier. CodeQL ist seit dem 07.08. ein Pflicht-Check
+  # (#13), und ein Filter, der den Lauf bei einer reinen Dokumentaenderung
+  # ueberspringt, laesst den Kontext NIE melden: der Pull Request ist dann
+  # nicht rot, sondern dauerhaft wartend, und nichts an ihm sieht falsch aus.
+  # Genau das ist beim README-PR #129 passiert, und zwar durch die Aufnahme
+  # in die Pflichtliste - der Fehler kam aus der Absicherung selbst.
+  #
+  # Beim push oben bleibt der Filter: dort gatet er nichts.
   pull_request:
     branches: [ master ]
-    paths-ignore:
-      - '**/*.md'
   schedule:
     - cron: '24 2 * * 4'
   workflow_dispatch:

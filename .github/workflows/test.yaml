@@ -39,3 +39,78 @@ jobs:
       # 9 SDK cannot build the second, and the 10 runtime runs the first because
       # the test project sets RollForward, so one install covers both legs.
       dotnet-version: '10.0.x'
+
+  # The suite above runs in whatever zone the runner happens to be in, which is
+  # UTC, and UTC is the one zone where reading a day out of a stored instant
+  # cannot go wrong. These two legs run it where it can: one zone well east of
+  # UTC and one well west, so a file that started reading the machine clock or
+  # the machine zone shows up as a red suite rather than as a report that is a
+  # day out for half the world.
+  #
+  # no-ambient-clock in tools/invariants/rules refuses the calls that would cause
+  # it, and these legs are the other half of the same statement: the rule refuses
+  # the shape, and these prove the behaviour does not depend on the zone whatever
+  # shape it was written in. Neither replaces the other.
+  #
+  # The zone is set with TZ, which .NET honours on Linux and ignores on Windows.
+  # Measured on a Windows clone while this was written: TimeZoneInfo.Local stayed
+  # W. Europe Standard Time under TZ=Asia/Tokyo and under TZ=America/Los_Angeles,
+  # so this evidence is only produced here and cannot be reproduced by setting
+  # the same variable on a developer machine running Windows.
+  zones:
+    name: Tests in ${{ matrix.zone }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      # A failure in one zone says nothing about the other, and the pair is the
+      # evidence, so neither leg is cancelled because the other went red.
+      fail-fast: false
+      matrix:
+        # Chosen for distance from UTC in both directions and for having a
+        # summer change, which is the case a fixed offset gets wrong twice a
+        # year. Auckland is 12 or 13 hours ahead, Los Angeles 7 or 8 behind, so
+        # any given instant is a different calendar day in the two.
+        zone:
+          - Pacific/Auckland
+          - America/Los_Angeles
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the token is not persisted.
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          # The suite targets net9.0 and net10.0; the 9 SDK cannot build the
+          # second and RollForward lets the 10 runtime run the first.
+          dotnet-version: '10.0.x'
+
+      # Printed rather than assumed. A leg that silently failed to change zone
+      # would pass and mean nothing, and that is the failure this step exists
+      # to make visible.
+      - name: The runner is in the zone this leg means
+        env:
+          TZ: ${{ matrix.zone }}
+        run: |
+          set -euo pipefail
+          echo "TZ=${TZ}"
+          date
+          expected=$(TZ="${TZ}" date +%z)
+          here=$(date +%z)
+          if [ "${expected}" != "${here}" ]; then
+            echo "The shell did not take the zone: expected offset ${expected}, got ${here}." >&2
+            exit 1
+          fi
+          if [ "${here}" = "+0000" ]; then
+            echo "This leg is running at UTC, which is the zone the other job already covers." >&2
+            exit 1
+          fi
+
+      - name: Run the suite
+        env:
+          TZ: ${{ matrix.zone }}
+        run: dotnet test --nologo

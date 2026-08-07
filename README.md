@@ -1,3 +1,8 @@
+> [!NOTE]
+>
+> **Part of [Flowfin](https://github.com/Flowfin).** It works with any Jellyfin
+> server, and with the Flowfin clients.
+
 # Playback Statistics
 
 A Jellyfin plugin that turns playback into statistics the server owner and the
@@ -31,10 +36,17 @@ line so a server is offered the one that declares its own version:
     58:      - name: Build the package for the 10.11 line
     92:      - name: Build the package for the 12.0 line
 
-What is not proved is the floor of each line. The build resolves whatever
-package version the project asks for, so nothing here shows the plugin still
-compiles against the oldest server release in a line it claims. That is issue
-#17, and the support matrix holding the version detail is issue #79.
+The oldest server release in each line is declared in one place, and the plugin
+references those declarations rather than package versions of its own, so the
+artifact for a line is compiled against the floor of that line:
+
+    grep -n 'JellyfinFloorNet' Directory.Build.props
+    38:      server, and JellyfinFloorNet9 is the package version that claim is only
+    48:        <JellyfinFloorNet9>10.11.0</JellyfinFloorNet9>
+    49:        <JellyfinFloorNet10>12.0.0-rc1</JellyfinFloorNet10>
+
+The 12.0 floor is a release candidate because that line has published no stable
+release yet. The support matrix holding the version detail is issue #79.
 
 ## What it stores and who can see it
 
@@ -59,7 +71,7 @@ land the sentences above are a plan and not a description.
 
 There is no release yet:
 
-    gh api repos/iderex/jellyfin-plugin-stats/releases --jq 'length'
+    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
     0
 
 When there is one it will be distributed through this repository's own plugin
