@@ -55,3 +55,8 @@ id: no-outbound-http-client
 paths: *.cs
 pattern: (HttpClient|IHttpClientFactory|HttpMessageInvoker|SocketsHttpHandler|WebClient|HttpWebRequest|WebRequest\.Create)
 why: This plugin reads the server it runs inside and talks to nothing outside it. Proving that by watching the network needs a network namespace and root, which the headless policy refuses, so the client that would make the call is refused instead. That is a stronger statement than one observed quiet run, because it holds for runs nobody watched. docs/headless-tests.md, issue #21.
+
+id: no-ambient-clock
+paths: *.cs
+pattern: (DateTime|DateTimeOffset)\.(Now|UtcNow|Today)|TimeZoneInfo\.Local\b|TimeProvider\.System
+why: This plugin is about durations and calendar days, and a file that reads the machine clock or the machine zone behaves differently on the runner than on the server, and differently in June than on the last day of December. Every moment arrives as an argument: capture reads the timestamp the server put on the event, and a day is read in a zone that is named at the call. The suite is scanned too, because a test that reads the clock is the same defect with a shorter fuse. Issue #23.
