@@ -26,27 +26,11 @@ Two server lines are supported: Jellyfin 10.11, which runs on .NET 9, and
 Jellyfin 12.0, which runs on .NET 10. One artifact is built per line, and a
 server outside those lines is not supported.
 
-The plugin compiles for both, and the packaging workflow makes one archive per
-line so a server is offered the one that declares its own version:
-
-    grep -n 'TargetFrameworks' Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj
-    10:    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
-
-    grep -n 'Build the package for' .github/workflows/package.yml
-    58:      - name: Build the package for the 10.11 line
-    92:      - name: Build the package for the 12.0 line
-
-The oldest server release in each line is declared in one place, and the plugin
-references those declarations rather than package versions of its own, so the
-artifact for a line is compiled against the floor of that line:
-
-    grep -n 'JellyfinFloorNet' Directory.Build.props
-    38:      server, and JellyfinFloorNet9 is the package version that claim is only
-    48:        <JellyfinFloorNet9>10.11.0</JellyfinFloorNet9>
-    49:        <JellyfinFloorNet10>12.0.0-rc1</JellyfinFloorNet10>
-
-The 12.0 floor is a release candidate because that line has published no stable
-release yet. The support matrix holding the version detail is issue #79.
+The version detail is in [the support matrix](docs/support-matrix.md): the
+framework each artifact targets, the oldest server of its line each is compiled
+against, and the abi its package declares to a server. Every cell of that table
+is checked against the value the build uses, so it is read there rather than
+repeated here where the two could disagree.
 
 ## What it stores and who can see it
 
