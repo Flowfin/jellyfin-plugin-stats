@@ -70,3 +70,8 @@ id: no-server-value-in-a-page-asset
 paths: *.html
 pattern: \{\{[^}]*\}\}|<%[^>]*%>|@(Model|ViewBag|ViewData|Html)\b|%%[A-Za-z_][A-Za-z0-9_]*%%
 why: The endpoint that returns a plugin page's content carries no authorization attribute and the server configures no fallback policy, so every page asset here is handed to an unauthenticated caller. A marker left for a server, a template engine or a build step to fill in is how a name, a total or an identifier ends up in a file anybody can fetch, and it is put there by whoever writes the page rather than by whoever reviews the endpoint. Values arrive after the page loads, over an authorized request, or they do not arrive. The rule reads the tracked file; PageAssetTests reads what was built out of it and also refuses an identifier that is not the plugin's own. Neither half can tell a value somebody typed in by hand from ordinary page text. Issue #63.
+
+id: no-statement-that-drops-a-table
+paths: *.cs
+pattern: [Dd][Rr][Oo][Pp][[:space:]]+[Tt][Aa][Bb][Ll][Ee]
+why: The closest prior art answers a schema change by dropping the table and recreating it, so a user who upgrades loses their history and hears about it from a log line. Migrations here move data and never discard it. The standard SQLite table rebuild ends in a drop, so a migration that genuinely needs one has to argue this rule out of this file in a diff rather than doing it quietly. Issue #28.
