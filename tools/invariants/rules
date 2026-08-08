@@ -65,3 +65,8 @@ id: no-ambient-clock
 paths: *.cs
 pattern: (DateTime|DateTimeOffset)\.(Now|UtcNow|Today)|TimeZoneInfo\.Local\b|TimeProvider\.System
 why: This plugin is about durations and calendar days, and a file that reads the machine clock or the machine zone behaves differently on the runner than on the server, and differently in June than on the last day of December. Every moment arrives as an argument: capture reads the timestamp the server put on the event, and a day is read in a zone that is named at the call. The suite is scanned too, because a test that reads the clock is the same defect with a shorter fuse. Issue #23.
+
+id: no-server-value-in-a-page-asset
+paths: *.html
+pattern: \{\{[^}]*\}\}|<%[^>]*%>|@(Model|ViewBag|ViewData|Html)\b|%%[A-Za-z_][A-Za-z0-9_]*%%
+why: The endpoint that returns a plugin page's content carries no authorization attribute and the server configures no fallback policy, so every page asset here is handed to an unauthenticated caller. A marker left for a server, a template engine or a build step to fill in is how a name, a total or an identifier ends up in a file anybody can fetch, and it is put there by whoever writes the page rather than by whoever reviews the endpoint. Values arrive after the page loads, over an authorized request, or they do not arrive. The rule reads the tracked file; PageAssetTests reads what was built out of it and also refuses an identifier that is not the plugin's own. Neither half can tell a value somebody typed in by hand from ordinary page text. Issue #63.
