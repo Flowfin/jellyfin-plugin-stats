@@ -154,6 +154,32 @@ public class ConfigurationModelTests
     }
 
     /// <summary>
+    /// The one stored field that is not a setting stays the only one, and it is
+    /// not offered on the page. It is written by the plugin to say which shape
+    /// the file is in, and an operator editing it would only be telling the
+    /// plugin a lie about which migrations have run.
+    /// </summary>
+    /// <remarks>
+    /// The count matters as much as the name. Every other test in this file
+    /// works off the settable fields, so a second entry on that list would
+    /// quietly take a real setting out of the defaults check, the range check
+    /// and the page check at once.
+    /// </remarks>
+    [Fact]
+    public void TheShapeVersionIsStoredAndIsNotASetting()
+    {
+        Assert.Equal([nameof(PluginConfiguration.ConfigurationVersion)], NotSettings);
+        Assert.DoesNotContain("id=\"" + nameof(PluginConfiguration.ConfigurationVersion) + "\"", EmbeddedConfigurationPage(), StringComparison.Ordinal);
+
+        // Stored, unlike RejectedFields, because a stamp the model did not carry
+        // would be deleted by the first save the server made.
+        using var written = new StringWriter();
+        new XmlSerializer(typeof(PluginConfiguration)).Serialize(written, new PluginConfiguration());
+
+        Assert.Contains(nameof(PluginConfiguration.ConfigurationVersion), written.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The upstream template's three example settings are gone from the model and
     /// from the page.
     /// </summary>
@@ -321,15 +347,23 @@ public class ConfigurationModelTests
     }
 
     /// <summary>
+    /// The stored fields that are not settings. One name, and the test below
+    /// keeps it to one: an exclusion list is how a setting stops being checked
+    /// by every test in this file without anybody deciding that it should.
+    /// </summary>
+    private static readonly string[] NotSettings = [nameof(PluginConfiguration.ConfigurationVersion)];
+
+    /// <summary>
     /// Names the settings an operator can change.
     /// </summary>
-    /// <returns>The writable property names of the model.</returns>
+    /// <returns>The writable property names of the model, less the ones that are stored but not set by anybody.</returns>
     private static IEnumerable<string> SettableFields()
     {
         return typeof(PluginConfiguration)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(property => property.CanWrite)
-            .Select(property => property.Name);
+            .Select(property => property.Name)
+            .Except(NotSettings, StringComparer.Ordinal);
     }
 
     /// <summary>
