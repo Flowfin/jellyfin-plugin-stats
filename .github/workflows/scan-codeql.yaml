@@ -45,6 +45,13 @@ jobs:
     uses: jellyfin/jellyfin-meta-plugins/.github/workflows/scan-codeql.yaml@eb99033a7ff644881b014bc0b4169916c854a68b # master
     with:
       # The called workflow runs its job only where this matches the repository
-      # it is running in. It named the template, so the analysis was skipped on
-      # every run this repository has ever made.
-      repository-name: iderex/jellyfin-plugin-stats
+      # it is running in. The literal is spelled out rather than taken from
+      # ${{ github.repository }}, because the comparison is what stops a fork
+      # from spending minutes on an analysis nobody reads, and an expression
+      # that is true everywhere removes it. It is also the kind of mistake a
+      # reader can catch against the address bar.
+      #
+      # It named the account that held this repository before the transfer, so
+      # the job was skipped on every run and the check run beside the others
+      # read as an analysis that had found nothing.
+      repository-name: Flowfin/jellyfin-plugin-stats
