@@ -5,10 +5,21 @@ on:
     branches: [ master ]
     paths-ignore:
       - '**/*.md'
+  # No paths-ignore on the pull request trigger, and putting one back breaks a
+  # merge rather than a run. A filter that skips this workflow on a
+  # documentation-only change does not make the check red, it stops the check
+  # reporting at all, and a required context that never reports leaves the pull
+  # request waiting instead of failing, with nothing on the page that looks
+  # wrong. That is what happened to #129, which changed only Markdown: the
+  # filter had been harmless for as long as nothing depended on this context,
+  # and it became a permanent block the moment something did. Whether anything
+  # depends on it today is the wrong test, because a filter added here is only
+  # noticed once a merge is already stuck.
+  #
+  # The push trigger above keeps its filter. A push to master gates nothing, so
+  # a run skipped there holds nothing open.
   pull_request:
     branches: [ master ]
-    paths-ignore:
-      - '**/*.md'
   schedule:
     - cron: '24 2 * * 4'
   workflow_dispatch:

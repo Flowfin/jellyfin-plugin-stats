@@ -20,6 +20,36 @@
     </PropertyGroup>
 
     <!--
+      The oldest server release in each supported line, as the package version
+      that server ships. A plugin compiled against a later release of a line can
+      call something that release added, and it then fails to load for everybody
+      still on the floor of that line. Compiling against the floor is what stops
+      that, so these are the versions every project here references: the plugin,
+      which ships, and the suite, which carries the same assemblies because there
+      is no server under it.
+
+      Each floor is written here once and nowhere else. Two projects referenced
+      the same two versions before this, so a bump was two edits that could be
+      made one at a time, and the ABI floor jobs in .github/workflows/build.yaml
+      refuse a project that names a version of its own instead of reading these.
+
+      They sit beside the manifest reader above because the manifest is the other
+      half of the same statement: build.yaml declares targetAbi 10.11.0.0 to the
+      server, and JellyfinFloorNet9 is the package version that claim is only
+      true if the plugin was built against. The floor job compares the two.
+
+      The 12.0 line has published no stable release. Its floor is the oldest
+      release candidate that carries a net10.0 target, and it moves to the
+      release when there is one:
+
+          curl -s https://api.nuget.org/v3-flatcontainer/jellyfin.controller/index.json
+    -->
+    <PropertyGroup>
+        <JellyfinFloorNet9>10.11.0</JellyfinFloorNet9>
+        <JellyfinFloorNet10>12.0.0-rc1</JellyfinFloorNet10>
+    </PropertyGroup>
+
+    <!--
       A version that could not be read leaves these properties empty, and the SDK
       then substitutes its own default without saying so. That was measured while
       writing this: a three-part version in build.yaml produced a build that
