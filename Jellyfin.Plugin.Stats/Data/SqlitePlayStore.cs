@@ -62,6 +62,34 @@ public sealed class SqlitePlayStore : IPlayStore
           ORDER BY StartedUtcTicks DESC, Id DESC
           LIMIT $limit";
 
+    // The export's two reads. Spelled out for the same reason as the select
+    // above: a column list shared between statements has to be pasted into them
+    // to be used, and pasting is the concatenation the invariant rule refuses.
+    //
+    // Both order by Id, which is the order the rows were written. An export is
+    // compared against another export, and StartedUtcTicks is not unique: two
+    // plays that started in the same tick would come back in whichever order
+    // the query planner happened to produce, and a round trip would then differ
+    // from its original for a reason that has nothing to do with the archive.
+    private const string SelectEveryPlay =
+        @"SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+                 StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+          FROM plays
+          ORDER BY Id";
+
+    private const string SelectEveryPlayOfAUser =
+        @"SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+                 StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+          FROM plays
+          WHERE UserId = $userId
+          ORDER BY Id";
+
     // Transcode reasons arrive as a set of short identifiers the server names,
     // and they are read back as a whole or not at all, so they travel in one
     // column. A table of its own would be a join on every read of every report
@@ -171,6 +199,41 @@ public sealed class SqlitePlayStore : IPlayStore
         }
 
         return plays;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// An iterator rather than a method returning a list, so the rows arrive
+    /// one at a time and the whole store is never in memory at once. It also
+    /// puts the command and the reader inside the enumerator's own lifetime:
+    /// they are opened on the first row asked for and closed when the walk is
+    /// disposed of, which is what a foreach does at its end and what a caller
+    /// that stops early does too.
+    /// </remarks>
+    public IEnumerable<PlayRecord> AllPlays()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectEveryPlay;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            yield return ReadPlay(reader);
+        }
+    }
+
+    /// <inheritdoc />
+    public IEnumerable<PlayRecord> PlaysFor(Guid userId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectEveryPlayOfAUser;
+        command.Parameters.AddWithValue("$userId", Text(userId));
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            yield return ReadPlay(reader);
+        }
     }
 
     /// <inheritdoc />
