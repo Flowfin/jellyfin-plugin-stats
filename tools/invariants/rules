@@ -31,6 +31,11 @@ paths: *.cs
 pattern: (RemoteEndPoint|UserAgent|User-Agent|\b[Ii]tem\.Path\b)
 why: A network address, a user agent and a library file path are the fields that turn playback statistics into a record of where somebody was and what their disk holds. They are refused at the source rather than dropped later. Issues #27 and #48.
 
+id: no-name-in-a-log-message
+paths: *.cs
+pattern: "[^"]*\{[A-Za-z]*(UserName|Username|ItemName|ItemTitle|SeriesName|EpisodeName|AlbumName|ClientName|DeviceName)\}
+why: A log is read by more people than the database is, it is copied into bug reports, and it outlives every retention setting this plan can enforce, so the messages carry identifiers and not names. The pattern refuses the placeholder rather than the call, because a message template in this tree sits on a line of its own and a rule reading the call would not see it. That makes the rule stricter than the policy it enforces, which allows a title at debug level, and it names the placeholders rather than every one ending in a name, because a generic type parameter inside a cref ends in one too and that was measured. The near miss is the closest prior art's own start-up block, which writes the item title, the client and the device out at information level, one line each. Issue #48.
+
 id: no-test-that-drives-a-browser
 paths: *
 pattern: (Selenium|Playwright|WebDriver|ChromeDriver|GeckoDriver|puppeteer)
@@ -55,3 +60,13 @@ id: no-outbound-http-client
 paths: *.cs
 pattern: (HttpClient|IHttpClientFactory|HttpMessageInvoker|SocketsHttpHandler|WebClient|HttpWebRequest|WebRequest\.Create)
 why: This plugin reads the server it runs inside and talks to nothing outside it. Proving that by watching the network needs a network namespace and root, which the headless policy refuses, so the client that would make the call is refused instead. That is a stronger statement than one observed quiet run, because it holds for runs nobody watched. docs/headless-tests.md, issue #21.
+
+id: no-ambient-clock
+paths: *.cs
+pattern: (DateTime|DateTimeOffset)\.(Now|UtcNow|Today)|TimeZoneInfo\.Local\b|TimeProvider\.System
+why: This plugin is about durations and calendar days, and a file that reads the machine clock or the machine zone behaves differently on the runner than on the server, and differently in June than on the last day of December. Every moment arrives as an argument: capture reads the timestamp the server put on the event, and a day is read in a zone that is named at the call. The suite is scanned too, because a test that reads the clock is the same defect with a shorter fuse. Issue #23.
+
+id: no-server-value-in-a-page-asset
+paths: *.html
+pattern: \{\{[^}]*\}\}|<%[^>]*%>|@(Model|ViewBag|ViewData|Html)\b|%%[A-Za-z_][A-Za-z0-9_]*%%
+why: The endpoint that returns a plugin page's content carries no authorization attribute and the server configures no fallback policy, so every page asset here is handed to an unauthenticated caller. A marker left for a server, a template engine or a build step to fill in is how a name, a total or an identifier ends up in a file anybody can fetch, and it is put there by whoever writes the page rather than by whoever reviews the endpoint. Values arrive after the page loads, over an authorized request, or they do not arrive. The rule reads the tracked file; PageAssetTests reads what was built out of it and also refuses an identifier that is not the plugin's own. Neither half can tell a value somebody typed in by hand from ordinary page text. Issue #63.

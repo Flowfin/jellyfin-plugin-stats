@@ -7,12 +7,15 @@ using Xunit;
 namespace Jellyfin.Plugin.Stats.Tests;
 
 /// <summary>
-/// The plugin's identifier is written in two files: in <c>Plugin.Id</c>, which is
-/// what a server tells installed plugins apart by, and in build.yaml, which is
-/// what the packaging tool stamps into the package and what a catalogue lists.
-/// Nothing in the compiler compares them, so an edit to either one alone builds,
-/// packages and installs, and the plugin a catalogue offers is then a different
-/// plugin from the one already on a server.
+/// The plugin's identifier is written in three files: in <c>Plugin.Id</c>, which
+/// is what a server tells installed plugins apart by, in build.yaml, which is
+/// what the packaging tool stamps into the package and what a catalogue lists,
+/// and in the configuration page, which passes it to both of the calls it makes
+/// to the server. Nothing in the compiler compares them, so an edit to any one
+/// alone builds, packages and installs, and what breaks is either the plugin a
+/// catalogue offers being a different plugin from the one already on a server,
+/// or a settings page that reads and writes the configuration of a plugin that
+/// is not this one.
 /// </summary>
 public class PluginIdentityTests
 {
@@ -30,6 +33,50 @@ public class PluginIdentityTests
             "The guid in build.yaml does not parse as a identifier: '" + declared + "'.");
 
         Assert.Equal(manifestId, PluginId());
+    }
+
+    [Fact]
+    public void ThePluginIdEqualsTheIdentifierTheConfigurationPageAsksTheServerFor()
+    {
+        var page = EmbeddedConfigurationPage();
+
+        var declaration = Regex.Match(page, "pluginUniqueId:[ ]*'(?<guid>[^']*)'");
+        Assert.True(declaration.Success, "The configuration page carries no quoted pluginUniqueId.");
+
+        var declared = declaration.Groups["guid"].Value;
+        Assert.True(
+            Guid.TryParse(declared, out var pageId),
+            "The pluginUniqueId in the configuration page does not parse as an identifier: '" + declared + "'.");
+
+        Assert.Equal(pageId, PluginId());
+    }
+
+    /// <summary>
+    /// Reads the configuration page out of the compiled plugin assembly.
+    /// </summary>
+    /// <remarks>
+    /// The embedded copy is read rather than the file beside it, because the
+    /// embedded copy is the one a server loads and serves to a dashboard. A page
+    /// edited on disk and not rebuilt into the assembly is exactly the state this
+    /// test exists to refuse, and reading the file would pass on it.
+    /// </remarks>
+    /// <returns>The text of the embedded configuration page.</returns>
+    private static string EmbeddedConfigurationPage()
+    {
+        var pluginType = typeof(Plugin);
+
+        // The same expression Plugin.GetPages builds its EmbeddedResourcePath
+        // from, so a page this cannot find is a page the server cannot find.
+        var name = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0}.Configuration.configPage.html",
+            pluginType.Namespace);
+
+        using var stream = pluginType.Assembly.GetManifestResourceStream(name);
+        Assert.True(stream is not null, "The assembly embeds no resource named " + name + ".");
+
+        using var reader = new StreamReader(stream!);
+        return reader.ReadToEnd();
     }
 
     /// <summary>

@@ -82,8 +82,11 @@ public sealed class FakeSessionManager : ISessionManager
     /// begins playing.
     /// </summary>
     /// <param name="session">The session that started playing.</param>
-    public void RaisePlaybackStart(SessionInfo session)
+    /// <param name="at">When the server heard from the session, where the test means a particular moment.</param>
+    public void RaisePlaybackStart(SessionInfo session, DateTimeOffset? at = null)
     {
+        HeardFrom(session, at);
+
         // Built before the invoke rather than inside it: a null-conditional
         // invoke does not evaluate its argument, and a fake that only checks
         // its inputs when somebody is listening is a fake that checks nothing.
@@ -97,8 +100,10 @@ public sealed class FakeSessionManager : ISessionManager
     /// <param name="session">The session that reported.</param>
     /// <param name="position">How far into the item the session is.</param>
     /// <param name="isPaused">Whether the session is paused at that position.</param>
-    public void RaisePlaybackProgress(SessionInfo session, TimeSpan position, bool isPaused = false)
+    /// <param name="at">When the server heard from the session, where the test means a particular moment.</param>
+    public void RaisePlaybackProgress(SessionInfo session, TimeSpan position, bool isPaused = false, DateTimeOffset? at = null)
     {
+        HeardFrom(session, at);
         var args = Progress(session, position, isPaused);
         PlaybackProgress?.Invoke(this, args);
     }
@@ -109,9 +114,12 @@ public sealed class FakeSessionManager : ISessionManager
     /// <param name="session">The session that stopped.</param>
     /// <param name="position">Where the session stopped.</param>
     /// <param name="playedToCompletion">Whether the item was played to the end.</param>
-    public void RaisePlaybackStopped(SessionInfo session, TimeSpan position, bool playedToCompletion = false)
+    /// <param name="at">When the server last heard from the session.</param>
+    public void RaisePlaybackStopped(SessionInfo session, TimeSpan position, bool playedToCompletion = false, DateTimeOffset? at = null)
     {
         ArgumentNullException.ThrowIfNull(session);
+
+        HeardFrom(session, at);
 
         var args = new PlaybackStopEventArgs
         {
@@ -173,6 +181,25 @@ public sealed class FakeSessionManager : ISessionManager
     public void RaiseCapabilitiesChanged(SessionInfo session)
     {
         CapabilitiesChanged?.Invoke(this, new SessionEventArgs { SessionInfo = session });
+    }
+
+    /// <summary>
+    /// Sets the moment the server last heard from the session, which is where
+    /// every time in a play row comes from.
+    /// </summary>
+    /// <remarks>
+    /// The server writes this field when a client checks in, and only then, so
+    /// a test that means a play an hour long says so here rather than waiting an
+    /// hour or letting anything read a clock. A raise that names no moment
+    /// leaves the field where it was, so the tests written before this existed
+    /// see exactly what they saw.
+    /// </remarks>
+    private static void HeardFrom(SessionInfo session, DateTimeOffset? at)
+    {
+        if (at is { } moment)
+        {
+            session.LastPlaybackCheckIn = moment.UtcDateTime;
+        }
     }
 
     private List<User> UsersOf(SessionInfo session)
