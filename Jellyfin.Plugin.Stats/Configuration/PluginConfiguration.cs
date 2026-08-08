@@ -46,6 +46,27 @@ public class PluginConfiguration : BasePluginConfiguration
     private string[] _excludedItemTypes = [];
 
     /// <summary>
+    /// Gets or sets the shape this configuration was stored in.
+    /// </summary>
+    /// <remarks>
+    /// Not a setting. It is written by the plugin and read by the plugin, it is
+    /// not on the settings page, and an operator changing it by hand would only
+    /// be telling the plugin a lie about which migrations have run. It sits on
+    /// the model rather than being kept beside the file because the server
+    /// serializes this type over the whole file, so a stamp the model did not
+    /// carry would be deleted by the first save and the file would look like a
+    /// pre-stamp one again on the next start.
+    /// <para>
+    /// It starts at the current version because a configuration this plugin
+    /// builds for itself is by definition in the shape this plugin writes. A
+    /// stored file that is older than that never reaches the default: the
+    /// migrator moves the file forward before the server reads it, so the value
+    /// that lands here is the one the file was moved to.
+    /// </para>
+    /// </remarks>
+    public int ConfigurationVersion { get; set; } = ConfigurationMigrations.Current;
+
+    /// <summary>
     /// Gets or sets a value indicating whether plays are recorded at all.
     /// </summary>
     /// <remarks>
