@@ -82,3 +82,5 @@ Requires the .NET SDK for the line you are building against.
 
 GPL-3.0-or-later. The full text is in [LICENSE](LICENSE). Jellyfin's own
 libraries are GPLv3, so a plugin linked against them is GPLv3 once compiled.
+
+See [NOTICE.md](NOTICE.md) for the intended-use notice.
