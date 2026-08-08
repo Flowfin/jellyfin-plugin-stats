@@ -13,51 +13,138 @@
         >
             <div data-role="content">
                 <div class="content-primary">
+                    <div
+                        id="StatsRejectedFields"
+                        class="fieldDescription"
+                        style="display: none"
+                    ></div>
                     <form id="StatsConfigForm">
-                        <div class="selectContainer">
-                            <label class="selectLabel" for="Options">Several Options</label>
-                            <select
-                                is="emby-select"
-                                id="Options"
-                                name="Options"
-                                class="emby-select-withcolor emby-select"
-                            >
-                                <option id="optOneOption" value="OneOption">One Option</option>
-                                <option id="optAnotherOption" value="AnotherOption">
-                                    Another Option
-                                </option>
-                            </select>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="AnInteger"
-                                >An Integer</label
-                            >
-                            <input
-                                id="AnInteger"
-                                name="AnInteger"
-                                type="number"
-                                is="emby-input"
-                                min="0"
-                            />
-                            <div class="fieldDescription">A Description</div>
-                        </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input
-                                    id="TrueFalseSetting"
-                                    name="TrueFalseCheckBox"
+                                    id="CaptureEnabled"
+                                    name="CaptureEnabled"
                                     type="checkbox"
                                     is="emby-checkbox"
                                 />
-                                <span>A Checkbox</span>
+                                <span>Record plays</span>
                             </label>
+                            <div class="fieldDescription">
+                                Off stops the writing, not the reporting. Nothing new is recorded
+                                while this is off; what is already stored stays until its retention
+                                window ends.
+                            </div>
                         </div>
                         <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="AString"
-                                >A String</label
+                            <label class="inputLabel inputLabelUnfocused" for="PlayRowRetentionDays"
+                                >Keep play rows for (days)</label
                             >
-                            <input id="AString" name="AString" type="text" is="emby-input" />
-                            <div class="fieldDescription">Another Description</div>
+                            <input
+                                id="PlayRowRetentionDays"
+                                name="PlayRowRetentionDays"
+                                type="number"
+                                is="emby-input"
+                                min="1"
+                                max="3650"
+                            />
+                            <div class="fieldDescription">
+                                One row per play, which is the detail a user reads about themselves.
+                                Between 1 and 3650. Default 90.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label
+                                class="inputLabel inputLabelUnfocused"
+                                for="DailyAggregateRetentionDays"
+                                >Keep daily totals for (days)</label
+                            >
+                            <input
+                                id="DailyAggregateRetentionDays"
+                                name="DailyAggregateRetentionDays"
+                                type="number"
+                                is="emby-input"
+                                min="1"
+                                max="3650"
+                            />
+                            <div class="fieldDescription">
+                                Totals per day, which name nobody. Usually longer than the rows
+                                above. Between 1 and 3650. Default 400.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="RollupTimeZone"
+                                >Count days in this zone</label
+                            >
+                            <input
+                                id="RollupTimeZone"
+                                name="RollupTimeZone"
+                                type="text"
+                                is="emby-input"
+                            />
+                            <div class="fieldDescription">
+                                A zone name such as UTC or Europe/Berlin. It decides which day a
+                                play late at night belongs to. Default UTC.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ExcludedUserIds"
+                                >Do not record these users</label
+                            >
+                            <input
+                                id="ExcludedUserIds"
+                                name="ExcludedUserIds"
+                                type="text"
+                                is="emby-input"
+                            />
+                            <div class="fieldDescription">
+                                User identifiers, separated by commas. Anything that is not an
+                                identifier is dropped when this is saved.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ExcludedItemTypes"
+                                >Do not record these item types</label
+                            >
+                            <input
+                                id="ExcludedItemTypes"
+                                name="ExcludedItemTypes"
+                                type="text"
+                                is="emby-input"
+                            />
+                            <div class="fieldDescription">
+                                Item type names, separated by commas, such as Movie or Episode. A
+                                name the server does not know is dropped when this is saved.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MaximumRangeDays"
+                                >Widest range a report may ask for (days)</label
+                            >
+                            <input
+                                id="MaximumRangeDays"
+                                name="MaximumRangeDays"
+                                type="number"
+                                is="emby-input"
+                                min="1"
+                                max="3650"
+                            />
+                            <div class="fieldDescription">Between 1 and 3650. Default 400.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label
+                                class="inputLabel inputLabelUnfocused"
+                                for="MaximumRowsPerResponse"
+                                >Most rows in one response</label
+                            >
+                            <input
+                                id="MaximumRowsPerResponse"
+                                name="MaximumRowsPerResponse"
+                                type="number"
+                                is="emby-input"
+                                min="1"
+                                max="100000"
+                            />
+                            <div class="fieldDescription">Between 1 and 100000. Default 1000.</div>
                         </div>
                         <div>
                             <button
@@ -88,7 +175,69 @@
             <script type="text/javascript">
                 var StatsConfig = {
                     pluginUniqueId: '29e90267-52ee-4bec-b4fb-870b8f5ddc53',
+                    numbers: [
+                        'PlayRowRetentionDays',
+                        'DailyAggregateRetentionDays',
+                        'MaximumRangeDays',
+                        'MaximumRowsPerResponse',
+                    ],
+                    lists: ['ExcludedUserIds', 'ExcludedItemTypes'],
                 };
+
+                // Nothing on this page is filled in by the server. The page is
+                // served to anybody who asks for it, so every value below
+                // arrives from an authorized request made after it has loaded.
+                function statsShow(config) {
+                    document.querySelector('#CaptureEnabled').checked = config.CaptureEnabled;
+                    document.querySelector('#RollupTimeZone').value = config.RollupTimeZone;
+
+                    StatsConfig.numbers.forEach(function (field) {
+                        document.querySelector('#' + field).value = config[field];
+                    });
+
+                    StatsConfig.lists.forEach(function (field) {
+                        document.querySelector('#' + field).value = (config[field] || []).join(
+                            ', ',
+                        );
+                    });
+
+                    var rejected = document.querySelector('#StatsRejectedFields');
+                    var refused = config.RejectedFields || [];
+                    if (refused.length) {
+                        rejected.textContent =
+                            'The stored value of ' +
+                            refused.join(', ') +
+                            ' was outside what this plugin accepts, so the default is being used' +
+                            ' instead. Saving this page writes the values shown here.';
+                        rejected.style.display = '';
+                    } else {
+                        rejected.textContent = '';
+                        rejected.style.display = 'none';
+                    }
+                }
+
+                function statsCollect(config) {
+                    config.CaptureEnabled = document.querySelector('#CaptureEnabled').checked;
+                    config.RollupTimeZone = document.querySelector('#RollupTimeZone').value.trim();
+
+                    StatsConfig.numbers.forEach(function (field) {
+                        config[field] = parseInt(document.querySelector('#' + field).value, 10);
+                    });
+
+                    StatsConfig.lists.forEach(function (field) {
+                        config[field] = document
+                            .querySelector('#' + field)
+                            .value.split(',')
+                            .map(function (entry) {
+                                return entry.trim();
+                            })
+                            .filter(function (entry) {
+                                return entry.length > 0;
+                            });
+                    });
+
+                    return config;
+                }
 
                 document
                     .querySelector('#StatsConfigPage')
@@ -96,11 +245,7 @@
                         Dashboard.showLoadingMsg();
                         ApiClient.getPluginConfiguration(StatsConfig.pluginUniqueId).then(
                             function (config) {
-                                document.querySelector('#Options').value = config.Options;
-                                document.querySelector('#AnInteger').value = config.AnInteger;
-                                document.querySelector('#TrueFalseSetting').checked =
-                                    config.TrueFalseSetting;
-                                document.querySelector('#AString').value = config.AString;
+                                statsShow(config);
                                 Dashboard.hideLoadingMsg();
                             },
                         );
@@ -110,16 +255,17 @@
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(StatsConfig.pluginUniqueId).then(
                         function (config) {
-                            config.Options = document.querySelector('#Options').value;
-                            config.AnInteger = document.querySelector('#AnInteger').value;
-                            config.TrueFalseSetting =
-                                document.querySelector('#TrueFalseSetting').checked;
-                            config.AString = document.querySelector('#AString').value;
                             ApiClient.updatePluginConfiguration(
                                 StatsConfig.pluginUniqueId,
-                                config,
+                                statsCollect(config),
                             ).then(function (result) {
                                 Dashboard.processPluginConfigurationUpdateResult(result);
+                                // Read back what was stored, so a value this
+                                // plugin refused is shown as refused rather
+                                // than left on the page looking accepted.
+                                ApiClient.getPluginConfiguration(StatsConfig.pluginUniqueId).then(
+                                    statsShow,
+                                );
                             });
                         },
                     );
