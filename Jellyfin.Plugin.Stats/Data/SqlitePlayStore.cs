@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.Stats.Data;
@@ -354,17 +355,17 @@ public sealed class SqlitePlayStore : IPlayStore
     /// <returns>The column to store.</returns>
     private static string JoinReasons(IReadOnlyList<string> reasons)
     {
-        foreach (var reason in reasons)
+        var carriesTheSeparator = reasons.FirstOrDefault(
+            reason => reason.Contains(ReasonSeparator, StringComparison.Ordinal));
+
+        if (carriesTheSeparator is not null)
         {
-            if (reason.Contains(ReasonSeparator, StringComparison.Ordinal))
-            {
-                throw new ArgumentException(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "A transcode reason carries the character the store separates reasons with, so it would read back as two: {0}",
-                        reason),
-                    nameof(reasons));
-            }
+            throw new ArgumentException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "A transcode reason carries the character the store separates reasons with, so it would read back as two: {0}",
+                    carriesTheSeparator),
+                nameof(reasons));
         }
 
         return string.Join(ReasonSeparator, reasons);

@@ -124,7 +124,7 @@ public sealed class DataFolderLayoutTests : IDisposable
     /// </summary>
     private static async Task AWholePlay(string dataFolderPath)
     {
-        var writer = new QueuedPlayWriter(
+        using var writer = new QueuedPlayWriter(
             () => new SqlitePlayStore(dataFolderPath),
             QueuedPlayWriter.DefaultBound,
             NullLogger<QueuedPlayWriter>.Instance);

@@ -162,7 +162,7 @@ public sealed class CaptureGateTests
     /// </summary>
     private static async Task APlayThrough(IPlayStore store, PluginConfiguration configuration, Guid userId)
     {
-        var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, NullLogger<QueuedPlayWriter>.Instance);
+        using var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, NullLogger<QueuedPlayWriter>.Instance);
         var gate = new CaptureGate(writer, () => configuration);
         var tracker = new PlayTracker(gate, NullLogger<PlayTracker>.Instance);
         var sessions = new FakeSessionManager();

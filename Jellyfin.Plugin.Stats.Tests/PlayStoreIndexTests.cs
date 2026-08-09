@@ -318,7 +318,7 @@ public sealed class PlayStoreIndexTests : IDisposable
             CultureInfo.InvariantCulture,
             "{0}\n{1}rows read in {2:F1} ms",
             query.Trim(),
-            plan.ToString(),
+            plan,
             elapsed.TotalMilliseconds));
 
         Assert.Contains(index, plan.ToString(), StringComparison.Ordinal);
@@ -396,7 +396,7 @@ public sealed class PlayStoreIndexTests : IDisposable
             for (var play = 0; play < PlaysPerDay; play++)
             {
                 var index = (day * PlaysPerDay) + play;
-                var started = Epoch.AddDays(day).AddMinutes(play * 20);
+                var started = Epoch.AddDays(day).AddMinutes(play * 20d);
 
                 schemaVersion.Value = SqlitePlayStore.SchemaVersion;
                 userId.Value = Text(UserAt(index % Users));

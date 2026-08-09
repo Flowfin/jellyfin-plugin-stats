@@ -48,7 +48,7 @@ public sealed class QueuedPlayWriterTests
         // the held store, so the raise never returns; on the test's own thread
         // that is a suite that hangs and reports nothing, and on this one it is
         // an assertion that fails and says which.
-        var returned = new ManualResetEventSlim(initialState: false);
+        using var returned = new ManualResetEventSlim(initialState: false);
         var raising = new Thread(() =>
         {
             RaiseAPlay(sessions, "play-1");
@@ -80,7 +80,7 @@ public sealed class QueuedPlayWriterTests
     public void RowsPastTheBoundAreTurnedAwayAndCounted()
     {
         var store = new HoldablePlayStore();
-        var writer = WriterOver(store, bound: 4);
+        using var writer = WriterOver(store, bound: 4);
         store.Hold();
 
         // One row first, and then a wait until the writer is inside the store
@@ -115,7 +115,7 @@ public sealed class QueuedPlayWriterTests
     public void EveryRowAlreadyAcceptedIsWrittenBeforeDisposeReturns()
     {
         var store = new HoldablePlayStore();
-        var writer = WriterOver(store, bound: 64);
+        using var writer = WriterOver(store, bound: 64);
         store.Hold();
 
         for (var i = 0; i < 20; i++)
@@ -138,7 +138,7 @@ public sealed class QueuedPlayWriterTests
     public void ARowHandedOverAfterTheWriterStoppedIsCountedRatherThanThrown()
     {
         var store = new HoldablePlayStore();
-        var writer = WriterOver(store);
+        using var writer = WriterOver(store);
         writer.Dispose();
 
         // An event can still be in flight when the server stops the plugin.
@@ -157,7 +157,7 @@ public sealed class QueuedPlayWriterTests
     {
         var logger = new RecordingLogger<QueuedPlayWriter>();
         var store = new HoldablePlayStore { Throwing = () => new IOException("the disk is full") };
-        var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, logger);
+        using var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, logger);
 
         for (var i = 0; i < 12; i++)
         {
@@ -178,7 +178,7 @@ public sealed class QueuedPlayWriterTests
     {
         var logger = new RecordingLogger<QueuedPlayWriter>();
         var store = new HoldablePlayStore { Throwing = () => new IOException("the disk is full") };
-        var writer = new QueuedPlayWriter(() => store, bound: 2, logger: logger);
+        using var writer = new QueuedPlayWriter(() => store, bound: 2, logger: logger);
         store.Hold();
 
         // Held on the first row, then three more at a bound of two, so exactly
@@ -213,7 +213,7 @@ public sealed class QueuedPlayWriterTests
     {
         var logger = new RecordingLogger<QueuedPlayWriter>();
         var opens = 0;
-        var writer = new QueuedPlayWriter(
+        using var writer = new QueuedPlayWriter(
             () =>
             {
                 opens++;
