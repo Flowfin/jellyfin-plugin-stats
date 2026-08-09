@@ -14,3 +14,19 @@
 !/Jellyfin.Plugin.Stats/Configuration/*.html
 !/Jellyfin.Plugin.Stats/Configuration/*.css
 !/Jellyfin.Plugin.Stats/Configuration/*.js
+!/Jellyfin.Plugin.Stats/Pages
+/Jellyfin.Plugin.Stats/Pages/*
+!/Jellyfin.Plugin.Stats/Pages/*.html
+!/Jellyfin.Plugin.Stats/Pages/*.css
+!/Jellyfin.Plugin.Stats/Pages/*.js
+
+# The tests for the drawing module are read by the same check as the module.
+# They are not shipped into the dashboard, and they are the one place a reader
+# checks what the module promises, so a diff in them has to be the change and
+# not the whitespace. The near misses under tools/ stay out: each of those is a
+# file that has to keep the exact shape its rule fires on.
+!/Jellyfin.Plugin.Stats.Tests
+/Jellyfin.Plugin.Stats.Tests/*
+!/Jellyfin.Plugin.Stats.Tests/Pages
+/Jellyfin.Plugin.Stats.Tests/Pages/*
+!/Jellyfin.Plugin.Stats.Tests/Pages/*.js

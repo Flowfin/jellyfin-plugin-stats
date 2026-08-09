@@ -1,0 +1,64 @@
+# The tests for the modules this plugin ships into the dashboard.
+#
+# The .NET suite covers everything that runs on the server. A module that runs
+# in the page cannot be reached from it, and the headless policy refuses the
+# other way of covering one: a browser driving the page needs a display or a
+# downloaded browser and a running server. What is left is the module read as
+# plain functions from data to markup, and this is the route that reads them.
+#
+# The runner built into node is the whole apparatus. It installs nothing, so
+# there is no manifest of dependencies to pin and no lock file to keep, and the
+# node version is the one the formatting check already installs.
+name: Page modules
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Read-only: the tests read the checked-out tree and nothing else.
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes an in-flight one. This is a test run,
+# not a publish, so cancelling a superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  modules:
+    # The check-run name the ruleset can match once this has run green.
+    name: Test the page modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the token is not persisted.
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The same major the formatting check pins, so one version of node
+          # covers both routes and a module that runs here runs there.
+          node-version: '24'
+
+      # Printed rather than assumed. A run that found no test files at all
+      # would otherwise report nothing and pass, which is the shape this step
+      # exists to make visible: the count is asserted before the tests run.
+      - name: There are page module tests to run
+        run: |
+          set -euo pipefail
+          found=$(ls Jellyfin.Plugin.Stats.Tests/Pages/*.test.js | wc -l)
+          echo "${found} test file(s)"
+          if [ "${found}" -eq 0 ]; then
+            echo "No page module test file was found, so this job would pass without running anything." >&2
+            exit 1
+          fi
+
+      - name: Run the page module tests
+        run: node --test "Jellyfin.Plugin.Stats.Tests/Pages/*.test.js"

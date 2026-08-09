@@ -1,0 +1,9 @@
+{
+  "name": "jellyfin-plugin-stats-page-assets",
+  "private": true,
+  "type": "module",
+  "description": "Marks the page assets this plugin ships as modules so node reads them the way a browser does. No dependencies: the drawing module is this repository's own and its tests use the runner built into node.",
+  "scripts": {
+    "test": "node --test Jellyfin.Plugin.Stats.Tests/Pages/"
+  }
+}
