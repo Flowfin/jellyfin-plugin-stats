@@ -127,12 +127,9 @@ public class SupportMatrixTests
             "(?m)^version:[ ]*\"(?<value>[^\"]*)\"",
             "build.yaml");
 
-        foreach (var row in Table())
+        if (Table().Any(row => string.Equals(row.PluginVersions, NoneReleased, StringComparison.Ordinal)))
         {
-            if (string.Equals(row.PluginVersions, NoneReleased, StringComparison.Ordinal))
-            {
-                Assert.Equal(UnreleasedVersion, version);
-            }
+            Assert.Equal(UnreleasedVersion, version);
         }
     }
 
