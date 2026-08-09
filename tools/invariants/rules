@@ -75,3 +75,8 @@ id: no-statement-that-drops-a-table
 paths: *.cs
 pattern: [Dd][Rr][Oo][Pp][[:space:]]+[Tt][Aa][Bb][Ll][Ee]
 why: The closest prior art answers a schema change by dropping the table and recreating it, so a user who upgrades loses their history and hears about it from a log line. Migrations here move data and never discard it. The standard SQLite table rebuild ends in a drop, so a migration that genuinely needs one has to argue this rule out of this file in a diff rather than doing it quietly. Issue #28.
+
+id: no-external-host-in-a-page-asset
+paths: *.html
+pattern: (src|href)[[:space:]]*=[[:space:]]*["'](https?:)?//|@import[[:space:]]+(url\()?["']?(https?:)?//|(fetch|importScripts)\([[:space:]]*["'](https?:)?//
+why: The closest prior art ships a minified chart library and loads what it does not ship from somebody else's server. A script fetched at page load is code nobody in this repository read, running in a signed-in administrator's dashboard, and it fails outright on a server with no way out to the internet; a stylesheet or a font is the same request and additionally tells its host which server opened the page. Everything a page needs is served from the plugin, and the charts are drawn by a module of this plugin's own rather than by a bundle. The rule reads tracked HTML, which is every page asset in the tree today; a script or stylesheet kept in a file of its own needs its own block here, because a rule carries one path glob. Issue #62.
