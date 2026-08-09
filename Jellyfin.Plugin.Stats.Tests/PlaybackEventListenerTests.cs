@@ -195,7 +195,8 @@ public class PlaybackEventListenerTests
         // anything can see it here, and a registration that stopped resolving
         // is caught here rather than on a server.
         Assert.IsType<PlayTracker>(provider.GetRequiredService<IPlaybackEventSink>());
-        Assert.IsType<StatsData.QueuedPlayWriter>(provider.GetRequiredService<IFinishedPlaySink>());
+        Assert.IsType<CaptureGate>(provider.GetRequiredService<IFinishedPlaySink>());
+        Assert.NotNull(provider.GetRequiredService<StatsData.QueuedPlayWriter>());
     }
 
     [Fact]
