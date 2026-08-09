@@ -59,7 +59,11 @@ public sealed class StoreFromALaterBuildTests : IDisposable
         MoveTheStorePastThisBuild();
 
         var logger = new RecordingLogger<QueuedPlayWriter>();
-        var writer = new QueuedPlayWriter(
+        // using, so the writer is closed even if Add throws. The explicit Dispose
+        // call below stays: it is part of what this test exercises. Calling it
+        // twice is safe because Dispose takes _gate and returns immediately once
+        // _stopped is set.
+        using var writer = new QueuedPlayWriter(
             () => new SqlitePlayStore(_root),
             QueuedPlayWriter.DefaultBound,
             logger);
