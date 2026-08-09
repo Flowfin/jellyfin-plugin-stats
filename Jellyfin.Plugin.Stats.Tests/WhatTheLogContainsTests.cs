@@ -73,7 +73,7 @@ public class WhatTheLogContainsTests
     {
         var sessions = new FakeSessionManager();
         var logger = new RecordingLogger<PlaybackEventListener>();
-        var listener = new PlaybackEventListener(sessions, new DiscardingPlaybackEventSink(), logger);
+        var listener = new PlaybackEventListener(sessions, new KeepsNothingSink(), logger);
 
         await listener.StartAsync(CancellationToken.None);
         RaiseAWholePlay(sessions);
