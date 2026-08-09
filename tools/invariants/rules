@@ -92,3 +92,8 @@ except: IPlayStore.cs SqlitePlayStore.cs QueuedPlayWriter.cs PlayArchive.cs
 except-in: Jellyfin.Plugin.Stats.Tests
 pattern: IPlayStore
 why: A setting that turns capture off, and a user who asked not to be recorded, are honoured in one function immediately before the write. Anything that reaches the store on its own goes round that function, and what it writes is a row nobody consented to. The rule refuses the store's interface being named at all, which is the greppable form of the property: reaching the store is naming it. The four files spared are the interface itself, the store, the queue that is the write path, and the archive, whose import is the one other operation whose job is to put rows in; a fifth needs a line in this file and an argument in a pull request. The suite is spared as a directory, because a test that drives a store is what proves any of this. Issue #39.
+
+id: no-external-host-in-a-page-script
+paths: *.js
+pattern: (import|export)[^;]*[[:space:]]from[[:space:]]*["'](https?:)?//|import\([[:space:]]*["'](https?:)?//|(fetch|importScripts|Worker|EventSource|WebSocket)\([[:space:]]*["'`](https?:)?//|(src|href)[[:space:]]*=[[:space:]]*["'`](https?:)?//
+why: The rule beside this one reads tracked HTML, and a rule carries one path glob, so the moment a page keeps its script in a file of its own the guarantee stops at the page and the script is unread. This is that half. A module imported, fetched or run from another host is code nobody in this repository reviewed, running in a signed-in administrator's dashboard, and it fails outright on a server with no way out to the internet. Everything a page needs is served from the plugin, and the charts are drawn by a module of this plugin's own. Issue #62.
