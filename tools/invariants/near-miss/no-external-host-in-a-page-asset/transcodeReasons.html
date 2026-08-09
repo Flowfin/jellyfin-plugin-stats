@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  The near miss for no-external-host-in-a-page-asset.
+
+  This is the transcode reasons view issue #60 asks for, drawn the way the
+  closest prior art draws its charts: a chart library and a webfont pulled from
+  somebody else's server, and the data fetched from a third one. Everything else
+  about it is right. The page names no user, the totals arrive after load
+  through an authorized request, and no value is left for a server to fill in
+  before the page is sent.
+
+  It is wrong because of where the bytes come from. A script fetched at page
+  load is code this repository never reviewed, running inside a signed-in
+  administrator's dashboard, on a server that may have no way out to the
+  internet at all; a font is the same request wearing a smaller hat, and it
+  tells its host which server opened the page and when. What ships is what is in
+  the tree, and what is in the tree is what somebody read.
+
+  The one character version of this is the leading slash. Writing src="/Stats/
+  chart.js" loads the module this plugin ships, and src="//cdn.example.net/
+  chart.js" loads a stranger's, and the two sit one keystroke apart in a diff.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Why the server transcodes</title>
+        <link rel="stylesheet" href="https://fonts.example.com/css?family=Inter" />
+    </head>
+    <body>
+        <div id="StatsTranscodeReasonsPage" data-role="page" class="page type-interior">
+            <div data-role="content">
+                <div class="content-primary">
+                    <h1 class="sectionTitle">Why the server transcodes</h1>
+                    <p class="fieldDescription">
+                        One play can carry several reasons, so the shares below add up to
+                        more than the whole.
+                    </p>
+                    <div id="StatsTranscodeReasonsChart"></div>
+                </div>
+            </div>
+            <script src="https://cdn.example.net/charts/4.4.1/charts.min.js"></script>
+            <script type="text/javascript">
+                document
+                    .querySelector('#StatsTranscodeReasonsPage')
+                    .addEventListener('pageshow', function () {
+                        Dashboard.showLoadingMsg();
+                        ApiClient.getJSON(ApiClient.getUrl('Stats/Transcodes')).then(
+                            function (reasons) {
+                                StatsCharts.bars('#StatsTranscodeReasonsChart', reasons);
+                                Dashboard.hideLoadingMsg();
+                            },
+                        );
+                    });
+            </script>
+        </div>
+    </body>
+</html>
