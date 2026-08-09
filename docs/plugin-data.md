@@ -27,6 +27,28 @@ The server data directory is the one holding `config`, `data`, `log` and
 `plugins`. Where it is depends on how the server was installed, and the server's
 own dashboard reports it under the server paths it lists.
 
+## What is inside the data folder
+
+One file.
+
+`plays.db`
+
+The store, a SQLite database holding one row per finished play. The name is the
+plugin's own and does not change with the version or with the server.
+
+Nothing else belongs there. SQLite writes a journal beside its database while a
+write transaction is open, and that file exists only for the length of the
+transaction; the store runs on the default rollback journal, so there is no
+write-ahead pair to back up alongside the database. An export writes to a
+destination its caller opened and creates no file of its own, so a failed
+export leaves nothing behind either.
+
+`DataFolderLayoutTests` is what keeps this section true rather than merely
+written. It runs a whole play through the plugin over a temporary server data
+directory and lists every file and directory under it before and after, so a
+second file appearing here is a red test and not a paragraph somebody has to
+remember to update.
+
 ## Uninstalling
 
 Removing the plugin deletes both of the paths above. The server itself deletes
