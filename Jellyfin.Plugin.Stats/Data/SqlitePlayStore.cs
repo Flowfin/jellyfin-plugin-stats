@@ -133,11 +133,28 @@ public sealed class SqlitePlayStore : IPlayStore
         _connection = new SqliteConnection(connectionString);
         _connection.Open();
 
-        // Opening is migrating. A store is created by running every step over
-        // an empty file and an existing one by running the steps it has not had
-        // yet, so there is one route rather than a create path and an upgrade
-        // path that can disagree about what the schema is.
-        SchemaMigrator.MigrateToLatest(_connection, SchemaMigrations.All);
+        try
+        {
+            // Opening is migrating. A store is created by running every step
+            // over an empty file and an existing one by running the steps it
+            // has not had yet, so there is one route rather than a create path
+            // and an upgrade path that can disagree about what the schema is.
+            SchemaMigrator.MigrateToLatest(_connection, SchemaMigrations.All);
+        }
+        catch
+        {
+            // A constructor that throws leaves nothing behind for anybody to
+            // dispose of, and the connection above is already open, so without
+            // this the file handle survives the failure with no owner. The
+            // write path opens a store per finished play until one succeeds, so
+            // one refusal is not one leaked handle, it is one per play for as
+            // long as the plugin is installed, and on Windows every one of them
+            // refuses the deletion of the data folder that an uninstall does.
+            // The failure it was found by is a store from a later build, which
+            // is the refusal that is meant to be survivable.
+            _connection.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
