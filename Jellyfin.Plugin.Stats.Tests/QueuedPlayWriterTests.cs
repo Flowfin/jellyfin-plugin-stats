@@ -83,17 +83,24 @@ public sealed class QueuedPlayWriterTests
         var writer = WriterOver(store, bound: 4);
         store.Hold();
 
-        // Ten rows at a bound of four. The writer takes one out of the queue
-        // and stops inside the store holding it, so five are accounted for
-        // before anything is turned away.
-        for (var i = 0; i < 10; i++)
-        {
-            writer.Add(APlay());
-        }
+        // One row first, and then a wait until the writer is inside the store
+        // holding it. Filling the queue straight away would race the writer:
+        // whether it had taken a row out yet decides how many of the rest fit,
+        // and the count this test asserts would be one of two answers
+        // depending on how the two threads were scheduled. Measured, on a
+        // runner that gave the other one.
+        writer.Add(APlay());
 
         Assert.True(
             store.Entered.Wait(LongEnoughToBeAFailure),
             "the writer never reached the store.");
+
+        // The queue is empty and cannot drain, so the next four fill it exactly
+        // and the five after that have nowhere to go.
+        for (var i = 0; i < 9; i++)
+        {
+            writer.Add(APlay());
+        }
 
         store.Release();
         writer.Dispose();
@@ -174,11 +181,18 @@ public sealed class QueuedPlayWriterTests
         var writer = new QueuedPlayWriter(() => store, bound: 2, logger: logger);
         store.Hold();
 
-        // Four rows at a bound of two, so the queue turns some away as well as
-        // the store refusing the ones it takes. The two are different classes
-        // and a reader who only heard about one of them would draw the wrong
-        // conclusion about which end is broken.
-        for (var i = 0; i < 4; i++)
+        // Held on the first row, then three more at a bound of two, so exactly
+        // one is turned away by the queue and the three that got in are refused
+        // by the store. The two are different classes, and a reader who only
+        // heard about one of them would draw the wrong conclusion about which
+        // end is broken.
+        writer.Add(APlay());
+
+        Assert.True(
+            store.Entered.Wait(LongEnoughToBeAFailure),
+            "the writer never reached the store.");
+
+        for (var i = 0; i < 3; i++)
         {
             writer.Add(APlay());
         }
@@ -186,6 +200,8 @@ public sealed class QueuedPlayWriterTests
         store.Release();
         writer.Dispose();
 
+        Assert.Equal(1, writer.Refused);
+        Assert.Equal(3, writer.Failed);
         Assert.Equal(2, logger.Lines.Count);
         Assert.All(logger.Lines, line => Assert.Equal(LogLevel.Error, line.Level));
         Assert.Contains(logger.Lines, line => line.Message.Contains("System.IO.IOException", StringComparison.Ordinal));
