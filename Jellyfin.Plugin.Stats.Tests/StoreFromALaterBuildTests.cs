@@ -59,7 +59,7 @@ public sealed class StoreFromALaterBuildTests : IDisposable
         MoveTheStorePastThisBuild();
 
         var logger = new RecordingLogger<QueuedPlayWriter>();
-        var writer = new QueuedPlayWriter(
+        using var writer = new QueuedPlayWriter(
             () => new SqlitePlayStore(_root),
             QueuedPlayWriter.DefaultBound,
             logger);

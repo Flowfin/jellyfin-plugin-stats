@@ -69,9 +69,10 @@ public sealed class PlayArchiveTests : IDisposable
         var archive = Header(later) + Environment.NewLine + RowLine(APlay());
 
         using var store = new SqlitePlayStore(_root);
+        using var archiveReader = new StringReader(archive);
 
         var refused = Assert.Throws<ArchiveIsNewerThanThePluginException>(
-            () => PlayArchive.Import(new StringReader(archive), store));
+            () => PlayArchive.Import(archiveReader, store));
 
         Assert.Equal(later, refused.ArchiveVersion);
         Assert.Equal(SchemaMigrations.Latest, refused.PluginVersion);
@@ -96,9 +97,10 @@ public sealed class PlayArchiveTests : IDisposable
             + RowLine(APlay() with { SchemaVersion = later });
 
         using var store = new SqlitePlayStore(_root);
+        using var archiveReader = new StringReader(archive);
 
         var refused = Assert.Throws<ArchiveIsNewerThanThePluginException>(
-            () => PlayArchive.Import(new StringReader(archive), store));
+            () => PlayArchive.Import(archiveReader, store));
 
         Assert.Equal(later, refused.ArchiveVersion);
     }
@@ -129,7 +131,7 @@ public sealed class PlayArchiveTests : IDisposable
             store.Add(mine[1]);
             store.Add(APlay() with { UserId = Bob, ItemName = "Also not mine" });
 
-            var writer = new StringWriter(CultureInfo.InvariantCulture);
+            using var writer = new StringWriter(CultureInfo.InvariantCulture);
             PlayArchive.Export(store.PlaysFor(Alice), writer);
             archive = writer.ToString();
         }
@@ -154,7 +156,7 @@ public sealed class PlayArchiveTests : IDisposable
         {
             store.Add(APlay() with { UserId = Bob });
 
-            var writer = new StringWriter(CultureInfo.InvariantCulture);
+            using var writer = new StringWriter(CultureInfo.InvariantCulture);
             PlayArchive.Export(store.PlaysFor(Alice), writer);
             archive = writer.ToString();
         }
@@ -222,8 +224,9 @@ public sealed class PlayArchiveTests : IDisposable
     public void AnArchiveWithNoHeaderAtAllIsRefused()
     {
         using var store = new SqlitePlayStore(_root);
+        using var nothing = new StringReader(string.Empty);
 
-        Assert.Throws<ArgumentException>(() => PlayArchive.Import(new StringReader(string.Empty), store));
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(nothing, store));
     }
 
     /// <summary>
@@ -236,9 +239,10 @@ public sealed class PlayArchiveTests : IDisposable
         var archive = "{\"Format\":\"something-else/rows\",\"SchemaVersion\":1}";
 
         using var store = new SqlitePlayStore(_root);
+        using var archiveReader = new StringReader(archive);
 
         var refused = Assert.Throws<ArgumentException>(
-            () => PlayArchive.Import(new StringReader(archive), store));
+            () => PlayArchive.Import(archiveReader, store));
 
         Assert.Contains("something-else/rows", refused.Message, StringComparison.Ordinal);
         Assert.Contains(PlayArchive.FormatName, refused.Message, StringComparison.Ordinal);
@@ -252,20 +256,22 @@ public sealed class PlayArchiveTests : IDisposable
     public void ALineHoldingNoObjectIsRefused()
     {
         using var store = new SqlitePlayStore(_root);
+        using var noObject = new StringReader("null");
 
-        Assert.Throws<ArgumentException>(() => PlayArchive.Import(new StringReader("null"), store));
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(noObject, store));
     }
 
     [Fact]
     public void NeitherEndOfTheArchiveTakesNothing()
     {
         using var store = new SqlitePlayStore(_root);
-        var writer = new StringWriter(CultureInfo.InvariantCulture);
+        using var writer = new StringWriter(CultureInfo.InvariantCulture);
+        using var reader = new StringReader("null");
 
         Assert.Throws<ArgumentNullException>(() => PlayArchive.Export(null!, writer));
         Assert.Throws<ArgumentNullException>(() => PlayArchive.Export([], null!));
         Assert.Throws<ArgumentNullException>(() => PlayArchive.Import(null!, store));
-        Assert.Throws<ArgumentNullException>(() => PlayArchive.Import(new StringReader("null"), null!));
+        Assert.Throws<ArgumentNullException>(() => PlayArchive.Import(reader, null!));
     }
 
     /// <summary>
@@ -308,8 +314,9 @@ public sealed class PlayArchiveTests : IDisposable
         var archive = Header(SchemaMigrations.Latest) + Environment.NewLine + row;
 
         using var store = new SqlitePlayStore(_root);
+        using var archiveReader = new StringReader(archive);
 
-        Assert.Throws<ArgumentException>(() => PlayArchive.Import(new StringReader(archive), store));
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
         Assert.Empty(store.AllPlays());
     }
 
@@ -329,7 +336,7 @@ public sealed class PlayArchiveTests : IDisposable
     /// <returns>The line.</returns>
     private static string RowLine(PlayRecord play)
     {
-        var writer = new StringWriter(CultureInfo.InvariantCulture);
+        using var writer = new StringWriter(CultureInfo.InvariantCulture);
         PlayArchive.Export([play], writer);
 
         return writer.ToString()
@@ -370,7 +377,7 @@ public sealed class PlayArchiveTests : IDisposable
             store.Add(play);
         }
 
-        var writer = new StringWriter(CultureInfo.InvariantCulture);
+        using var writer = new StringWriter(CultureInfo.InvariantCulture);
         PlayArchive.Export(store.AllPlays(), writer);
 
         return writer.ToString();
@@ -379,8 +386,9 @@ public sealed class PlayArchiveTests : IDisposable
     private IReadOnlyList<PlayRecord> ImportIntoAFreshStore(string archive, out int added)
     {
         using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var archiveReader = new StringReader(archive);
 
-        added = PlayArchive.Import(new StringReader(archive), store);
+        added = PlayArchive.Import(archiveReader, store);
 
         return store.AllPlays().ToList();
     }
