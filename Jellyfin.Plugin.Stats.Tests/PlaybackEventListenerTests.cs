@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Capture;
+using StatsData = Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
@@ -189,26 +190,31 @@ public class PlaybackEventListenerTests
 
         using var provider = services.BuildServiceProvider();
 
-        // Until there is a store, this is the discarding one, and a reader who
-        // wants to know whether the plugin is writing anything can see it here.
-        Assert.IsType<DiscardingPlaybackEventSink>(provider.GetRequiredService<IPlaybackEventSink>());
+        // The whole write path, read out of the container in the order it is
+        // used. A reader who wants to know whether the plugin is writing
+        // anything can see it here, and a registration that stopped resolving
+        // is caught here rather than on a server.
+        Assert.IsType<PlayTracker>(provider.GetRequiredService<IPlaybackEventSink>());
+        Assert.IsType<StatsData.QueuedPlayWriter>(provider.GetRequiredService<IFinishedPlaySink>());
     }
 
     [Fact]
-    public async Task TheRegisteredSinkKeepsNothingAndBreaksNothing()
+    public void TheStoreIsNotOpenedWhileTheContainerIsBeingBuilt()
     {
-        var sessions = new FakeSessionManager();
-        var listener = ListenerOver(sessions, new DiscardingPlaybackEventSink());
+        var services = new ServiceCollection();
+        services.AddSingleton<ISessionManager>(new FakeSessionManager());
+        services.AddLogging();
 
-        await listener.StartAsync(CancellationToken.None);
+        new PluginServiceRegistrator().RegisterServices(services, applicationHost: null!);
 
-        // A whole play through the sink that is registered today. It is here so
-        // the default is exercised rather than only resolved: a plugin whose
-        // capture path faulted on the first event would be worse than one that
-        // keeps nothing.
-        RaiseAPlay(sessions);
+        using var provider = services.BuildServiceProvider();
 
-        await listener.StopAsync(CancellationToken.None);
+        // There is no plugin instance here and therefore no data folder, so a
+        // registration that opened the store while resolving would throw on
+        // this line. It does not, because the writer opens it on its own thread
+        // when the first row arrives. That is what keeps a store which cannot
+        // be opened from being a server that will not start.
+        Assert.NotNull(provider.GetRequiredService<IFinishedPlaySink>());
     }
 
     private static PlaybackEventListener ListenerOver(ISessionManager sessions, IPlaybackEventSink sink)
