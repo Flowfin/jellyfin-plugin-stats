@@ -1,6 +1,7 @@
 ---
 name: "Playback Statistics"
 guid: "29e90267-52ee-4bec-b4fb-870b8f5ddc53"
+imageUrl: "https://raw.githubusercontent.com/Flowfin/jellyfin-plugin-stats/master/img/logo.png"
 version: "0.0.0.0"
 # The 10.11 server line, which runs on .NET 9. This file is one manifest and
 # jprm reads one targetAbi out of it, so the 12.0 line's artifact is packaged
