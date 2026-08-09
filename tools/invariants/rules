@@ -85,3 +85,10 @@ id: no-configuration-value-in-a-static-field
 paths: *.cs
 pattern: static[^;=(]*=[^;]*\bConfiguration\b|static[[:space:]]+(readonly[[:space:]]+)?PluginConfiguration\b
 why: A setting read once into a static field is a setting the page can no longer change. The administrator who turns capture off watches it go on recording until the next restart, the page saved cleanly, and nothing anywhere says the two disagree. Every consumer takes the configuration through a constructor and reads the current value at the moment it needs one. The rule reads a declaration, so it catches the field that is initialised where it is declared and the field whose type is the configuration itself; a static assigned from inside a method later is not a shape it can see, and no grep can see one. Issue #72.
+
+id: no-store-write-outside-the-write-path
+paths: *.cs
+except: IPlayStore.cs SqlitePlayStore.cs QueuedPlayWriter.cs PlayArchive.cs
+except-in: Jellyfin.Plugin.Stats.Tests
+pattern: IPlayStore
+why: A setting that turns capture off, and a user who asked not to be recorded, are honoured in one function immediately before the write. Anything that reaches the store on its own goes round that function, and what it writes is a row nobody consented to. The rule refuses the store's interface being named at all, which is the greppable form of the property: reaching the store is naming it. The four files spared are the interface itself, the store, the queue that is the write path, and the archive, whose import is the one other operation whose job is to put rows in; a fifth needs a line in this file and an argument in a pull request. The suite is spared as a directory, because a test that drives a store is what proves any of this. Issue #39.

@@ -24,15 +24,23 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     /// The order is the order the container is read in, so a container built
     /// from this method alone resolves the listener and everything under it.
     /// The whole write path is assembled here: the subscription hands events to
-    /// the tracker, the tracker hands a finished row to the queue, and the
-    /// queue's own thread opens the store and writes it.
+    /// the tracker, the tracker hands a finished row to the gate, the gate
+    /// decides whether it is recorded, and the queue's own thread opens the
+    /// store and writes it.
     /// </remarks>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddSingleton<IFinishedPlaySink>(provider => new QueuedPlayWriter(
+        serviceCollection.AddSingleton(provider => new QueuedPlayWriter(
             OpenTheStore,
             QueuedPlayWriter.DefaultBound,
             provider.GetRequiredService<ILogger<QueuedPlayWriter>>()));
+
+        // The gate reads the configuration off the plugin instance every time
+        // it judges a play, rather than being handed a value once. That is what
+        // makes a change on the settings page take effect on the next event.
+        serviceCollection.AddSingleton<IFinishedPlaySink>(provider => new CaptureGate(
+            provider.GetRequiredService<QueuedPlayWriter>(),
+            () => Plugin.Instance!.Configuration));
 
         serviceCollection.AddSingleton<IPlaybackEventSink, PlayTracker>();
         serviceCollection.AddHostedService<PlaybackEventListener>();
