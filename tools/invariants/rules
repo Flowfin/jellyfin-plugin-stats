@@ -80,3 +80,8 @@ id: no-external-host-in-a-page-asset
 paths: *.html
 pattern: (src|href)[[:space:]]*=[[:space:]]*["'](https?:)?//|@import[[:space:]]+(url\()?["']?(https?:)?//|(fetch|importScripts)\([[:space:]]*["'](https?:)?//
 why: The closest prior art ships a minified chart library and loads what it does not ship from somebody else's server. A script fetched at page load is code nobody in this repository read, running in a signed-in administrator's dashboard, and it fails outright on a server with no way out to the internet; a stylesheet or a font is the same request and additionally tells its host which server opened the page. Everything a page needs is served from the plugin, and the charts are drawn by a module of this plugin's own rather than by a bundle. The rule reads tracked HTML, which is every page asset in the tree today; a script or stylesheet kept in a file of its own needs its own block here, because a rule carries one path glob. Issue #62.
+
+id: no-configuration-value-in-a-static-field
+paths: *.cs
+pattern: static[^;=(]*=[^;]*\bConfiguration\b|static[[:space:]]+(readonly[[:space:]]+)?PluginConfiguration\b
+why: A setting read once into a static field is a setting the page can no longer change. The administrator who turns capture off watches it go on recording until the next restart, the page saved cleanly, and nothing anywhere says the two disagree. Every consumer takes the configuration through a constructor and reads the current value at the moment it needs one. The rule reads a declaration, so it catches the field that is initialised where it is declared and the field whose type is the configuration itself; a static assigned from inside a method later is not a shape it can see, and no grep can see one. Issue #72.
