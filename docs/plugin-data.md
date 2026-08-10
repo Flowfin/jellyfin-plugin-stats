@@ -70,7 +70,8 @@ data still goes; the log says which of the two happened.
 
 ## What this document does not cover
 
-What the plugin records, who can read it and how long it is kept are not settled
-in the tree yet and are not described here. This document is about the two paths
-and the removal, and nothing in it should be read as a statement about the
-contents.
+What the plugin records, who can read it and what is refused on purpose are in
+`docs/what-is-stored.md`. How long a row is kept before the retention sweep
+deletes it is a setting, and `docs/configuration.md` is the reference for it.
+This document is about the two paths and the removal, and nothing in it should
+be read as a statement about the contents.
