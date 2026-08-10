@@ -16,35 +16,37 @@ happened to, above the form.
 
 ## What these settings govern today
 
-They exist, they validate, they are stored and the settings page shows them.
-None of them changes what the plugin does yet, and this section is here so no
-entry below reads as a description of behaviour that is present.
+Four of them decide something. The other four exist, validate and are stored,
+and change nothing, and this section says which is which so no entry below reads
+as a description of behaviour that is present.
 
-Nothing outside the configuration model and its page reads any of them:
+`CaptureEnabled`, `ExcludedUserIds` and `ExcludedItemTypes` are honoured
+immediately before a play is written:
 
-    grep -rn "CaptureEnabled\|PlayRowRetentionDays\|DailyAggregateRetentionDays\|MaximumRangeDays\|MaximumRowsPerResponse\|RollupTimeZone\|ExcludedUserIds\|ExcludedItemTypes" \
+    grep -n 'configuration.CaptureEnabled\|configuration.ExcludedUserIds\|configuration.ExcludedItemTypes' \
+      Jellyfin.Plugin.Stats/Capture/CaptureGate.cs
+    81:        if (!configuration.CaptureEnabled)
+    86:        if (Array.Exists(configuration.ExcludedUserIds, entry => Guid.Parse(entry) == play.UserId))
+    92:            configuration.ExcludedItemTypes,
+
+`PlayRowRetentionDays` decides what the retention sweep deletes, and it is read
+at the run rather than held from start-up:
+
+    grep -rn 'PlayRowRetentionDays' --include=*.cs Jellyfin.Plugin.Stats/ScheduledTasks/
+    Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs:111:        var days = _configuration().PlayRowRetentionDays;
+
+Nothing reads the other four:
+
+    grep -rn "DailyAggregateRetentionDays\|MaximumRangeDays\|MaximumRowsPerResponse\|RollupTimeZone" \
       --include=*.cs Jellyfin.Plugin.Stats/ | grep -v "^Jellyfin.Plugin.Stats/Configuration/" ; echo "exit=$?"
     exit=1
 
-with no output. The playback events the plugin subscribes to reach a sink that
-discards them:
-
-    grep -n 'AddSingleton<IPlaybackEventSink' Jellyfin.Plugin.Stats/PluginServiceRegistrator.cs
-    27:        serviceCollection.AddSingleton<IPlaybackEventSink, DiscardingPlaybackEventSink>();
-
-So no play is recorded, and `CaptureEnabled`, `ExcludedUserIds` and
-`ExcludedItemTypes` decide the fate of nothing. There is no retention sweep
-either:
-
-    git ls-files Jellyfin.Plugin.Stats/ScheduledTasks/ ; echo "exit=$?"
-    exit=0
-
-with no output, so no row is deleted on any schedule and the two retention
-windows are read by nothing. There are no reports, so nothing is bounded by
-`MaximumRangeDays` or `MaximumRowsPerResponse` and nothing rolls a day up in
-`RollupTimeZone`. Issues #29, #39, #32 and #51 are where those gaps close. Until
-they do, the entries below say what each setting will govern rather than what it
-governs.
+with no output. There are no daily aggregates, so nothing keeps them for
+`DailyAggregateRetentionDays` and nothing rolls a day up in `RollupTimeZone`, and
+there are no reports, so nothing is bounded by `MaximumRangeDays` or
+`MaximumRowsPerResponse`. Issues #49 and #51 are where those gaps close. Until
+they do, those four entries below say what the setting will govern rather than
+what it governs.
 
 ## The settings
 
@@ -63,8 +65,9 @@ governs.
 
 ## What takes effect when, and what it leaves alone
 
-This is the meaning each setting is defined to have, which the section above
-says is not yet the behaviour of anything.
+This is the meaning each setting is defined to have. For the four the section
+above names as read by nothing, it is still a definition rather than a
+description.
 
 Nothing here is retroactive. A setting decides what happens from the moment it
 is saved, and none of them reaches backwards into what is already stored, with
@@ -89,19 +92,19 @@ afterwards, which is issue #50.
 The two retention windows take effect on the next sweep rather than on save.
 Shortening one does not delete anything at the moment the page is saved.
 
-Whether a saved change reaches the running plugin without a restart is not
-stated here, because there is no consumer to reach: the section above shows that
-nothing outside the model and its page reads a setting. Issue #72 is where every
-consumer is made to read the current value instead of a copy taken at start-up,
-and where a setting that turns out to need a restart is named on the page and in
-this document rather than left for an operator to discover.
+None of the four settings that are read needs a restart. Each is read at the
+moment it is used rather than copied at start-up: capture and the two exclusion
+lists at every play, and the retention window at every sweep. Issue #72 is where
+that is held for every consumer as they arrive, and where a setting that turns
+out to need a restart is named on the page and in this document rather than left
+for an operator to discover.
 
 ## Retention deletes, and the deletion cannot be undone
 
-The sweep that does this is issue #32 and is not written, so nothing is being
-deleted today. What follows is what these two windows mean, and it is here now
-because an operator sets a retention before the first sweep runs rather than
-after.
+The sweep runs daily and can also be started by hand, from the scheduled tasks
+page of the server, where it is called "Delete playback statistics past their
+retention window". It reads `PlayRowRetentionDays`. Nothing sweeps the daily
+aggregates, because there are none yet.
 
 `PlayRowRetentionDays` and `DailyAggregateRetentionDays` are not display
 filters. A row past its window is deleted from the plugin's store, and the
@@ -123,11 +126,18 @@ itself: which user played which item, when it started and stopped, how much was
 watched, the client and device it played on, and whether the server transcoded
 and why.
 
-What survives it is the daily aggregates, for as long as
+The sweep also gives the space those rows were using back to the disk, at the
+end of a run rather than after each deletion. A store file that does not shrink
+after a sweep is one that found nothing to delete, or one whose run was
+cancelled before it got that far.
+
+What survives a row is the daily aggregates, for as long as
 `DailyAggregateRetentionDays` allows. Those say how much the server was used on
 a day and name no user, which is why they are allowed to outlive the rows they
 were computed from. Once a day passes that second window, nothing about it is
-left.
+left. None of that is true yet: nothing computes an aggregate, so a row past
+`PlayRowRetentionDays` today leaves nothing at all behind it, and issue #49 is
+where the other half arrives.
 
 Setting `DailyAggregateRetentionDays` shorter than `PlayRowRetentionDays` is
 accepted and nothing refuses it. It means the aggregates go before the rows they
