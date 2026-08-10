@@ -1,5 +1,5 @@
-// What happens to a settings file written by an older build of this plugin, and
-// to one written by a newer build.
+// What happens to a settings file written by an older build of this plugin, to
+// one written by a newer build, and to a save this plugin will not make.
 //
 // The shapes are written out as text rather than built with the current model.
 // A file produced by today's type is a file in today's shape, so a round trip
@@ -245,6 +245,64 @@ public sealed class ConfigurationMigrationTests : IDisposable
 
         Assert.Equal(ConfigurationMigrations.Current, ConfigurationMigrator.VersionOf(written));
         Assert.Equal("45", written.Element("PlayRowRetentionDays")?.Value);
+    }
+
+    /// <summary>
+    /// A save carrying a value this plugin does not accept writes nothing, by
+    /// every route the server has. The model refuses that one field and falls it
+    /// back to its default, which is the right answer to a stored file already
+    /// holding a bad value and the wrong one to somebody typing into the
+    /// settings page: there the save appears to succeed and a value other than
+    /// the one entered is what takes effect.
+    /// </summary>
+    /// <remarks>
+    /// The file is compared after each route rather than once at the end, so a
+    /// route that wrote and then threw is caught by the route that did it and
+    /// not by whichever came last.
+    /// </remarks>
+    [Fact]
+    public void EveryWayOfSavingIsRefusedWhereAValueIsRefused()
+    {
+        var plugin = PluginOver(CurrentShape(retentionDays: 30), serializer: WritingXmlSerializer.Instance);
+        var stored = File.ReadAllText(ConfigurationFile);
+        var configuration = new PluginConfiguration { MaximumRowsPerResponse = 0 };
+
+        // The no-argument save writes whatever is loaded, so the refusal has to
+        // be on that object for it to be one of the three routes at all.
+        plugin.Configuration.MaximumRowsPerResponse = 0;
+
+        foreach (var save in new (string Name, Action Act)[]
+        {
+            ("SaveConfiguration(configuration)", () => plugin.SaveConfiguration(configuration)),
+            ("SaveConfiguration()", plugin.SaveConfiguration),
+            ("UpdateConfiguration(configuration)", () => plugin.UpdateConfiguration(configuration))
+        })
+        {
+            var refused = Assert.Throws<ConfigurationValueRefusedException>(save.Act);
+
+            Assert.Equal([nameof(PluginConfiguration.MaximumRowsPerResponse)], refused.Fields);
+            Assert.Contains(nameof(PluginConfiguration.MaximumRowsPerResponse), refused.Message, StringComparison.Ordinal);
+            Assert.True(stored == File.ReadAllText(ConfigurationFile), save.Name + " changed the stored file");
+        }
+    }
+
+    /// <summary>
+    /// A refused save names the field on the log. The exception reaches the
+    /// caller that sent the value, and the operator reading the server log is
+    /// the one who has to know which setting the server is still running on.
+    /// </summary>
+    [Fact]
+    public void ARefusedSaveNamesTheFieldOnTheLog()
+    {
+        var logger = new RecordingLogger<Plugin>();
+        var plugin = PluginOver(CurrentShape(retentionDays: 30), logger, WritingXmlSerializer.Instance);
+
+        Assert.Throws<ConfigurationValueRefusedException>(
+            () => plugin.SaveConfiguration(new PluginConfiguration { RollupTimeZone = "Nowhere/Nothing" }));
+
+        var line = Assert.Single(logger.Lines);
+        Assert.Equal(LogLevel.Error, line.Level);
+        Assert.Contains(nameof(PluginConfiguration.RollupTimeZone), line.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

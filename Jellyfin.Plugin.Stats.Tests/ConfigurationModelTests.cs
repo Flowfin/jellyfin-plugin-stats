@@ -154,6 +154,26 @@ public class ConfigurationModelTests
     }
 
     /// <summary>
+    /// The page has somewhere to go when a save is refused. The plugin refuses a
+    /// save whole rather than field by field, so a page holding only the success
+    /// path would leave an operator under a loading message, looking at the
+    /// values they typed, with none of them stored.
+    /// </summary>
+    /// <remarks>
+    /// Read out of the embedded page rather than the file beside it, so a page
+    /// that was edited and not packaged fails here.
+    /// </remarks>
+    [Fact]
+    public void TheConfigurationPageSaysWhenASaveWasRefused()
+    {
+        var page = EmbeddedConfigurationPage();
+
+        Assert.Contains("function statsSaveWasRefused()", page, StringComparison.Ordinal);
+        Assert.Contains("statsSaveWasRefused();", page, StringComparison.Ordinal);
+        Assert.Contains("Nothing was saved.", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The one stored field that is not a setting stays the only one, and it is
     /// not offered on the page. It is written by the plugin to say which shape
     /// the file is in, and an operator editing it would only be telling the

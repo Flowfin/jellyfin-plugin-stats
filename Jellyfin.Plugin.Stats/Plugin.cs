@@ -142,11 +142,37 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <see cref="BasePlugin{TConfigurationType}.UpdateConfiguration"/> both
     /// come through here, so one guard covers all three ways in and there is no
     /// second copy of it to fall out of step.
+    /// <para>
+    /// Two things are refused here and they are refused in this order. The
+    /// first reads the argument and the second reads the file, so a caller who
+    /// sent a value nobody accepts is told about the value rather than about a
+    /// file they cannot see.
+    /// </para>
+    /// <para>
+    /// The value guard is the write half of a decision the model does not make
+    /// on its own: a stored file carrying a bad value still loads, with that one
+    /// field on its default, because a settings file must not stop a server from
+    /// starting. A save carrying one is refused whole. Nothing here re-derives
+    /// what is acceptable; the setters have already recorded which fields they
+    /// refused, and this reads that.
+    /// </para>
     /// </remarks>
     /// <param name="configuration">The configuration to write.</param>
+    /// <exception cref="ConfigurationValueRefusedException">A value in <paramref name="configuration"/> is outside what this plugin accepts.</exception>
     /// <exception cref="ConfigurationIsNewerThanThePluginException">The stored file was written by a later version of this plugin.</exception>
     public override void SaveConfiguration(PluginConfiguration configuration)
     {
+        var refused = configuration.RejectedFields;
+
+        if (refused.Length > 0)
+        {
+            _logger.LogError(
+                "A save was refused. The value sent for {Fields} is outside what this plugin accepts, so nothing was written and the stored settings are unchanged.",
+                string.Join(", ", refused));
+
+            throw new ConfigurationValueRefusedException(refused);
+        }
+
         var stored = ConfigurationMigrator.VersionOfFile(ConfigurationFilePath, ConfigurationMigrations.Current);
 
         if (stored > ConfigurationMigrations.Current)
