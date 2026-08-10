@@ -216,6 +216,21 @@
                     }
                 }
 
+                // Said here rather than by naming the field, because the page
+                // does not hold the ranges and a page that decided which value
+                // was wrong would be a second copy of them. The range each
+                // field takes is written under that field, and the plugin names
+                // the field it refused on the server log.
+                function statsSaveWasRefused() {
+                    var rejected = document.querySelector('#StatsRejectedFields');
+                    rejected.textContent =
+                        'Nothing was saved. One of the values entered is outside what this' +
+                        ' plugin accepts, and a save is refused whole rather than in part, so' +
+                        ' none of the other changes were written either. The values shown are' +
+                        ' the ones in force.';
+                    rejected.style.display = '';
+                }
+
                 function statsCollect(config) {
                     config.CaptureEnabled = document.querySelector('#CaptureEnabled').checked;
                     config.RollupTimeZone = document.querySelector('#RollupTimeZone').value.trim();
@@ -258,15 +273,32 @@
                             ApiClient.updatePluginConfiguration(
                                 StatsConfig.pluginUniqueId,
                                 statsCollect(config),
-                            ).then(function (result) {
-                                Dashboard.processPluginConfigurationUpdateResult(result);
-                                // Read back what was stored, so a value this
-                                // plugin refused is shown as refused rather
-                                // than left on the page looking accepted.
-                                ApiClient.getPluginConfiguration(StatsConfig.pluginUniqueId).then(
-                                    statsShow,
-                                );
-                            });
+                            ).then(
+                                function (result) {
+                                    Dashboard.processPluginConfigurationUpdateResult(result);
+                                    // Read back what was stored, so a value this
+                                    // plugin refused is shown as refused rather
+                                    // than left on the page looking accepted.
+                                    ApiClient.getPluginConfiguration(
+                                        StatsConfig.pluginUniqueId,
+                                    ).then(statsShow);
+                                },
+                                function () {
+                                    // The save was refused, so the file was not
+                                    // touched. The page is filled from the
+                                    // server rather than left as typed: what an
+                                    // operator reads after a refusal has to be
+                                    // what is in force, or the refusal is worse
+                                    // than the silent fallback it replaced.
+                                    Dashboard.hideLoadingMsg();
+                                    ApiClient.getPluginConfiguration(
+                                        StatsConfig.pluginUniqueId,
+                                    ).then(function (stored) {
+                                        statsShow(stored);
+                                        statsSaveWasRefused();
+                                    });
+                                },
+                            );
                         },
                     );
 
