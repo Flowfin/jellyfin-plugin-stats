@@ -2,9 +2,10 @@
 // the thing being measured, and what it is measured by is whether the caller
 // gets on with its life while this one refuses to.
 //
-// Only Add is answered. The three reads throw, because a writer that called one
-// of them would be doing something this class is not about, and a fake that
-// answered them would let that pass unnoticed.
+// Only Add is answered. Every read, and every part of the retention sweep,
+// throws, because a writer that called one of them would be doing something
+// this class is not about, and a fake that answered them would let that pass
+// unnoticed.
 
 using System;
 using System.Collections.Generic;
@@ -99,6 +100,15 @@ public sealed class HoldablePlayStore : IPlayStore
 
     /// <inheritdoc />
     public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
+
+    /// <inheritdoc />
+    public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
+
+    /// <inheritdoc />
+    public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+
+    /// <inheritdoc />
+    public void ReclaimFreedSpace() => throw NotPartOfThis();
 
     /// <inheritdoc />
     /// <remarks>

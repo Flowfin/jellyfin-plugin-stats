@@ -66,4 +66,51 @@ public interface IPlayStore : IDisposable
     /// <param name="userId">The user whose rows are wanted.</param>
     /// <returns>That user's rows, walked once, and empty where there are none.</returns>
     IEnumerable<PlayRecord> PlaysFor(Guid userId);
+
+    /// <summary>
+    /// Counts the rows that started before a moment.
+    /// </summary>
+    /// <remarks>
+    /// This is what a sweep asks before it starts deleting, so it can say how
+    /// far through it is. It carries no bound because its answer is one number
+    /// however many rows it counted.
+    /// </remarks>
+    /// <param name="cutoffUtc">The moment, in UTC. A row that started before it is counted.</param>
+    /// <returns>How many rows started before that moment.</returns>
+    long CountPlaysStartedBefore(DateTime cutoffUtc);
+
+    /// <summary>
+    /// Deletes rows that started before a moment, up to a limit, oldest written
+    /// first.
+    /// </summary>
+    /// <remarks>
+    /// The limit is what makes a first sweep over years of rows interruptible.
+    /// One statement deleting everything holds a write lock for as long as it
+    /// takes and answers no cancellation in the middle of it, so the caller
+    /// takes a bite at a time and decides between bites whether to take
+    /// another.
+    /// <para>
+    /// The rows do not come back. There is no flag and no second table: a row
+    /// past its retention window is gone from the file, which is the whole
+    /// point of a retention window.
+    /// </para>
+    /// </remarks>
+    /// <param name="cutoffUtc">The moment, in UTC. A row that started before it is deleted.</param>
+    /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
+    /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
+    int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit);
+
+    /// <summary>
+    /// Gives the space that deleted rows were occupying back to the file
+    /// system.
+    /// </summary>
+    /// <remarks>
+    /// A delete does not shrink the file. The pages it frees are kept for the
+    /// store's own reuse, so an administrator who set a retention window and
+    /// then looked at the folder would see a file exactly as large as before
+    /// and conclude that nothing had happened. This is the step that makes the
+    /// file smaller, and it is separate from the delete because it is worth
+    /// doing once at the end of a sweep rather than after every bite.
+    /// </remarks>
+    void ReclaimFreedSpace();
 }
