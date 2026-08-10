@@ -1,5 +1,8 @@
+using System;
 using Jellyfin.Plugin.Stats.Capture;
+using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
+using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +47,29 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<IPlaybackEventSink, PlayTracker>();
         serviceCollection.AddHostedService<PlaybackEventListener>();
+
+        // What the server needs to be able to build the retention sweep task.
+        // It builds every scheduled task in the assembly out of this container
+        // and fails the whole plugin over an argument it cannot resolve, so a
+        // line missing here is a plugin that does not load rather than a task
+        // that does not run.
+        //
+        // The clock is registered rather than read where it is needed. A
+        // scheduled task is handed a progress reporter and a cancellation token
+        // and no moment at all, and neither supported server line registers a
+        // clock of its own, so this is where "ninety days ago" starts.
+        serviceCollection.AddSingleton(ServerClock.Machine);
+
+        // The configuration as a function rather than a value, for the same
+        // reason the gate above takes one: a retention changed on the settings
+        // page has to decide the next sweep, not the first one after a restart.
+        serviceCollection.AddSingleton<Func<PluginConfiguration>>(_ => () => Plugin.Instance!.Configuration);
+
+        // The sweep takes the same store-opening function the writer does, and
+        // opens the store for the length of one run. Nothing is opened here:
+        // this is a constructor call, and the function is only run when a sweep
+        // starts.
+        serviceCollection.AddSingleton(_ => new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite));
     }
 
     /// <summary>

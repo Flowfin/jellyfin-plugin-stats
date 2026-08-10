@@ -91,6 +91,35 @@ public sealed class SqlitePlayStore : IPlayStore
           WHERE UserId = $userId
           ORDER BY Id";
 
+    // The retention sweep's three statements. The count is what lets a sweep
+    // say how far through it is, and it is asked once rather than per bite.
+    private const string CountPlaysBefore =
+        @"SELECT COUNT(*)
+          FROM plays
+          WHERE StartedUtcTicks < $cutoff";
+
+    // Bounded by an argument, like every other read here, and for a second
+    // reason: one statement deleting a decade of rows holds the write lock for
+    // its whole duration and answers no cancellation while it runs. The inner
+    // select is where the bound goes, because a limit on the delete itself is a
+    // SQLite build option rather than a guarantee, and a statement that depends
+    // on how the native library was compiled is a statement that works here and
+    // fails on somebody's server.
+    private const string DeletePlaysBefore =
+        @"DELETE FROM plays
+          WHERE Id IN (
+              SELECT Id
+              FROM plays
+              WHERE StartedUtcTicks < $cutoff
+              ORDER BY Id
+              LIMIT $limit
+          )";
+
+    // What turns freed pages back into free disk. It rewrites the file, so it
+    // wants room for a second copy and it cannot run inside a transaction;
+    // neither is a problem where it is called, once, at the end of a sweep.
+    private const string ReclaimTheFile = "VACUUM";
+
     // Transcode reasons arrive as a set of short identifiers the server names,
     // and they are read back as a whole or not at all, so they travel in one
     // column. A table of its own would be a join on every read of every report
@@ -252,6 +281,38 @@ public sealed class SqlitePlayStore : IPlayStore
         {
             yield return ReadPlay(reader);
         }
+    }
+
+    /// <inheritdoc />
+    public long CountPlaysStartedBefore(DateTime cutoffUtc)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = CountPlaysBefore;
+        command.Parameters.AddWithValue("$cutoff", UtcTicks(cutoffUtc, nameof(cutoffUtc)));
+
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <inheritdoc />
+    public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = DeletePlaysBefore;
+        command.Parameters.AddWithValue("$cutoff", UtcTicks(cutoffUtc, nameof(cutoffUtc)));
+        command.Parameters.AddWithValue("$limit", limit);
+
+        return command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public void ReclaimFreedSpace()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = ReclaimTheFile;
+
+        command.ExecuteNonQuery();
     }
 
     /// <inheritdoc />
