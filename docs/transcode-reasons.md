@@ -72,6 +72,17 @@ Issue #53 stays open on the breakdown itself, on the shares over a range, and on
 the split by client under the consent rule, and issue #51 holds the query layer
 all three need.
 
+One half of the arithmetic above is now written down in code rather than only
+here. `DeliveryMethodShares` folds a sequence of rows into the four figures and
+counts the rows it was given, so what it reports adds up to the plays it read:
+
+    git grep -n "public static DeliveryMethodShares Over" -- Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs
+    Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
+
+It takes a sequence and not a range, because choosing the range is a query and
+there is none. It is the arithmetic under a report rather than a report, nothing
+calls it yet, and the reason breakdown has no counterpart to it.
+
 ## What keeps this document true
 
 `TranscodeReasonDocumentTests` reads this file against the row. A delivery
@@ -85,5 +96,10 @@ plays, and changing that to one value stops the fold and the store compiling
 before any assertion could run. There is no test for it here, because a test
 that cannot be shown to fire for the reason it names is not worth the line.
 
-What neither holds is the arithmetic of a breakdown, since there is none to
-hold.
+Neither of them reaches the arithmetic. The delivery half has its own suite,
+`DeliveryMethodSharesTests`, which holds what this document claims about it: the
+four figures add up to the sequence the fold was handed, a play the server
+reported no method for is counted as unknown and never as direct, and a row
+carrying a method this build has no name for is counted rather than dropped.
+
+The reason half has nothing of the kind, because there is no breakdown to hold.
