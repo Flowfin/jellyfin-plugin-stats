@@ -11,7 +11,7 @@ here before the tests exist, and the rules that hold it are in
 - a graphical display, or a browser driven by a test
 - elevated rights, in any spelling
 - the machine's certificate store, or a development certificate trusted into it
-- a privileged port
+- a listening port, whether or not binding it needs rights
 - an installed media encoder
 - a running Jellyfin server
 - a network call to anything outside the run
@@ -49,18 +49,28 @@ one added to the plugin.
 
 ## What holds it
 
-Five rules in `tools/invariants/rules`, each with a near miss beside it that
+Six rules in `tools/invariants/rules`, each with a near miss beside it that
 fires it:
 
 - `no-test-that-drives-a-browser`
 - `no-test-that-needs-a-display`
 - `no-test-that-asks-for-elevation`
 - `no-test-that-touches-a-certificate-store`
+- `no-test-that-binds-a-port`
 - `no-outbound-http-client`
 
 They run on every pull request as `Enforce greppable invariants`, over every
 tracked file rather than over the test project alone, because the way each of
 these arrives is usually a line in a workflow rather than a line in a test.
+
+The port rule is the newest and the one whose replacement is not built yet. It
+refuses opening a port and the host that would serve over one; it does not
+refuse routing a request to a controller in process, which is what the endpoint
+tests are meant to do instead. That in-process route does not exist in this
+repository today, and no plugin endpoint exists for it to reach either, so the
+rule is a refusal standing in front of work that is still to be done rather than
+a description of tests that already run this way. Issue #25 is where the route
+is owed.
 
 That reach is why this document names the tools by description and not by their
 literal names: the lint reads this file too, and a policy that quoted the strings
