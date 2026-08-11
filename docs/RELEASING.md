@@ -14,7 +14,8 @@ name.
 
 1. Update `version` in `build.yaml` on the release branch and merge it.
 2. Check that the commit you want to release is on that branch.
-3. Push the tag for that commit:
+3. Read the pages, as the next section sets out, and write down what was read.
+4. Push the tag for that commit:
 
     ```
     git tag 1.4.0-stable <commit>
@@ -26,6 +27,38 @@ The `Publish Release` workflow takes it from there.
 Push one tag at a time and wait for its run to finish. GitHub keeps at most one
 queued run per concurrency group, and although the group here is keyed on the tag,
 serialising them by hand is what keeps the release order readable.
+
+## Reading the pages
+
+Step 3 above is the one thing in this process no run does for you. The suite never
+opens a browser, and `docs/headless-tests.md` says under "What is left to a person"
+which reading that leaves behind and why calling it a test would be wrong. It names
+this document as where the reading is recorded, and this section is that record.
+
+What to open is derived rather than listed here, because a list in this file drifts
+against the project file that decides it:
+
+    git grep -n 'EmbeddedResource Include' -- Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj
+    Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj:151:    <EmbeddedResource Include="Configuration\configPage.html" />
+
+Everything that command prints is served to somebody's browser by a running server,
+so everything it prints is read. `PageAssetTests` holds that the embedded set is
+exactly the tracked set and that each asset is byte for byte its tracked file, so
+that one command is the whole of what a person has to enumerate and it stays right
+as more assets land.
+
+Build the plugin from the commit you are about to tag, install that build on a
+server, and open each of those pages there. `docs/page-assets.md` is what a page is
+read against, and its closing paragraph says what the reading is for: no rule and no
+test separates a value somebody typed into a page by hand from ordinary page text.
+
+Write what was opened, and which server it was opened on, into the pull request that
+raised `version` in `build.yaml`.
+
+Nothing checks that any of this happened. No workflow reads this section, no check
+looks for the record in that pull request, and a tag pushed by somebody who skipped
+it produces a release that looks exactly like one where the pages were read. The
+step is held by whoever cuts the release and by nothing else.
 
 ## What the run produces
 
