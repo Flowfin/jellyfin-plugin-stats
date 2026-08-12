@@ -7,6 +7,7 @@ using Jellyfin.Plugin.Stats.Events;
 using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Events;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -73,6 +74,15 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // this is a constructor call, and the function is only run when a sweep
         // starts.
         serviceCollection.AddSingleton(_ => new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite));
+
+        // The sweep that catches what the route below cannot: an account
+        // deleted while this plugin was not loaded. It takes the user manager
+        // rather than a list of accounts, because the question it asks is about
+        // one identifier at a time and it asks it while the sweep runs.
+        serviceCollection.AddSingleton(provider => new UnknownUserSweep(
+            OpenTheStore,
+            provider.GetRequiredService<IUserManager>(),
+            UnknownUserSweep.DefaultBite));
 
         // The one route by which this plugin hears that an account is gone. The
         // user manager interface carries an update event and no deletion, so

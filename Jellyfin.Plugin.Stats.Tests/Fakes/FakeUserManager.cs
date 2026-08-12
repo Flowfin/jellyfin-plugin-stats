@@ -66,8 +66,30 @@ public sealed class FakeUserManager : IUserManager
     /// <inheritdoc />
     public IEnumerable<Guid> GetUsersIds() => _users.Select(user => user.Id);
 
+    /// <summary>
+    /// Gets or sets what a lookup throws, per identifier, or null for a lookup
+    /// that answers.
+    /// </summary>
+    /// <remarks>
+    /// A user manager that could not answer is not a user manager saying nobody
+    /// is there, and code that reconciles against it decides whether rows are
+    /// deleted on exactly that difference. It is a hook here rather than a
+    /// second fake, because what a test needs is a manager that answers for
+    /// some identifiers and fails for one.
+    /// </remarks>
+    public Func<Guid, Exception?>? Failing { get; set; }
+
     /// <inheritdoc />
-    public User? GetUserById(Guid id) => _users.Find(user => user.Id.Equals(id));
+    public User? GetUserById(Guid id)
+    {
+        var failure = Failing?.Invoke(id);
+        if (failure is not null)
+        {
+            throw failure;
+        }
+
+        return _users.Find(user => user.Id.Equals(id));
+    }
 
     /// <inheritdoc />
     public User? GetFirstUser() => _users.Count == 0 ? null : _users[0];
