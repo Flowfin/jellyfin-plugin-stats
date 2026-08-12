@@ -35,16 +35,21 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// whoever constructed this, for the same reason: opening it is file work, and a
 /// store that cannot be opened would otherwise throw where the server is
 /// building its container. Here it is a failure of one row, counted and logged,
-/// and the server keeps running. Issue #31 is where that state becomes visible
-/// somewhere other than the log.
+/// and the server keeps running.
 /// </para>
 /// <para>
-/// The four counters are what a test reads instead of a log line. Two of them
-/// are kept by the caller's thread under the same lock the queue is guarded by
-/// and two by the writer's own; all four are settled once
-/// <see cref="Dispose"/> has returned, because that is the point at which the
-/// writer thread has stopped and joined. Reading one while a play is in flight
-/// reads a number that is moving.
+/// <see cref="WhyTheStoreCouldNotBeOpened"/> is that failure said out loud
+/// rather than left in the log, which is what the first two conditions of issue
+/// #31 ask for. It answers for the store and not for the queue: a row this
+/// refused because the queue was full is a busy plugin and not a broken one.
+/// </para>
+/// <para>
+/// The four counters are what a test reads instead of a log line, and the
+/// statement above is read the same way. Two of the counters are kept by the
+/// caller's thread under the same lock the queue is guarded by and two by the
+/// writer's own; all four are settled once <see cref="Dispose"/> has returned,
+/// because that is the point at which the writer thread has stopped and joined.
+/// Reading one while a play is in flight reads a number that is moving.
 /// </para>
 /// </remarks>
 public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
@@ -76,6 +81,12 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     private int _written;
     private int _refused;
     private int _failed;
+
+    // Written by the writer thread and read by whoever asks, so the read has to
+    // see the last write rather than one the compiler kept in a register. A
+    // reference field may be volatile; the counters beside it may not, which is
+    // why they are not.
+    private volatile string? _whyTheStoreCouldNotBeOpened;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="QueuedPlayWriter"/> class.
@@ -120,6 +131,36 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     /// Gets how many rows the store would not take.
     /// </summary>
     public int Failed => _failed;
+
+    /// <summary>
+    /// Gets why the store could not be opened, and null while nothing says it
+    /// could not. This is the plugin saying it cannot store anything, which is
+    /// a different statement from having stored nothing.
+    /// </summary>
+    /// <remarks>
+    /// It is the last attempt and not a verdict. The writer opens the store
+    /// when a row arrives and it has none, so a file that was locked and is now
+    /// free opens on the next play and this goes back to null without anybody
+    /// restarting the server. A state that could only be left by a restart
+    /// would turn a lock somebody cleared in a minute into a plugin that stays
+    /// off until the next one.
+    /// <para>
+    /// The value is the exception's type, which is the same class the log line
+    /// carries, so the two name one thing. It is not a sentence written for a
+    /// reader: turning it into words belongs where it is shown, and the third
+    /// condition of issue #31 is where that lands. Nothing shows it yet, because
+    /// a page reads what the plugin knows over a route this tree does not have,
+    /// which is the same absence issue #65 records.
+    /// </para>
+    /// <para>
+    /// A row the store refused after it opened does not set this. Those are
+    /// counted by <see cref="Failed"/> and are a different failure: one row the
+    /// store would not take is a bad row, and a plugin that switched itself off
+    /// over one of them would lose every play after it for a reason that had
+    /// already passed.
+    /// </para>
+    /// </remarks>
+    public string? WhyTheStoreCouldNotBeOpened => _whyTheStoreCouldNotBeOpened;
 
     /// <inheritdoc />
     /// <remarks>
@@ -192,6 +233,13 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     /// retried: the next row is a different row, and a writer that stopped to
     /// retry the one in front of it would turn a single bad row into a stalled
     /// queue.
+    /// <para>
+    /// Opening and writing are caught separately, and that is not tidiness. A
+    /// store that cannot be opened is the plugin unable to keep anything, and a
+    /// row the store refused once it was open is one row. Caught together they
+    /// are one number and one log class, and the only way left to tell them
+    /// apart is to read the exception type and know which one it means.
+    /// </para>
     /// </remarks>
     private void Drain()
     {
@@ -201,9 +249,24 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
         {
             foreach (var play in _pending.GetConsumingEnumerable())
             {
+                if (store is null)
+                {
+                    try
+                    {
+                        store = _openStore();
+                        _whyTheStoreCouldNotBeOpened = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        _failed++;
+                        _whyTheStoreCouldNotBeOpened = ex.GetType().FullName!;
+                        ReportOnce(ex.GetType().FullName!, ex);
+                        continue;
+                    }
+                }
+
                 try
                 {
-                    store ??= _openStore();
                     store.Add(play);
                     _written++;
                 }
