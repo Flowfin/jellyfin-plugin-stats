@@ -108,6 +108,9 @@ public sealed class HoldablePlayStore : IPlayStore
     public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
 
     /// <inheritdoc />
+    public int DeletePlaysFor(Guid userId, int limit) => throw NotPartOfThis();
+
+    /// <inheritdoc />
     public void ReclaimFreedSpace() => throw NotPartOfThis();
 
     /// <inheritdoc />

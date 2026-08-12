@@ -101,6 +101,31 @@ public interface IPlayStore : IDisposable
     int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit);
 
     /// <summary>
+    /// Deletes rows belonging to one user, up to a limit, oldest written first.
+    /// </summary>
+    /// <remarks>
+    /// A second deletion beside the retention one, because the two are asked
+    /// different questions. The sweep deletes by age, for everybody; this
+    /// deletes by identifier, whatever the age. Neither can be written in terms
+    /// of the other.
+    /// <para>
+    /// Bounded by an argument for the same reason the sweep's is. A server one
+    /// person uses has all of its rows under one identifier, so "one user's
+    /// rows" is not a small set by construction, and a single statement over
+    /// years of them holds the write lock for its whole duration.
+    /// </para>
+    /// <para>
+    /// The rows do not come back. There is no flag and no second table: the
+    /// row is gone from the table, which is what makes this a deletion rather
+    /// than a filter a later reader could be asked to skip.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The user whose rows go.</param>
+    /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
+    /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
+    int DeletePlaysFor(Guid userId, int limit);
+
+    /// <summary>
     /// Gives the space that deleted rows were occupying back to the file
     /// system.
     /// </summary>
