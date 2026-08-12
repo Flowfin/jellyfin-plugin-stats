@@ -20,12 +20,18 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// from a report.
 /// </para>
 /// <para>
-/// The two reads below that carry no bound are the exception that proves it,
-/// and they are shaped so a report cannot use them by accident. Both hand back
+/// The reads over rows that carry no bound are the exception that proves it,
+/// and they are shaped so a report cannot use them by accident. Each hands back
 /// a sequence that is walked once, drawn from the store a row at a time, so a
-/// caller holding a year of plays is a caller that chose to; neither returns a
-/// list. They exist for the export in issue #33, which is the one operation
-/// whose whole job is every row.
+/// caller holding a year of plays is a caller that chose to; none of them
+/// returns a list. They exist for the export in issue #33, which is the one
+/// operation whose whole job is every row.
+/// </para>
+/// <para>
+/// One read is unbounded and returns a list, and it is not a read over rows:
+/// <see cref="UserIdsWithPlays"/> answers with one entry per account rather
+/// than one per play. Its own remarks carry why that is a different statement
+/// from the paragraph above rather than an exception to it.
 /// </para>
 /// </remarks>
 public interface IPlayStore : IDisposable
@@ -66,6 +72,28 @@ public interface IPlayStore : IDisposable
     /// <param name="userId">The user whose rows are wanted.</param>
     /// <returns>That user's rows, walked once, and empty where there are none.</returns>
     IEnumerable<PlayRecord> PlaysFor(Guid userId);
+
+    /// <summary>
+    /// Reads back each user identifier the store holds rows for, once.
+    /// </summary>
+    /// <remarks>
+    /// The read that carries no bound and is not a walk, and what makes that
+    /// safe is the shape of the answer rather than a caller's restraint: it is
+    /// one entry per account that has ever finished a play, so it grows with
+    /// the number of people on the server and not with how long the server has
+    /// been recording. A store holding a million rows for a household answers
+    /// this with four.
+    /// <para>
+    /// It is the direction <see cref="PlaysFor"/> does not go. That one answers
+    /// for an identifier the caller already holds; this is for the caller that
+    /// has none, which is the reconciliation asking the server about every
+    /// account the store still carries rows for. Deriving the same set by
+    /// walking <see cref="AllPlays"/> would read every row in the file to
+    /// answer a question one statement answers, on a schedule, forever.
+    /// </para>
+    /// </remarks>
+    /// <returns>Each identifier once, in a stable order, and empty where there are no rows.</returns>
+    IReadOnlyList<Guid> UserIdsWithPlays();
 
     /// <summary>
     /// Counts the rows that started before a moment.

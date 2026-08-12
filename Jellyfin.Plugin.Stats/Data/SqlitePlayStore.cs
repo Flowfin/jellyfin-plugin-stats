@@ -91,6 +91,16 @@ public sealed class SqlitePlayStore : IPlayStore
           WHERE UserId = $userId
           ORDER BY Id";
 
+    // One row per account rather than one per play, which is what lets this
+    // statement carry no limit where every other read here does. The store
+    // reduces the column rather than handing back a million rows for a caller
+    // to put into a set, and the order is the column's own so two runs over an
+    // unchanged file answer in the same order.
+    private const string SelectTheUsersWithPlays =
+        @"SELECT DISTINCT UserId
+          FROM plays
+          ORDER BY UserId";
+
     // The retention sweep's three statements. The count is what lets a sweep
     // say how far through it is, and it is asked once rather than per bite.
     private const string CountPlaysBefore =
@@ -299,6 +309,33 @@ public sealed class SqlitePlayStore : IPlayStore
         {
             yield return ReadPlay(reader);
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A list rather than an iterator, unlike the two walks above. The caller
+    /// asks the server about every identifier this returns and then deletes
+    /// against the same store, and a reader left open over the table while
+    /// deletions run against it is a reader whose remaining rows are whatever
+    /// the deletions left. The set is one entry per account, so holding it all
+    /// at once is the cheap half of this operation.
+    /// </remarks>
+    public IReadOnlyList<Guid> UserIdsWithPlays()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheUsersWithPlays;
+
+        var users = new List<Guid>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // Read back the way every other read here reads an identifier, so
+            // a value that came out of this list is a value the delete and the
+            // per-user read will both match.
+            users.Add(Guid.ParseExact(reader.GetString(0), "N"));
+        }
+
+        return users;
     }
 
     /// <inheritdoc />

@@ -313,6 +313,8 @@ public sealed class UserDeletedTests : IDisposable
 
         public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
 
+        public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
+
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();

@@ -102,6 +102,9 @@ public sealed class HoldablePlayStore : IPlayStore
     public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
 
     /// <inheritdoc />
+    public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
+
+    /// <inheritdoc />
     public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
     /// <inheritdoc />
