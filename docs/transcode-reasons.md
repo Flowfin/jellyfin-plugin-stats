@@ -57,8 +57,19 @@ cannot tell the two apart.
 
 ## What is not built yet
 
-There is no reason breakdown, and there is nothing to read one through. No query
-layer exists and no endpoint exists:
+Both halves of the arithmetic above are now written down in code rather than
+only here. `DeliveryMethodShares` folds a sequence of rows into the four figures
+and counts the rows it was given, so what it reports adds up to the plays it
+read. `TranscodeReasonBreakdown` folds the same sequence into one row per reason
+and counts the plays under each, so the rows add up to more:
+
+    git grep -n "public static DeliveryMethodShares Over\|public static TranscodeReasonBreakdown Over" -- Jellyfin.Plugin.Stats/Aggregation/
+    Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:85:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
+
+Both take a sequence and not a range, because choosing the range is a query and
+there is none. They are the arithmetic under a report rather than reports, and
+nothing calls either of them. No query layer exists and no endpoint exists:
 
     git grep -lE "ControllerBase|ApiController|HttpGet|HttpPost" -- '*.cs'
     tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs
@@ -66,22 +77,18 @@ layer exists and no endpoint exists:
 The single hit is a near miss under `tools/invariants`, which is not compiled
 into either project.
 
-So this document describes what the stored rows already support and what the
-breakdown will therefore say. It is not a report that the breakdown exists.
-Issue #53 stays open on the breakdown itself, on the shares over a range, and on
-the split by client under the consent rule, and issue #51 holds the query layer
-all three need.
+So this document describes what the stored rows support and what a report over
+them will therefore say. It is not a report that one exists. Issue #53 stays
+open on the shares over a range, on the split by client under the consent rule,
+and on serving any of it; issue #51 holds the query layer all three need.
 
-One half of the arithmetic above is now written down in code rather than only
-here. `DeliveryMethodShares` folds a sequence of rows into the four figures and
-counts the rows it was given, so what it reports adds up to the plays it read:
-
-    git grep -n "public static DeliveryMethodShares Over" -- Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs
-    Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
-
-It takes a sequence and not a range, because choosing the range is a query and
-there is none. It is the arithmetic under a report rather than a report, nothing
-calls it yet, and the reason breakdown has no counterpart to it.
+One thing the reason fold does not do is invent a row for a play that recorded
+nothing. Most plays record no reason because the server passed them through and
+there was nothing to report, and the fold reads the summary rather than the
+delivery method, so it cannot tell those from a play that was re-encoded and
+reported no reason. It reports how many plays recorded any reason at all, and
+telling the two apart means reading the reasons and the method together, which
+is a comparison they can lose: issue #158 holds the case where they disagree.
 
 ## What keeps this document true
 
@@ -96,10 +103,19 @@ plays, and changing that to one value stops the fold and the store compiling
 before any assertion could run. There is no test for it here, because a test
 that cannot be shown to fire for the reason it names is not worth the line.
 
-Neither of them reaches the arithmetic. The delivery half has its own suite,
-`DeliveryMethodSharesTests`, which holds what this document claims about it: the
-four figures add up to the sequence the fold was handed, a play the server
-reported no method for is counted as unknown and never as direct, and a row
-carrying a method this build has no name for is counted rather than dropped.
+Neither of them reaches the arithmetic. Each fold has a suite of its own for
+that. `DeliveryMethodSharesTests` holds what this document claims about the
+delivery half: the four figures add up to the sequence the fold was handed, a
+play the server reported no method for is counted as unknown and never as
+direct, and a row carrying a method this build has no name for is counted rather
+than dropped.
 
-The reason half has nothing of the kind, because there is no breakdown to hold.
+`TranscodeReasonBreakdownTests` holds the reason half, and the claim it is
+really about is the sentence at the top of this file. A play that recorded
+several reasons is counted under each of them, so three plays carrying two
+reasons each produce rows totalling six against a play count of three, which is
+this document's point as an assertion rather than as prose. Beside it: a play is
+counted once under a reason however often the stored row repeats it, a play that
+recorded nothing is in the play count and under no row, and two spellings of one
+name are two rows, because a fold that tidied them would be inferring an
+equivalence nobody reported.
