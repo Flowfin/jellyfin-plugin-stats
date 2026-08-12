@@ -1,9 +1,12 @@
 using System;
+using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.Stats.Capture;
 using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
+using Jellyfin.Plugin.Stats.Events;
 using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -70,6 +73,19 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // this is a constructor call, and the function is only run when a sweep
         // starts.
         serviceCollection.AddSingleton(_ => new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite));
+
+        // The one route by which this plugin hears that an account is gone. The
+        // user manager interface carries an update event and no deletion, so
+        // without this line a deleted user's rows sit in the store until their
+        // retention window expires, and nothing anywhere says they are there.
+        //
+        // Registered against the interface rather than the type, because the
+        // server asks its container for every IEventConsumer of the event it is
+        // publishing and never for this class by name. A registration of the
+        // concrete type alone resolves in a test and is never called on a
+        // server, which is the failure the container test is written against.
+        serviceCollection.AddSingleton<IEventConsumer<UserDeletedEventArgs>>(
+            _ => new UserDeletedConsumer(OpenTheStore, UserDeletedConsumer.DefaultBite));
     }
 
     /// <summary>

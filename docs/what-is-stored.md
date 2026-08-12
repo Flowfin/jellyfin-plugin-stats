@@ -110,6 +110,14 @@ what it defaults to; this says only which ones reach the data.
 None of the four reaches back over rows that are already stored, apart from the
 retention sweep, which deletes them.
 
+One thing that is not a setting reaches back over them as well. Deleting a user
+from the server deletes every row belonging to that user, at the moment the
+server publishes the deletion, and then gives the space they were using back to
+the file so the bytes are gone from it rather than sitting in a page nothing
+points at. An administrator does not switch this on and cannot switch it off.
+What it does not cover is a user who was deleted while this plugin was not
+running or not installed, which is the next paragraph but one.
+
 ## What this plugin does not have yet
 
 A statistics plugin is usually expected to offer these, and this one does not.
@@ -124,14 +132,17 @@ Issue #42 is where that record is built.
 A signed in user cannot read their own history, export it, or delete it. There
 is no endpoint for any of that, which is issues #43 and #46.
 
-Deleting a user from the server does not delete their rows. The plugin does not
-watch for a user being removed, and nothing sweeps the store for identifiers the
-server no longer knows, so a deleted user's plays stay in the store until their
-retention window expires or the plugin is removed. Issues #44 and #45.
+Nothing sweeps the store for identifiers the server no longer knows. A user
+deleted while this plugin was not running, or before it was installed, leaves
+rows the deletion above never heard about, and they stay until their retention
+window expires or the plugin is removed. Nothing counts them and nothing reports
+them, so an administrator has no way to find out that they are there. Issue #45
+is where that reconciliation is built.
 
-Until those land, the whole of what an administrator can do about one person's
-data is to exclude them from future capture, shorten the retention window for
-everybody, or delete the store file.
+Until the rest of those land, what an administrator can do about one person's
+data is to delete their account, exclude them from future capture, shorten the
+retention window for everybody, or delete the store file. Only the first of
+those is about one person and it takes their account with it.
 
 ## What this document does not cover
 
