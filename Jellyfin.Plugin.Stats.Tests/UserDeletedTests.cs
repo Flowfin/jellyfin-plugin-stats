@@ -315,6 +315,8 @@ public sealed class UserDeletedTests : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
+        public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();

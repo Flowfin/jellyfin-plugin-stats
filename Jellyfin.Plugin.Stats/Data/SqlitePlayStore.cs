@@ -101,6 +101,19 @@ public sealed class SqlitePlayStore : IPlayStore
           FROM plays
           ORDER BY UserId";
 
+    // One moment however many rows the table holds, which is what lets this
+    // statement carry no limit either. It reduces the started column rather
+    // than ordering the table and taking a row off the front, so nothing here
+    // reads a row at all.
+    //
+    // Over an empty table the aggregate still answers, with one row holding
+    // null, and that null is the answer rather than a missing one. The read
+    // below turns it into an absent moment instead of a moment at the first
+    // tick a clock can name.
+    private const string SelectTheOldestStart =
+        @"SELECT MIN(StartedUtcTicks)
+          FROM plays";
+
     // The retention sweep's three statements. The count is what lets a sweep
     // say how far through it is, and it is asked once rather than per bite.
     private const string CountPlaysBefore =
@@ -336,6 +349,22 @@ public sealed class SqlitePlayStore : IPlayStore
         }
 
         return users;
+    }
+
+    /// <inheritdoc />
+    public DateTime? OldestPlayStartedUtc()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheOldestStart;
+
+        // Two different nulls arrive here as one. An empty table gives the
+        // aggregate no row to reduce and it answers null; the column itself is
+        // NOT NULL, so a row can never contribute one. The store therefore
+        // reads this null as "no rows" rather than as "a row with no start",
+        // and the schema is what makes that reading safe rather than a guess.
+        var oldest = command.ExecuteScalar();
+
+        return oldest is null or DBNull ? null : Utc((long)oldest);
     }
 
     /// <inheritdoc />

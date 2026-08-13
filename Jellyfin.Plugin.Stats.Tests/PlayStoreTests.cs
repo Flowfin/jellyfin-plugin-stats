@@ -186,6 +186,105 @@ public sealed class PlayStoreTests : IDisposable
         Assert.Empty(store.MostRecentPlays(10));
     }
 
+    /// <summary>
+    /// A store nobody has recorded into answers with nothing rather than with a
+    /// date. This is what the configuration page meets on a first start, and a
+    /// sentinel here would be drawn as a real moment in the first year a clock
+    /// can name.
+    /// </summary>
+    [Fact]
+    public void AStoreWithNoRowsHasNoOldestPlay()
+    {
+        using var store = new SqlitePlayStore(_root);
+
+        Assert.Null(store.OldestPlayStartedUtc());
+    }
+
+    /// <summary>
+    /// The oldest play is the earliest one started, and it comes back in UTC.
+    /// </summary>
+    [Fact]
+    public void TheOldestPlayIsTheEarliestOneStarted()
+    {
+        var earliest = new DateTime(2025, 6, 1, 7, 30, 0, DateTimeKind.Utc);
+
+        using var store = new SqlitePlayStore(_root);
+        store.Add(APlay() with { StartedUtc = earliest.AddDays(9), EndedUtc = earliest.AddDays(9).AddHours(1) });
+        store.Add(APlay() with { StartedUtc = earliest, EndedUtc = earliest.AddHours(1) });
+        store.Add(APlay() with { StartedUtc = earliest.AddDays(4), EndedUtc = earliest.AddDays(4).AddHours(1) });
+
+        var oldest = store.OldestPlayStartedUtc();
+
+        Assert.Equal(earliest, oldest);
+        Assert.Equal(DateTimeKind.Utc, oldest!.Value.Kind);
+    }
+
+    /// <summary>
+    /// The row written last can be the oldest play. An import reads a file in
+    /// whatever order that file holds, so the newest row in the table is not
+    /// the newest play in it, and a store answering by write order would tell
+    /// an administrator who has just imported a year that it knows nothing
+    /// older than this afternoon.
+    /// </summary>
+    [Fact]
+    public void TheOldestPlayIsNotTheFirstRowWritten()
+    {
+        var earliest = new DateTime(2024, 2, 29, 21, 0, 0, DateTimeKind.Utc);
+        var latest = new DateTime(2026, 5, 5, 5, 0, 0, DateTimeKind.Utc);
+
+        using var store = new SqlitePlayStore(_root);
+        store.Add(APlay() with { StartedUtc = latest, EndedUtc = latest.AddMinutes(30) });
+        store.Add(APlay() with { StartedUtc = earliest, EndedUtc = earliest.AddMinutes(30) });
+
+        // The row that went in first is the later play, and AllPlays walks in
+        // write order, so this says the two orders really do disagree here
+        // rather than leaving that to the reader.
+        Assert.Equal(latest, store.AllPlays().First().StartedUtc);
+        Assert.Equal(earliest, store.OldestPlayStartedUtc());
+    }
+
+    /// <summary>
+    /// The answer moves when the sweep takes the rows behind it. The figure is
+    /// how far back the plugin can answer for, so a retention window that has
+    /// just deleted a year has to show up here; a value read once and kept
+    /// would go on claiming rows that are gone from the file.
+    /// </summary>
+    [Fact]
+    public void TheOldestPlayFollowsTheRetentionSweep()
+    {
+        var earliest = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var cutoff = earliest.AddDays(30);
+        var survivor = earliest.AddDays(45);
+
+        using var store = new SqlitePlayStore(_root);
+        store.Add(APlay() with { StartedUtc = earliest, EndedUtc = earliest.AddMinutes(20) });
+        store.Add(APlay() with { StartedUtc = survivor, EndedUtc = survivor.AddMinutes(20) });
+
+        Assert.Equal(earliest, store.OldestPlayStartedUtc());
+
+        Assert.Equal(1, store.DeletePlaysStartedBefore(cutoff, 100));
+
+        Assert.Equal(survivor, store.OldestPlayStartedUtc());
+    }
+
+    /// <summary>
+    /// A sweep that took everything leaves the same nothing a first start does.
+    /// The empty case is reached twice over the life of a server and only one
+    /// of them is the one somebody writes a test for.
+    /// </summary>
+    [Fact]
+    public void AStoreTheSweepEmptiedHasNoOldestPlayAgain()
+    {
+        var started = new DateTime(2025, 8, 20, 12, 0, 0, DateTimeKind.Utc);
+
+        using var store = new SqlitePlayStore(_root);
+        store.Add(APlay() with { StartedUtc = started, EndedUtc = started.AddMinutes(20) });
+
+        Assert.Equal(1, store.DeletePlaysStartedBefore(started.AddDays(1), 100));
+
+        Assert.Null(store.OldestPlayStartedUtc());
+    }
+
     [Fact]
     public void TheStoreRefusesToBeBuiltOnNothing()
     {

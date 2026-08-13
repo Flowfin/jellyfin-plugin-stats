@@ -33,6 +33,14 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// than one per play. Its own remarks carry why that is a different statement
 /// from the paragraph above rather than an exception to it.
 /// </para>
+/// <para>
+/// Two more carry no bound and are not reads over rows either, because the
+/// store reduces the column rather than handing the rows back:
+/// <see cref="CountPlaysStartedBefore"/> answers with one number and
+/// <see cref="OldestPlayStartedUtc"/> with one moment, however many rows either
+/// of them read. A bound on an answer that is one value however large the table
+/// is would be a bound on nothing.
+/// </para>
 /// </remarks>
 public interface IPlayStore : IDisposable
 {
@@ -94,6 +102,34 @@ public interface IPlayStore : IDisposable
     /// </remarks>
     /// <returns>Each identifier once, in a stable order, and empty where there are no rows.</returns>
     IReadOnlyList<Guid> UserIdsWithPlays();
+
+    /// <summary>
+    /// Reads the moment the oldest play in the store started, and nothing
+    /// where the store holds no rows.
+    /// </summary>
+    /// <remarks>
+    /// How far back the plugin can answer for. An administrator reading a
+    /// report over a year on a store that holds ninety days of rows is reading
+    /// ninety days under a yearly heading, and this is the one figure that says
+    /// so. Issue #65 is where it is shown.
+    /// <para>
+    /// Absent is a value of its own rather than a date standing in for one. A
+    /// store with no rows and a store whose oldest row is the first moment a
+    /// clock can name are different facts, and a caller handed a sentinel has
+    /// already lost the difference before it can draw anything.
+    /// </para>
+    /// <para>
+    /// The moment is when the play started and not when its row was written.
+    /// The two part company in both directions: the retention sweep deletes by
+    /// the started column, so the earliest start is the edge of the window a
+    /// sweep leaves behind, and an import writes rows in whatever order the file
+    /// it read them from held them. A store answering by write order would tell
+    /// an administrator who has just imported a year that the plugin knows
+    /// nothing older than this afternoon.
+    /// </para>
+    /// </remarks>
+    /// <returns>When the oldest play started, in UTC, and null where the store holds no rows.</returns>
+    DateTime? OldestPlayStartedUtc();
 
     /// <summary>
     /// Counts the rows that started before a moment.

@@ -105,6 +105,9 @@ public sealed class HoldablePlayStore : IPlayStore
     public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
     /// <inheritdoc />
+    public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+
+    /// <inheritdoc />
     public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
     /// <inheritdoc />
