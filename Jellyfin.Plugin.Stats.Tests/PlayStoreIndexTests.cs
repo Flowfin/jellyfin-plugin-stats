@@ -5,11 +5,15 @@
 // a plan asserted over three rows would be asserting the planner's warm-up
 // rather than the index, and would keep passing after the index was deleted.
 //
-// The queries here are the four shapes issue #30 names, and they are owned by
+// Four of the queries here are the shapes issue #30 names, and they are owned by
 // this file rather than by the plugin because the reports that will run them do
-// not exist yet. That is the bound on what these tests prove: that the index set
+// not exist yet. That is the bound on what those four prove: that the index set
 // serves these shapes, not that the reports are written in them. Whoever writes
 // the query surface in #51 either writes these shapes or comes back here.
+//
+// The fifth is not owned here. It is the statement the plugin itself runs for
+// the oldest row it holds, read out of the source rather than copied, so a
+// rewrite of that read is measured instead of a copy of what it used to say.
 //
 // The last test is the half that keeps the set from growing quietly: an index on
 // the plays table that no test below names is a failure, so an index that no
@@ -21,6 +25,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.Stats.Data;
 using Microsoft.Data.Sqlite;
 using Xunit;
@@ -78,6 +83,14 @@ public sealed class PlayStoreIndexTests : IDisposable
         @"SELECT Id FROM plays
           WHERE ItemType = $itemType AND StartedUtcTicks >= $from AND StartedUtcTicks < $to
           ORDER BY StartedUtcTicks";
+
+    // Where the plugin's own read of the oldest row is written, and the shape it
+    // is written in. A verbatim string with no quotes inside it, which is what
+    // lets the pattern end at the first one.
+    private const string StoreSource = "Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs";
+
+    private const string TheOldestStartConstant =
+        @"private const string SelectTheOldestStart\s*=\s*@""(?<sql>[^""]*)"";";
 
     private const string IndexesOnThePlaysTable =
         @"SELECT name FROM sqlite_master
@@ -173,6 +186,39 @@ public sealed class PlayStoreIndexTests : IDisposable
     }
 
     /// <summary>
+    /// Served by ix_plays_started as well: the oldest row the store holds. The
+    /// read landed with #182 and its plan was left unmeasured and disclosed as
+    /// unmeasured, which is what this answers.
+    /// </summary>
+    /// <remarks>
+    /// It matters more than a report query does. #65 asks the configuration page
+    /// to show this figure, and a page reads it on every load rather than when
+    /// somebody chooses a range, so a scan here is a walk of the whole table
+    /// every time an administrator opens the settings of a plugin they are not
+    /// otherwise using. The four queries above are read by reports nobody has
+    /// written; this one has a caller waiting for it.
+    /// <para>
+    /// The statement comes out of the plugin's source rather than being spelled
+    /// again here. A copy would go on passing after the read it stands for was
+    /// rewritten, and the mistake this exists against is exactly that rewrite:
+    /// the same answer taken by ordering the table and reading a row off the
+    /// front, which is the shape somebody reaches for when a minimum feels like
+    /// a sort.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheOldestStoredPlayIsServedByTheStartIndex()
+    {
+        using var connection = ASeededStore();
+
+        AssertPlanUsesIndex(
+            connection,
+            TheStatementThePluginRunsForTheOldestRow(),
+            "ix_plays_started",
+            static _ => { });
+    }
+
+    /// <summary>
     /// Every index on the table is one of the four above. An index costs a write
     /// on every insert and a rebuild on every upgrade, so one that no query
     /// reaches is a cost with nothing on the other side, and this is what stops
@@ -243,6 +289,45 @@ public sealed class PlayStoreIndexTests : IDisposable
         {
             Directory.Delete(_root, true);
         }
+    }
+
+    /// <summary>
+    /// Reads the plugin's own statement for the oldest stored row out of the
+    /// file it is written in.
+    /// </summary>
+    /// <remarks>
+    /// The constant is private, and it is left private. Widening it so a test
+    /// could name it would put a seam in the store for the suite's convenience,
+    /// and the assembly's shape is not the suite's to decide. Reading the source
+    /// costs one pattern and fails loudly when the constant is renamed, which is
+    /// a change somebody makes deliberately.
+    /// </remarks>
+    /// <returns>The statement, as the store holds it.</returns>
+    private static string TheStatementThePluginRunsForTheOldestRow()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot(), StoreSource));
+        var found = Regex.Match(source, TheOldestStartConstant, RegexOptions.Singleline, TimeSpan.FromSeconds(5));
+
+        Assert.True(found.Success, "SelectTheOldestStart was not found in " + StoreSource + ".");
+
+        return found.Groups["sql"].Value;
+    }
+
+    /// <summary>
+    /// Finds the top of the working tree from wherever the suite was built to.
+    /// </summary>
+    /// <returns>The directory holding build.yaml.</returns>
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "build.yaml")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.True(directory is not null, "No build.yaml was found above " + AppContext.BaseDirectory + ".");
+
+        return directory!.FullName;
     }
 
     private static IReadOnlyList<string> IndexNames(SqliteConnection connection)
