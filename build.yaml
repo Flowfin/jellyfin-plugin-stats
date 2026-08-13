@@ -17,7 +17,7 @@ description: >
   had to transcode. Personal detail is visible only to the user it is about
   unless that user chooses otherwise, and server-wide views name nobody.
 category: "Administration"
-owner: "iderex"
+owner: "Flowfin"
 artifacts:
 - "Jellyfin.Plugin.Stats.dll"
 # Required by the packaging tool: without this key it fails with KeyError.
