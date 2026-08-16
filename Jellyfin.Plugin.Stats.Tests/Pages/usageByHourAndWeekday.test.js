@@ -9,6 +9,10 @@
  * zone puts it in, is HourAndWeekdayGridTests in the .NET suite, including
  * across a summer change.
  *
+ * The state tests at the foot are the first condition of issue #64, which asks
+ * every view for a test of each of nothing recorded yet, still loading and
+ * could not be read. This is the one view in the tree, so they are here.
+ *
  * Run with the test runner built into node:
  *
  *     node --test Jellyfin.Plugin.Stats.Tests/Pages/
@@ -37,16 +41,19 @@ test('the view states the zone its hours were counted in', () => {
 });
 
 test('a week with no zone is refused rather than drawn', () => {
-    const cells = [{ weekday: 1, hour: 23, plays: 4, watchedMinutes: 90 }];
+    const ready = {
+        state: 'ready',
+        cells: [{ weekday: 1, hour: 23, plays: 4, watchedMinutes: 90 }],
+    };
 
-    assert.throws(() => usageByHourAndWeekday({ cells }), /zone/);
-    assert.throws(() => usageByHourAndWeekday({ zone: '', cells }), /zone/);
-    assert.throws(() => usageByHourAndWeekday({ zone: '   ', cells }), /zone/);
-    assert.throws(() => usageByHourAndWeekday(null), /zone/);
+    assert.throws(() => usageByHourAndWeekday(ready), /zone/);
+    assert.throws(() => usageByHourAndWeekday({ ...ready, zone: '' }), /zone/);
+    assert.throws(() => usageByHourAndWeekday({ ...ready, zone: '   ' }), /zone/);
 });
 
 test('a figure arrives at the weekday and hour its cell names', () => {
     const drawn = usageByHourAndWeekday({
+        state: 'ready',
         zone: 'Europe/Berlin',
         cells: [{ weekday: 1, hour: 23, plays: 4, watchedMinutes: 90 }],
     });
@@ -61,6 +68,7 @@ test('a figure arrives at the weekday and hour its cell names', () => {
 
 test('the view draws the figure it was asked for', () => {
     const week = {
+        state: 'ready',
         zone: 'UTC',
         cells: [{ weekday: 0, hour: 9, plays: 4, watchedMinutes: 90 }],
     };
@@ -76,13 +84,18 @@ test('the view draws the figure it was asked for', () => {
 
 test('a figure this view does not have is refused rather than drawn empty', () => {
     assert.throws(
-        () => usageByHourAndWeekday({ zone: 'UTC', cells: [] }, { figure: 'transcodes' }),
+        () =>
+            usageByHourAndWeekday(
+                { state: 'ready', zone: 'UTC', cells: [] },
+                { figure: 'transcodes' },
+            ),
         /transcodes/,
     );
 });
 
 test('the view names no user, whatever the cells carry', () => {
     const drawn = usageByHourAndWeekday({
+        state: 'ready',
         zone: 'UTC',
         cells: [
             {
@@ -118,16 +131,80 @@ test('the view names no user, whatever the cells carry', () => {
 
 test('a cell with no figure stays absent and is never drawn as a zero', () => {
     const missing = usageByHourAndWeekday({
+        state: 'ready',
         zone: 'UTC',
         cells: [{ weekday: 0, hour: 9, watchedMinutes: 90 }],
     });
     const nought = usageByHourAndWeekday({
+        state: 'ready',
         zone: 'UTC',
         cells: [{ weekday: 0, hour: 9, plays: 0, watchedMinutes: 90 }],
     });
 
     assert.match(missing, /<title>Mon 09:00: not recorded<\/title>/);
     assert.match(nought, /<title>Mon 09:00: 0<\/title>/);
+});
+
+test('a view with nothing recorded says so and draws no week', () => {
+    const drawn = usageByHourAndWeekday({ state: 'empty' });
+
+    assert.match(drawn, /Nothing recorded yet/);
+    assert.equal(countOf(drawn, '<rect'), 0);
+});
+
+test('a view still waiting for its figures says so and draws no week', () => {
+    const drawn = usageByHourAndWeekday({ state: 'loading' });
+
+    assert.match(drawn, /Still loading/);
+    assert.equal(countOf(drawn, '<rect'), 0);
+});
+
+test('a view whose figures could not be read says so, with the reason', () => {
+    const drawn = usageByHourAndWeekday({
+        state: 'failed',
+        reason: 'The store could not be opened.',
+    });
+
+    assert.match(drawn, /Could not be read/);
+    assert.match(drawn, /The store could not be opened\./);
+    assert.equal(countOf(drawn, '<rect'), 0);
+});
+
+test('a reader tells a failure from an empty view without opening the log', () => {
+    const nothing = usageByHourAndWeekday({ state: 'empty' });
+    const broken = usageByHourAndWeekday({ state: 'failed' });
+
+    /* The two situations this view is most often in with no figures to draw,
+     * and the pair the whole of issue #64 turns on: a fresh install and a
+     * store that would not open both have nothing to show, and drawn the same
+     * way the second reads as the first. */
+    assert.notEqual(nothing, broken);
+    assert.doesNotMatch(nothing, /Could not be read/);
+    assert.doesNotMatch(broken, /Nothing recorded/);
+});
+
+test('a state carries no zone requirement, because there is nothing counted to name one for', () => {
+    /* The zone is a fact about figures. A view that demanded one while its
+     * request was still in flight could not draw the loading state at all,
+     * and the state a caller cannot reach is the state nobody shows. */
+    assert.match(usageByHourAndWeekday({ state: 'loading' }), /^<figure /);
+    assert.match(usageByHourAndWeekday({ state: 'failed' }), /^<figure /);
+    assert.match(usageByHourAndWeekday({ state: 'empty' }), /^<figure /);
+});
+
+test('an answer that does not say which state it is in is refused', () => {
+    const cells = [{ weekday: 1, hour: 23, plays: 4, watchedMinutes: 90 }];
+
+    assert.throws(() => usageByHourAndWeekday({ zone: 'UTC', cells }), /state/);
+    assert.throws(() => usageByHourAndWeekday({ state: 'sideways', zone: 'UTC', cells }), /state/);
+    assert.throws(() => usageByHourAndWeekday(null), /state/);
+});
+
+test('the state a view is in does not excuse a figure it does not have', () => {
+    assert.throws(
+        () => usageByHourAndWeekday({ state: 'loading' }, { figure: 'transcodes' }),
+        /transcodes/,
+    );
 });
 
 /**
@@ -138,7 +215,19 @@ test('a cell with no figure stays absent and is never drawn as a zero', () => {
  */
 function aWeekIn(zone) {
     return usageByHourAndWeekday({
+        state: 'ready',
         zone,
         cells: [{ weekday: 1, hour: 23, plays: 4, watchedMinutes: 90 }],
     });
+}
+
+/**
+ * How many times a fragment appears in the markup.
+ *
+ * @param {string} drawn The markup.
+ * @param {string} fragment The fragment.
+ * @returns {number} The count.
+ */
+function countOf(drawn, fragment) {
+    return drawn.split(fragment).length - 1;
 }

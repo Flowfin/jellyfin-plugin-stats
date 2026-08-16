@@ -21,6 +21,12 @@
  * zero on both would say the second was the first. What a report sends for such
  * a day is decided where the report is shaped; what this module does with it is
  * to leave a gap.
+ *
+ * The same argument one level up is why the words for a view with no drawing to
+ * show are here rather than in each view. Nothing recorded yet, still loading
+ * and could not be read are three situations a reader has to be able to tell
+ * apart, and a view that renders an empty frame for all three says the same
+ * thing about each. Issue #64.
  */
 
 /* The drawing area, in user units. Every function returns markup with a
@@ -169,7 +175,7 @@ export function lineSeries(points, options = {}) {
         options.description ?? 'One reading per point, in the order they were taken.';
 
     if (points.length === 0) {
-        return empty(title, description);
+        return stateNotice('empty', { title });
     }
 
     const top = largestValue(points);
@@ -226,7 +232,7 @@ export function barBreakdown(bars, options = {}) {
         options.description ?? 'One bar per entry, longest first where the caller sorted them.';
 
     if (bars.length === 0) {
-        return empty(title, description);
+        return stateNotice('empty', { title });
     }
 
     const top = largestValue(bars);
@@ -413,21 +419,71 @@ function edgeLabels(points) {
     return first + last;
 }
 
+/* The three situations a view can be in with no figures to draw, and the words
+ * for each. They are written once here because a reader who meets "Nothing
+ * recorded yet" on one view and "No data" on the next has to work out whether
+ * those are the same state, and because the whole point of the three is that
+ * they are told apart on sight. Each carries a class of its own as well as
+ * different words, so the difference survives a stylesheet that hides text and
+ * is readable by a test without matching prose. Issue #64. */
+const STATE_WORDS = {
+    empty: {
+        heading: 'Nothing recorded yet',
+        sentence: 'No plays have been recorded for what this view is about.',
+        className: 'stats-chart-empty',
+    },
+    loading: {
+        heading: 'Still loading',
+        sentence: 'The figures for this view have been asked for and have not arrived.',
+        className: 'stats-chart-loading',
+    },
+    failed: {
+        heading: 'Could not be read',
+        sentence: 'The figures for this view could not be read.',
+        className: 'stats-chart-failed',
+    },
+};
+
 /**
- * The drawing for a set with nothing in it.
+ * The drawing a view shows in place of figures it does not have.
  *
- * A caller with no data gets a drawing that says so rather than an empty frame,
- * because an empty frame and a frame that failed to draw look the same.
+ * A caller with no data gets a drawing that says which of the three situations
+ * it is in, rather than an empty frame: an empty frame, a frame whose figures
+ * have not arrived and a frame whose figures could not be read look the same,
+ * and the last of those is the one a reader would otherwise only find in the
+ * log.
  *
- * @param {string} title What the drawing is.
- * @param {string} description What it shows.
+ * A reason is drawn where one is given and the notice stands without one. What
+ * turns a failure into words a reader understands is decided where the failure
+ * is known rather than here; this draws what it is handed.
+ *
+ * @param {string} state One of empty, loading or failed.
+ * @param {{title?: string, reason?: string}} [options] What the drawing is, and why it failed.
  * @returns {string} The drawing.
  */
-function empty(title, description) {
+export function stateNotice(state, options = {}) {
+    if (!Object.prototype.hasOwnProperty.call(STATE_WORDS, state)) {
+        throw new Error(
+            `There is no view state called ${state}. A view in a state this module does not ` +
+                'know would otherwise draw nothing, which is the empty frame the three states ' +
+                'exist to replace.',
+        );
+    }
+
+    const words = STATE_WORDS[state];
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    const description = reason === '' ? words.sentence : `${words.sentence} ${reason}`;
+    const middle = HEIGHT / 2;
+
     return (
-        open(title, description) +
-        `<text class="stats-chart-empty" x="${coordinate(WIDTH / 2)}" ` +
-        `y="${coordinate(HEIGHT / 2)}" text-anchor="middle">Nothing recorded</text>` +
+        open(options.title ?? words.heading, description) +
+        `<text class="${words.className}" x="${coordinate(WIDTH / 2)}" ` +
+        `y="${coordinate(reason === '' ? middle : middle - 10)}" text-anchor="middle">` +
+        `${escapeText(words.heading)}</text>` +
+        (reason === ''
+            ? ''
+            : `<text class="${words.className}-reason" x="${coordinate(WIDTH / 2)}" ` +
+              `y="${coordinate(middle + 12)}" text-anchor="middle">${escapeText(reason)}</text>`) +
         '</svg>'
     );
 }

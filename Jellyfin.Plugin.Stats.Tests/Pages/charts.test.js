@@ -20,6 +20,7 @@ import {
     escapeText,
     hourGrid,
     lineSeries,
+    stateNotice,
 } from '../../Jellyfin.Plugin.Stats/Pages/charts.js';
 
 /* How many cells a week of hours has. Written out rather than imported,
@@ -100,6 +101,61 @@ test('a series with nothing in it says so rather than drawing an empty frame', (
 
     assert.match(drawn, /Nothing recorded/);
     assert.equal(countOf(drawn, '<circle'), 0);
+});
+
+test('the three states a view can be in are told apart on sight', () => {
+    const nothing = stateNotice('empty');
+    const waiting = stateNotice('loading');
+    const broken = stateNotice('failed');
+
+    /* Different words and a different class each. The words are what a reader
+     * meets and the class is what a test and a stylesheet can hold; a notice
+     * that carried one but not the other would look distinguishable on the day
+     * it landed and stop being so the first time the wording was tidied. */
+    assert.match(nothing, /Nothing recorded yet/);
+    assert.match(waiting, /Still loading/);
+    assert.match(broken, /Could not be read/);
+
+    assert.match(nothing, /class="stats-chart-empty"/);
+    assert.match(waiting, /class="stats-chart-loading"/);
+    assert.match(broken, /class="stats-chart-failed"/);
+
+    assert.doesNotMatch(broken, /Nothing recorded/);
+    assert.doesNotMatch(nothing, /Could not be read/);
+});
+
+test('a failure that came with a reason draws it, and one that did not still stands', () => {
+    const withReason = stateNotice('failed', { reason: 'The store could not be opened.' });
+    const without = stateNotice('failed');
+
+    assert.match(withReason, /The store could not be opened\./);
+    assert.match(withReason, /class="stats-chart-failed-reason"/);
+
+    assert.match(without, /Could not be read/);
+    assert.doesNotMatch(without, /stats-chart-failed-reason/);
+});
+
+test('a reason arrives as text and never as markup', () => {
+    const drawn = stateNotice('failed', { reason: '<script>alert(1)</script>' });
+
+    assert.doesNotMatch(drawn, /<script>/);
+    assert.match(drawn, /&lt;script&gt;/);
+});
+
+test('a state this module does not know is refused rather than drawn blank', () => {
+    assert.throws(() => stateNotice('sideways'), /sideways/);
+    assert.throws(() => stateNotice(undefined), /state/);
+});
+
+test('a notice keeps the name of the drawing it stands in for', () => {
+    const drawn = stateNotice('loading', { title: 'Plays by hour and by weekday' });
+
+    /* The heading says which state it is in and the accessible name still says
+     * which view it is. A reader who cannot see the drawing would otherwise be
+     * told three views on a page were all called "Still loading". */
+    assert.match(drawn, /aria-label="Plays by hour and by weekday"/);
+    assert.match(drawn, /<title>Plays by hour and by weekday<\/title>/);
+    assert.match(drawn, /Still loading/);
 });
 
 test('the longest bar fills the plot and the others are drawn in proportion', () => {
