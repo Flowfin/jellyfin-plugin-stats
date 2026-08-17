@@ -142,6 +142,28 @@ public sealed class YearsWithPlaysTests : IDisposable
         Assert.Equal([2025], store.YearsWithPlaysFor(Watcher, TimeZoneInfo.Utc));
     }
 
+    /// <summary>
+    /// A row in the last year a calendar can name ends the walk instead of
+    /// throwing.
+    /// </summary>
+    /// <remarks>
+    /// The walk asks its next question at the first instant of the year after
+    /// the one it just answered, and after the last year there is none: the
+    /// first of January of the year after it is not a date. Nothing in the store
+    /// refuses such a row, because the column is a count of ticks and that is a
+    /// count a tick can reach, so the end of the calendar is reached from a real
+    /// row rather than from a bad one.
+    /// </remarks>
+    [Fact]
+    public void ARowInTheLastYearACalendarHasEndsTheWalk()
+    {
+        using var store = new SqlitePlayStore(_root);
+
+        store.Add(APlay(Watcher, new DateTime(9999, 6, 1, 12, 0, 0, DateTimeKind.Utc)));
+
+        Assert.Equal([9999], store.YearsWithPlaysFor(Watcher, TimeZoneInfo.Utc));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))
