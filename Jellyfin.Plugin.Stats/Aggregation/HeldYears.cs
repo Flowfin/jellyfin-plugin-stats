@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Jellyfin.Plugin.Stats.Aggregation;
 
@@ -170,14 +171,9 @@ public sealed class HeldYears
     {
         lock (_gate)
         {
-            var theirs = new List<Key>();
-            foreach (var key in _held.Keys)
-            {
-                if (key.UserId == userId)
-                {
-                    theirs.Add(key);
-                }
-            }
+            // Materialised before the first Remove, because removing while the
+            // dictionary's own key enumerator is still open invalidates it.
+            var theirs = _held.Keys.Where(key => key.UserId == userId).ToList();
 
             for (var i = 0; i < theirs.Count; i++)
             {
