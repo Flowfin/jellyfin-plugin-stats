@@ -84,7 +84,21 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             (userId, year, zone, topCount) =>
             {
                 using var store = OpenTheStore();
-                return YearInReview.Over(store.PlaysFor(userId), userId, year, zone, topCount);
+
+                // The oldest row comes from the same store and the same open as
+                // the plays, so what the answer says it covers and what it was
+                // folded from are one reading rather than two that a sweep
+                // running in between could put out of step. It is asked over
+                // every account rather than over this one, because what a
+                // window is about is the days the store has lost and not the
+                // day this person started watching.
+                return YearInReview.Over(
+                    store.PlaysFor(userId),
+                    userId,
+                    year,
+                    zone,
+                    topCount,
+                    store.OldestPlayStartedUtc());
             },
             provider.GetRequiredService<TimeProvider>()));
 
