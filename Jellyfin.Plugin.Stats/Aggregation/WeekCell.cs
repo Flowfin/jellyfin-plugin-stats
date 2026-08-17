@@ -21,6 +21,16 @@ namespace Jellyfin.Plugin.Stats.Aggregation;
 /// back, and a page that reads a figure back is a second place the format can
 /// be got wrong.
 /// </para>
+/// <para>
+/// Both figures are absent where the hour was never covered, and nought where
+/// it was covered and quiet. Those are different facts and a nought said for
+/// both is the one this type used to tell: an hour nobody watched anything in,
+/// an hour the range never reached and an hour whose rows the retention window
+/// deleted all arrived at the drawing as the same figure, and no reading of the
+/// picture separated them. The drawing is written to tell them apart and draws
+/// an absent cell differently, so what is owed here is the absence itself.
+/// Issue #64.
+/// </para>
 /// </remarks>
 public sealed record WeekCell
 {
@@ -36,13 +46,14 @@ public sealed record WeekCell
     public required int Hour { get; init; }
 
     /// <summary>
-    /// Gets how many plays started in that hour.
+    /// Gets how many plays started in that hour, or null where the range the
+    /// figures were read over never reached that hour.
     /// </summary>
-    public required long Plays { get; init; }
+    public required long? Plays { get; init; }
 
     /// <summary>
     /// Gets how many minutes were watched by the plays that started in that
-    /// hour.
+    /// hour, or null where the range never reached that hour.
     /// </summary>
     /// <remarks>
     /// By the plays that started there, and not by what was watched during it.
@@ -53,5 +64,5 @@ public sealed record WeekCell
     /// actually watched, and a paused play means the second cannot be laid over
     /// the first without inventing where the pause was.
     /// </remarks>
-    public required double WatchedMinutes { get; init; }
+    public required double? WatchedMinutes { get; init; }
 }
