@@ -203,10 +203,10 @@ public class ConfigurationRestartTests
     private static string Marker(WhenAChangeTakesEffect when)
     {
         Assert.True(
-            PageMarkers.ContainsKey(when),
+            PageMarkers.TryGetValue(when, out var marker),
             "The model can answer " + when + " and this check has no idea what the page writes for it. A new answer is a decision about the page as well as about the model.");
 
-        return PageMarkers[when];
+        return marker!;
     }
 
     /// <summary>
