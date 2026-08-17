@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
 
 namespace Jellyfin.Plugin.Stats.ScheduledTasks;
@@ -45,19 +46,25 @@ public sealed class RetentionSweep
 
     private readonly Func<IPlayStore> _openStore;
     private readonly int _bite;
+    private readonly HeldYears? _heldYears;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RetentionSweep"/> class.
     /// </summary>
     /// <param name="openStore">Opens the store. Called once per sweep, and what it returns is disposed of before the sweep returns.</param>
     /// <param name="bite">How many rows one statement deletes.</param>
-    public RetentionSweep(Func<IPlayStore> openStore, int bite)
+    /// <param name="heldYears">
+    /// What is keeping folded years, told to let all of them go where this
+    /// sweep deleted anything. Null where nothing is keeping any.
+    /// </param>
+    public RetentionSweep(Func<IPlayStore> openStore, int bite, HeldYears? heldYears = null)
     {
         ArgumentNullException.ThrowIfNull(openStore);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bite);
 
         _openStore = openStore;
         _bite = bite;
+        _heldYears = heldYears;
     }
 
     /// <summary>
@@ -107,6 +114,18 @@ public sealed class RetentionSweep
         }
 
         store.ReclaimFreedSpace();
+
+        // Every folded year rather than any narrower set, and only where rows
+        // actually went. The cutoff names a moment and not an account, so every
+        // account is a candidate and there is nothing here that says which of
+        // them lost a row. A sweep that deleted nothing is the ordinary run on
+        // a server inside its window, and throwing away every held answer on it
+        // would be a daily cost for no change.
+        if (deleted > 0)
+        {
+            _heldYears?.ForgetEverything();
+        }
+
         progress.Report(100);
 
         return deleted;

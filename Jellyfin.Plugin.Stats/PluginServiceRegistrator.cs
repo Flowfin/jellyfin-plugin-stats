@@ -1,5 +1,6 @@
 using System;
 using Jellyfin.Data.Events.Users;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Capture;
 using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
@@ -69,11 +70,32 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // page has to decide the next sweep, not the first one after a restart.
         serviceCollection.AddSingleton<Func<PluginConfiguration>>(_ => () => Plugin.Instance!.Configuration);
 
+        // What keeps a folded year between the first time somebody opens it and
+        // the moment the rows underneath it move. The fold is handed in as a
+        // function, so this is the only place the store is read for one, and
+        // the store is opened when a year is asked for rather than here.
+        //
+        // Nothing calls this yet. There is no route from the plugin to a page,
+        // so no year is folded on a server today and nothing is held; what this
+        // line does is make the three deletions below reach whatever holds one,
+        // so that a reader arriving later cannot be the change that has to
+        // remember to wire them.
+        serviceCollection.AddSingleton(provider => new HeldYears(
+            (userId, year, zone, topCount) =>
+            {
+                using var store = OpenTheStore();
+                return YearInReview.Over(store.PlaysFor(userId), userId, year, zone, topCount);
+            },
+            provider.GetRequiredService<TimeProvider>()));
+
         // The sweep takes the same store-opening function the writer does, and
         // opens the store for the length of one run. Nothing is opened here:
         // this is a constructor call, and the function is only run when a sweep
         // starts.
-        serviceCollection.AddSingleton(_ => new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite));
+        serviceCollection.AddSingleton(provider => new RetentionSweep(
+            OpenTheStore,
+            RetentionSweep.DefaultBite,
+            provider.GetRequiredService<HeldYears>()));
 
         // The sweep that catches what the route below cannot: an account
         // deleted while this plugin was not loaded. It takes the user manager
@@ -82,7 +104,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(provider => new UnknownUserSweep(
             OpenTheStore,
             provider.GetRequiredService<IUserManager>(),
-            UnknownUserSweep.DefaultBite));
+            UnknownUserSweep.DefaultBite,
+            provider.GetRequiredService<HeldYears>()));
 
         // The one route by which this plugin hears that an account is gone. The
         // user manager interface carries an update event and no deletion, so
@@ -95,7 +118,10 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // concrete type alone resolves in a test and is never called on a
         // server, which is the failure the container test is written against.
         serviceCollection.AddSingleton<IEventConsumer<UserDeletedEventArgs>>(
-            _ => new UserDeletedConsumer(OpenTheStore, UserDeletedConsumer.DefaultBite));
+            provider => new UserDeletedConsumer(
+                OpenTheStore,
+                UserDeletedConsumer.DefaultBite,
+                provider.GetRequiredService<HeldYears>()));
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
 using MediaBrowser.Controller.Library;
 
@@ -64,6 +65,7 @@ public sealed class UnknownUserSweep
     private readonly Func<IPlayStore> _openStore;
     private readonly IUserManager _users;
     private readonly int _bite;
+    private readonly HeldYears? _heldYears;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UnknownUserSweep"/> class.
@@ -71,7 +73,11 @@ public sealed class UnknownUserSweep
     /// <param name="openStore">Opens the store. Called once per sweep, and what it returns is disposed of before the sweep returns.</param>
     /// <param name="users">The accounts the server currently has, asked one identifier at a time.</param>
     /// <param name="bite">How many rows one statement deletes.</param>
-    public UnknownUserSweep(Func<IPlayStore> openStore, IUserManager users, int bite)
+    /// <param name="heldYears">
+    /// What is keeping folded years, told to let go of each account this sweep
+    /// finds the server no longer has. Null where nothing is keeping any.
+    /// </param>
+    public UnknownUserSweep(Func<IPlayStore> openStore, IUserManager users, int bite, HeldYears? heldYears = null)
     {
         ArgumentNullException.ThrowIfNull(openStore);
         ArgumentNullException.ThrowIfNull(users);
@@ -80,6 +86,7 @@ public sealed class UnknownUserSweep
         _openStore = openStore;
         _users = users;
         _bite = bite;
+        _heldYears = heldYears;
     }
 
     /// <summary>
@@ -133,6 +140,12 @@ public sealed class UnknownUserSweep
 
                 deleted += bitten;
             }
+
+            // Named here rather than once at the end, because this sweep knows
+            // exactly which accounts it took rows from and a held year for an
+            // account the server no longer has is the same figure about a
+            // departed person the deletion route lets go of.
+            _heldYears?.Forget(gone[i]);
 
             // Ninety-nine at most until the reclaim has run, for the reason the
             // retention sweep reports the same ceiling: the reclaim is the last

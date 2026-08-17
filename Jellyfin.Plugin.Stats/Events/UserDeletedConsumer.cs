@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Jellyfin.Data.Events.Users;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
 using MediaBrowser.Controller.Events;
 
@@ -58,6 +59,7 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
 
     private readonly Func<IPlayStore> _openStore;
     private readonly int _bite;
+    private readonly HeldYears? _heldYears;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UserDeletedConsumer"/>
@@ -65,13 +67,19 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
     /// </summary>
     /// <param name="openStore">Opens the store. Called once per deletion, and what it returns is disposed of before the deletion returns.</param>
     /// <param name="bite">How many rows one statement deletes.</param>
-    public UserDeletedConsumer(Func<IPlayStore> openStore, int bite)
+    /// <param name="heldYears">
+    /// What is keeping folded years, told to let this account's go. Null where
+    /// nothing is keeping any, which is what a test driving the deletion alone
+    /// hands in.
+    /// </param>
+    public UserDeletedConsumer(Func<IPlayStore> openStore, int bite, HeldYears? heldYears = null)
     {
         ArgumentNullException.ThrowIfNull(openStore);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bite);
 
         _openStore = openStore;
         _bite = bite;
+        _heldYears = heldYears;
     }
 
     /// <summary>
@@ -119,6 +127,14 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
         {
             store.ReclaimFreedSpace();
         }
+
+        // Unconditionally, including where nothing was deleted. What this
+        // account has just become is an account the server no longer has, so a
+        // folded year kept under their identifier is a figure about somebody
+        // who is gone, and the reclaim above has given back the pages the rows
+        // it was folded from were sitting on. Letting it go here is what stops
+        // it being the last remaining copy of what those rows said.
+        _heldYears?.Forget(userId);
 
         return Task.CompletedTask;
     }
