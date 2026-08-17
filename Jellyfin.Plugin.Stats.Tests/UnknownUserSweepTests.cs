@@ -519,6 +519,8 @@ public sealed class UnknownUserSweepTests : IDisposable
 
         public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
 
+        public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();
+
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
