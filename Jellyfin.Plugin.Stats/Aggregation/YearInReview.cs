@@ -42,13 +42,22 @@ namespace Jellyfin.Plugin.Stats.Aggregation;
 /// given is quoting a setting rather than saying anything about the numbers it
 /// drew.
 /// </para>
+/// <para>
+/// So does the window it was folded over. Play rows are deleted after ninety
+/// days by default, so the ordinary wrap-up on an ordinary server is computed
+/// over a quarter of the year it is named after, and the figures cannot say so
+/// on their own: they are right about the rows that were there. <see
+/// cref="Coverage"/> is the sentence that says which days those were, and no
+/// figure here is ever scaled up from it to what a whole year might have held.
+/// </para>
 /// </remarks>
 public sealed record YearInReview
 {
-    private YearInReview(int year, string zoneId)
+    private YearInReview(int year, string zoneId, YearCoverage coverage)
     {
         Year = year;
         ZoneId = zoneId;
+        Coverage = coverage;
         AnythingRecorded = false;
         TopItems = Array.Empty<TitleRow>();
         TopSeries = Array.Empty<TitleRow>();
@@ -57,6 +66,7 @@ public sealed record YearInReview
     private YearInReview(
         int year,
         string zoneId,
+        YearCoverage coverage,
         long plays,
         TimeSpan watched,
         long distinctItems,
@@ -71,6 +81,7 @@ public sealed record YearInReview
     {
         Year = year;
         ZoneId = zoneId;
+        Coverage = coverage;
         AnythingRecorded = true;
         Plays = plays;
         Watched = watched;
@@ -95,6 +106,21 @@ public sealed record YearInReview
     /// read in, as the zone handed in calls itself.
     /// </summary>
     public string ZoneId { get; }
+
+    /// <summary>
+    /// Gets which days of the year the store could still answer for when this
+    /// was folded, and the earliest day of it this person has a play on.
+    /// </summary>
+    /// <remarks>
+    /// Read this before the figures. Retention deletes play rows after ninety
+    /// days by default, so on an ordinary server the figures below are computed
+    /// over the part of the year that survived rather than over the year, and
+    /// nothing in them says so: they are correct arithmetic over real plays and
+    /// the only thing wrong with them is the heading. Every figure is what the
+    /// surviving rows recorded and none of them is scaled up to what a whole
+    /// year might have held, which is the second condition of issue #69.
+    /// </remarks>
+    public YearCoverage Coverage { get; }
 
     /// <summary>
     /// Gets a value indicating whether that person had any plays in that year.
@@ -203,15 +229,26 @@ public sealed record YearInReview
     /// <param name="year">The calendar year, read in the zone below.</param>
     /// <param name="zone">The zone the year's days and its boundaries are read in.</param>
     /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <param name="oldestPlayStartedUtc">
+    /// When the oldest row anywhere in the store started, in UTC, or null where
+    /// the store holds none. It is what the answer's window is read from, and
+    /// it is the store's reading over every account rather than this person's
+    /// earliest play: somebody who first watched in September has a September
+    /// row on a store going back to January, and a window read off their own
+    /// rows would report a quiet start of a year as a retention cut. A caller
+    /// with nothing to say about the store passes null, and the answer then
+    /// says it covers no part of the year rather than claiming the whole of it.
+    /// </param>
     /// <returns>The year, or an answer saying there was nothing in it.</returns>
-    /// <exception cref="ArgumentException">A play carries a start that is not in UTC.</exception>
+    /// <exception cref="ArgumentException">A play carries a start that is not in UTC, or the oldest stored start is not.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The top list bound is not a positive number.</exception>
     public static YearInReview Over(
         IEnumerable<PlayRecord> plays,
         Guid userId,
         int year,
         TimeZoneInfo zone,
-        int topCount)
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
     {
         ArgumentNullException.ThrowIfNull(plays);
         ArgumentNullException.ThrowIfNull(zone);
@@ -266,14 +303,24 @@ public sealed record YearInReview
 
         if (theirs.Count == 0)
         {
-            return new YearInReview(year, zone.Id);
+            return new YearInReview(
+                year,
+                zone.Id,
+                YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliestPlay: null));
         }
 
         var days = DailyUsage.Over(theirs, zone);
 
+        // The days ascend, so the first of them is the earliest day of the year
+        // this person has a row on. Taken from the fold rather than from the
+        // sequence, because the sequence arrives in whatever order a store
+        // handed it back.
+        var earliest = days.Rows[0].Day;
+
         return new YearInReview(
             year,
             zone.Id,
+            YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliest),
             theirs.Count,
             watched,
             items.Count,

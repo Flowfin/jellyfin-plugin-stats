@@ -77,7 +77,7 @@ public class YearInReviewTests
                     method: (PlayMethod)generator.Next(0, 4)));
             }
 
-            var review = YearInReview.Over(plays, Mine, 2026, zone, 3);
+            var review = YearInReview.Over(plays, Mine, 2026, zone, 3, oldestPlayStartedUtc: null);
 
             var mine = plays
                 .Where(play => play.UserId == Mine && YearOf(play, zone) == 2026)
@@ -166,7 +166,7 @@ public class YearInReviewTests
             APlay(userId: Theirs, itemId: only, watched: TimeSpan.FromMinutes(90), parentId: AnIdentifier(9))
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null);
 
         Assert.Equal(1L, review.Plays);
         Assert.Equal(TimeSpan.FromMinutes(10), review.Watched);
@@ -187,7 +187,7 @@ public class YearInReviewTests
     {
         var plays = new[] { APlay(userId: Theirs) };
 
-        var review = YearInReview.Over(plays, Mine, 2026, Berlin, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, Berlin, 10, oldestPlayStartedUtc: null);
 
         Assert.False(review.AnythingRecorded);
         Assert.Equal(2026, review.Year);
@@ -216,11 +216,11 @@ public class YearInReviewTests
     {
         var plays = new[] { APlay(startedUtc: new DateTime(2025, 12, 31, 23, 30, 0, DateTimeKind.Utc)) };
 
-        Assert.True(YearInReview.Over(plays, Mine, 2025, TimeZoneInfo.Utc, 10).AnythingRecorded);
-        Assert.False(YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10).AnythingRecorded);
-        Assert.False(YearInReview.Over(plays, Mine, 2025, Berlin, 10).AnythingRecorded);
-        Assert.True(YearInReview.Over(plays, Mine, 2026, Berlin, 10).AnythingRecorded);
-        Assert.False(YearInReview.Over(plays, Mine, 2025, Auckland, 10).AnythingRecorded);
+        Assert.True(YearInReview.Over(plays, Mine, 2025, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null).AnythingRecorded);
+        Assert.False(YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null).AnythingRecorded);
+        Assert.False(YearInReview.Over(plays, Mine, 2025, Berlin, 10, oldestPlayStartedUtc: null).AnythingRecorded);
+        Assert.True(YearInReview.Over(plays, Mine, 2026, Berlin, 10, oldestPlayStartedUtc: null).AnythingRecorded);
+        Assert.False(YearInReview.Over(plays, Mine, 2025, Auckland, 10, oldestPlayStartedUtc: null).AnythingRecorded);
     }
 
     /// <summary>
@@ -248,7 +248,7 @@ public class YearInReviewTests
         var started = new DateTime(startedIn, 6, 15, 12, 0, 0, kind);
         var plays = new[] { APlay(startedUtc: started) };
 
-        Assert.Throws<ArgumentException>(() => YearInReview.Over(plays, Mine, 2026, Berlin, 10));
+        Assert.Throws<ArgumentException>(() => YearInReview.Over(plays, Mine, 2026, Berlin, 10, oldestPlayStartedUtc: null));
     }
 
     /// <summary>
@@ -262,7 +262,7 @@ public class YearInReviewTests
     public void ATopListBoundThatBoundsNothingIsRefused(int topCount)
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => YearInReview.Over(Array.Empty<PlayRecord>(), Mine, 2026, Berlin, topCount));
+            () => YearInReview.Over(Array.Empty<PlayRecord>(), Mine, 2026, Berlin, topCount, oldestPlayStartedUtc: null));
     }
 
     /// <summary>
@@ -280,13 +280,13 @@ public class YearInReviewTests
             APlay(itemId: AnIdentifier(3), watched: TimeSpan.FromMinutes(30))
         };
 
-        var cut = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 2);
+        var cut = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 2, oldestPlayStartedUtc: null);
 
         Assert.Equal(
             new[] { AnIdentifier(2), AnIdentifier(3) },
             cut.TopItems.Select(row => row.Key).ToArray());
 
-        var whole = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 9);
+        var whole = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 9, oldestPlayStartedUtc: null);
 
         Assert.Equal(3, whole.TopItems.Count);
     }
@@ -306,7 +306,7 @@ public class YearInReviewTests
             APlay(itemId: AnIdentifier(4), watched: TimeSpan.FromMinutes(20))
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null);
 
         Assert.Equal(
             new[] { AnIdentifier(4), AnIdentifier(9) },
@@ -331,7 +331,7 @@ public class YearInReviewTests
             APlay(itemId: AnIdentifier(2), itemName: "   ", watched: TimeSpan.FromSeconds(1))
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null);
 
         var rows = review.TopItems.ToDictionary(row => row.Key, row => row.Name);
 
@@ -358,7 +358,7 @@ public class YearInReviewTests
             APlay(itemId: AnIdentifier(3), parentId: null, watched: TimeSpan.FromMinutes(90), itemName: "A film")
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null);
 
         var row = Assert.Single(review.TopSeries);
 
@@ -387,7 +387,7 @@ public class YearInReviewTests
             APlay(startedUtc: march.AddDays(300), watched: TimeSpan.FromMinutes(60))
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, TimeZoneInfo.Utc, 10, oldestPlayStartedUtc: null);
 
         Assert.Equal(new DateOnly(2026, 3, 4), review.BusiestDay!.Day);
         Assert.Equal(TimeSpan.FromMinutes(60), review.BusiestDay.Watched);
@@ -413,7 +413,7 @@ public class YearInReviewTests
             APlay(startedUtc: new DateTime(2026, 7, 2, 22, 30, 0, DateTimeKind.Utc), watched: TimeSpan.FromMinutes(20))
         };
 
-        var review = YearInReview.Over(plays, Mine, 2026, Auckland, 10);
+        var review = YearInReview.Over(plays, Mine, 2026, Auckland, 10, oldestPlayStartedUtc: null);
         var daily = DailyUsage.Over(plays, Auckland);
 
         Assert.Contains(review.BusiestDay, daily.Rows);

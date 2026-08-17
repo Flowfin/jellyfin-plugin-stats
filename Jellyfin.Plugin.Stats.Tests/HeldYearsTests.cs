@@ -547,7 +547,13 @@ public sealed class HeldYearsTests : IDisposable
                 folds.Fold(userId, year, zone, topCount);
 
                 using var store = OpenTheStore();
-                return YearInReview.Over(store.PlaysFor(userId), userId, year, zone, topCount);
+                return YearInReview.Over(
+                    store.PlaysFor(userId),
+                    userId,
+                    year,
+                    zone,
+                    topCount,
+                    store.OldestPlayStartedUtc());
             },
             new FixedClock(Now));
     }
@@ -583,7 +589,13 @@ public sealed class HeldYearsTests : IDisposable
         {
             _asked.Add(userId);
 
-            return YearInReview.Over(Array.Empty<PlayRecord>(), userId, year, zone, topCount);
+            return YearInReview.Over(
+                Array.Empty<PlayRecord>(),
+                userId,
+                year,
+                zone,
+                topCount,
+                oldestPlayStartedUtc: null);
         }
     }
 }
