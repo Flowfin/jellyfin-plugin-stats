@@ -34,12 +34,13 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// from the paragraph above rather than an exception to it.
 /// </para>
 /// <para>
-/// Two more carry no bound and are not reads over rows either, because the
+/// The rest carry no bound and are not reads over rows either, because the
 /// store reduces the column rather than handing the rows back:
-/// <see cref="CountPlaysStartedBefore"/> answers with one number and
-/// <see cref="OldestPlayStartedUtc"/> with one moment, however many rows either
-/// of them read. A bound on an answer that is one value however large the table
-/// is would be a bound on nothing.
+/// <see cref="CountPlaysStartedBefore"/> answers with one number,
+/// <see cref="OldestPlayStartedUtc"/> with one moment, and
+/// <see cref="YearsWithPlaysFor"/> with one entry per year an account watched
+/// anything in, however many rows any of them read. A bound on an answer that
+/// is one value however large the table is would be a bound on nothing.
 /// </para>
 /// </remarks>
 public interface IPlayStore : IDisposable
@@ -130,6 +131,46 @@ public interface IPlayStore : IDisposable
     /// </remarks>
     /// <returns>When the oldest play started, in UTC, and null where the store holds no rows.</returns>
     DateTime? OldestPlayStartedUtc();
+
+    /// <summary>
+    /// Reads back each calendar year one account has plays in, once, oldest
+    /// first.
+    /// </summary>
+    /// <remarks>
+    /// What a wrap-up's year selector may offer. Issue #67 asks it to list only
+    /// years with data, and the shape that mistake arrives in is a list derived
+    /// from the oldest row and the year the server is in: that answers which
+    /// years a store could have rows in, so a quiet year in the middle of the
+    /// span is offered and opens empty. This answers which years it does have
+    /// rows in, and a year with none is not in it.
+    /// <para>
+    /// The zone is part of the question rather than something the caller
+    /// applies afterwards. A calendar year has a local midnight at each end, so
+    /// a play in the last hours of December belongs to one year or the next
+    /// depending on whose midnight is meant, and a store answering in UTC would
+    /// be answering a question nobody asked. It is the only read here that
+    /// names one.
+    /// </para>
+    /// <para>
+    /// It carries no bound, and the reason is the one
+    /// <see cref="UserIdsWithPlays"/> carries rather than an exception beside
+    /// it: the answer is one entry per year an account has watched anything in,
+    /// so it grows with how long that account has been on the server and not
+    /// with how much they watched. A million rows over three years answer with
+    /// three numbers.
+    /// </para>
+    /// <para>
+    /// It is read rather than kept, for the same reason the oldest row is. The
+    /// retention sweep deletes by the started column, so a year leaves this list
+    /// when the last of its rows goes, and a selector drawn from a value taken
+    /// at start-up would go on offering a year whose rows are gone from the
+    /// file.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The account whose years are wanted.</param>
+    /// <param name="zone">The zone the years are read in, which is what decides where one ends and the next begins.</param>
+    /// <returns>Each year once, ascending, and empty where that account has no rows.</returns>
+    IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone);
 
     /// <summary>
     /// Counts the rows that started before a moment.

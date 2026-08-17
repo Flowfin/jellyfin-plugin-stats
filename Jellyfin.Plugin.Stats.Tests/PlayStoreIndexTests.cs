@@ -92,6 +92,9 @@ public sealed class PlayStoreIndexTests : IDisposable
     private const string TheOldestStartConstant =
         @"private const string SelectTheOldestStart\s*=\s*@""(?<sql>[^""]*)"";";
 
+    private const string TheFirstStartAtOrAfterConstant =
+        @"private const string SelectTheFirstStartAtOrAfter\s*=\s*@""(?<sql>[^""]*)"";";
+
     private const string IndexesOnThePlaysTable =
         @"SELECT name FROM sqlite_master
           WHERE type = 'index' AND tbl_name = 'plays' AND name NOT LIKE 'sqlite_autoindex%'
@@ -219,6 +222,39 @@ public sealed class PlayStoreIndexTests : IDisposable
     }
 
     /// <summary>
+    /// Served by ix_plays_user_started: one account's earliest play at or after
+    /// a moment, which is the statement the year selector is walked with.
+    /// </summary>
+    /// <remarks>
+    /// It is asked once per year that account has rows in, and a page asks for
+    /// the list every time somebody opens their wrap-up. A scan here is a walk of
+    /// the whole table per year rather than per page, which is the one shape in
+    /// this file where a missing index multiplies.
+    /// <para>
+    /// The statement comes out of the plugin's source for the reason the oldest
+    /// row's does. The rewrite it stands against is the same one in a second
+    /// spelling: the earliest start taken by ordering that account's rows and
+    /// reading one off the front, which reaches the same answer and reads rows to
+    /// get there.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void OneAccountsNextStartIsServedByTheUserAndStartIndex()
+    {
+        using var connection = ASeededStore();
+
+        AssertPlanUsesIndex(
+            connection,
+            TheStatementThePluginRunsForTheNextStart(),
+            "ix_plays_user_started",
+            static command =>
+            {
+                command.Parameters.AddWithValue("$userId", Text(UserAt(5)));
+                command.Parameters.AddWithValue("$from", Epoch.AddDays(120).Ticks);
+            });
+    }
+
+    /// <summary>
     /// Every index on the table is one of the four above. An index costs a write
     /// on every insert and a rebuild on every upgrade, so one that no query
     /// reaches is a cost with nothing on the other side, and this is what stops
@@ -309,6 +345,21 @@ public sealed class PlayStoreIndexTests : IDisposable
         var found = Regex.Match(source, TheOldestStartConstant, RegexOptions.Singleline, TimeSpan.FromSeconds(5));
 
         Assert.True(found.Success, "SelectTheOldestStart was not found in " + StoreSource + ".");
+
+        return found.Groups["sql"].Value;
+    }
+
+    /// <summary>
+    /// Reads the plugin's own statement for one account's next start out of the
+    /// file it is written in.
+    /// </summary>
+    /// <returns>The statement, as the store holds it.</returns>
+    private static string TheStatementThePluginRunsForTheNextStart()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot(), StoreSource));
+        var found = Regex.Match(source, TheFirstStartAtOrAfterConstant, RegexOptions.Singleline, TimeSpan.FromSeconds(5));
+
+        Assert.True(found.Success, "SelectTheFirstStartAtOrAfter was not found in " + StoreSource + ".");
 
         return found.Groups["sql"].Value;
     }

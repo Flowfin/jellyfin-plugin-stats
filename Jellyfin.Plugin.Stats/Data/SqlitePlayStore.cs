@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.Stats.Data;
@@ -113,6 +114,21 @@ public sealed class SqlitePlayStore : IPlayStore
     private const string SelectTheOldestStart =
         @"SELECT MIN(StartedUtcTicks)
           FROM plays";
+
+    // One account's earliest start at or after a moment, which is what walking
+    // the years an account has rows in is made of. It reduces the started column
+    // under an equality on the account, so the pair index serves both halves and
+    // no row is handed back.
+    //
+    // Asked once per year answered plus once more, rather than once per year
+    // between the first and the last. The difference is the whole point: a year
+    // with no rows is stepped straight over instead of being asked about and
+    // offered, and an account that watched something in 2019 and again this year
+    // costs three statements rather than one per year in between.
+    private const string SelectTheFirstStartAtOrAfter =
+        @"SELECT MIN(StartedUtcTicks)
+          FROM plays
+          WHERE UserId = $userId AND StartedUtcTicks >= $from";
 
     // The retention sweep's three statements. The count is what lets a sweep
     // say how far through it is, and it is asked once rather than per bite.
@@ -365,6 +381,69 @@ public sealed class SqlitePlayStore : IPlayStore
         var oldest = command.ExecuteScalar();
 
         return oldest is null or DBNull ? null : Utc((long)oldest);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Walked forwards from the account's first row rather than derived from a
+    /// span. Each statement asks for the earliest start at or after a moment;
+    /// the year that moment falls in is a year with rows in it by construction,
+    /// and the next question starts at the first instant of the year after that
+    /// one. So the loop answers a year per statement and stops on the statement
+    /// that finds nothing, and a gap of empty years between two that have rows
+    /// costs one step rather than one step each.
+    /// <para>
+    /// Where a local year begins is <see cref="LocalDay"/>'s answer and not a
+    /// second one written here. A store that decided its own year boundary would
+    /// disagree with the fold that computes the wrap-up on exactly the plays
+    /// either side of midnight on the first of January, which is the disagreement
+    /// nobody notices because both answers look like years.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone)
+    {
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var years = new List<int>();
+
+        // The first instant a row can carry. Ticks rather than a date, because
+        // that is the column's own type and the comparison is the one the index
+        // is ordered by.
+        var from = 0L;
+
+        while (true)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = SelectTheFirstStartAtOrAfter;
+
+            // Through the same Text as the write and as PlaysFor. A Guid
+            // formatted any other way is a string the column does not hold, and
+            // this would then answer that a real account has watched nothing.
+            command.Parameters.AddWithValue("$userId", Text(userId));
+            command.Parameters.AddWithValue("$from", from);
+
+            var next = command.ExecuteScalar();
+            if (next is null or DBNull)
+            {
+                // No row left at or after that moment. On the first pass this is
+                // an account with nothing stored, and the empty list is the
+                // answer rather than a year standing in for one.
+                return years;
+            }
+
+            var year = LocalDay.Of(Utc((long)next), zone).Year;
+            years.Add(year);
+
+            // The last year a calendar can name has no next one to ask about,
+            // and building its first of January would be the failure rather
+            // than the end of the walk.
+            if (year >= DateTime.MaxValue.Year)
+            {
+                return years;
+            }
+
+            from = LocalDay.StartOf(new DateOnly(year + 1, 1, 1), zone).UtcTicks;
+        }
     }
 
     /// <inheritdoc />
