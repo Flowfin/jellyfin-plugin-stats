@@ -64,6 +64,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// that lands here is the one the file was moved to.
     /// </para>
     /// </remarks>
+    [TakesEffect(WhenAChangeTakesEffect.NotASetting)]
     public int ConfigurationVersion { get; set; } = ConfigurationMigrations.Current;
 
     /// <summary>
@@ -73,6 +74,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Off means nothing is written, not that nothing is shown. Where the switch
     /// is honoured is issue #39, and it belongs immediately before the write.
     /// </remarks>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public bool CaptureEnabled
     {
         get => _captureEnabled;
@@ -82,6 +84,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets how many days of raw play rows are kept.
     /// </summary>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public int PlayRowRetentionDays
     {
         get => _playRowRetentionDays;
@@ -100,6 +103,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// the aggregates answer how much the server was used, and the second
     /// question can be answered for longer without keeping the first one's data.
     /// </remarks>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public int DailyAggregateRetentionDays
     {
         get => _dailyAggregateRetentionDays;
@@ -113,6 +117,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets the widest range a report may ask for, in days.
     /// </summary>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public int MaximumRangeDays
     {
         get => _maximumRangeDays;
@@ -126,6 +131,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets the most rows any single response may carry.
     /// </summary>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public int MaximumRowsPerResponse
     {
         get => _maximumRowsPerResponse;
@@ -144,6 +150,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Keeping it would mean every rollup afterwards throws, and the setting
     /// that caused it would still be sitting on the page looking correct.
     /// </remarks>
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public string RollupTimeZone
     {
         get => _rollupTimeZone;
@@ -166,6 +173,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "Performance",
         "CA1819:Properties should not return arrays",
         Justification = "The server reads and writes this type with XmlSerializer, which round-trips an array property and cannot populate a read-only collection one. A shape the storage layer cannot carry is not a shape this setting can have.")]
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public string[] ExcludedUserIds
     {
         get => _excludedUserIds;
@@ -179,6 +187,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "Performance",
         "CA1819:Properties should not return arrays",
         Justification = "The server reads and writes this type with XmlSerializer, which round-trips an array property and cannot populate a read-only collection one. A shape the storage layer cannot carry is not a shape this setting can have.")]
+    [TakesEffect(WhenAChangeTakesEffect.AtOnce)]
     public string[] ExcludedItemTypes
     {
         get => _excludedItemTypes;
@@ -201,6 +210,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "Performance",
         "CA1819:Properties should not return arrays",
         Justification = "The server reads and writes this type with XmlSerializer, which round-trips an array property and cannot populate a read-only collection one. A shape the storage layer cannot carry is not a shape this setting can have.")]
+    [TakesEffect(WhenAChangeTakesEffect.NotASetting)]
     public string[] RejectedFields => [.. _rejected];
 
     /// <summary>
