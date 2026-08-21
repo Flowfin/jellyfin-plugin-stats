@@ -65,6 +65,7 @@ const BESIDE_THE_STATE = {
     'clientsAndDevices.js': { dimension: 'device' },
     'usageByHourAndWeekday.js': {},
     'usageOverTime.js': {},
+    'whyTheServerTranscodes.js': {},
     'yourYear.js': {},
 };
 
