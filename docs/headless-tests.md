@@ -63,14 +63,22 @@ They run on every pull request as `Enforce greppable invariants`, over every
 tracked file rather than over the test project alone, because the way each of
 these arrives is usually a line in a workflow rather than a line in a test.
 
-The port rule is the newest and the one whose replacement is not built yet. It
-refuses opening a port and the host that would serve over one; it does not
-refuse routing a request to a controller in process, which is what the endpoint
-tests are meant to do instead. That in-process route does not exist in this
-repository today, and no plugin endpoint exists for it to reach either, so the
-rule is a refusal standing in front of work that is still to be done rather than
-a description of tests that already run this way. Issue #25 is where the route
-is owed.
+The port rule refuses opening a port and the host that would serve over one; it
+does not refuse routing a request to a controller in process, which is what the
+endpoint tests do instead. That route exists now, and this paragraph said it did
+not: a request object is handed to a pipeline built out of the framework the
+server runs on, so the routing, the authentication, the authorization filters,
+the model binding and the result execution are the real ones and nothing is
+opened. The plugin has one endpoint and it is driven that way, as the caller who
+owns the rows, as two who do not, and as nobody at all.
+
+What that route does not prove is worth keeping in front of a reader. It stands
+where a server stands rather than being one, so what it shows is which caller an
+action admits and what the action then answers, and never that this plugin's
+assembly is loaded, that its controller is found, or that the server's own
+authentication produces the caller these tests hand it. Those are statements
+about a server and are read by hand before a release, in the checklist, as a
+reading.
 
 That reach is why this document names the tools by description and not by their
 literal names: the lint reads this file too, and a policy that quoted the strings

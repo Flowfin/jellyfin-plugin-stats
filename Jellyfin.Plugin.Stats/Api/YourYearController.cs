@@ -1,0 +1,144 @@
+using System;
+using System.Net.Mime;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.Stats.Aggregation;
+using Jellyfin.Plugin.Stats.Configuration;
+using MediaBrowser.Controller.Net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Jellyfin.Plugin.Stats.Api;
+
+/// <summary>
+/// One account's calendar year, served to that account and to nobody else.
+/// </summary>
+/// <remarks>
+/// The first endpoint in this plugin. What it serves is the fold that was
+/// already in the tree with nothing calling it, so what arrives here is the
+/// route from the plugin to a page rather than a second copy of the arithmetic.
+/// <para>
+/// The account is named in the route and is checked against the account the
+/// server says made the request, rather than being read off the request and
+/// trusted. Both shapes serve the caller their own rows on a correct request;
+/// they differ on a wrong one, and the difference is that a route carrying the
+/// identifier is a route a test can drive at somebody else's rows and watch be
+/// refused. An endpoint that takes no identifier cannot be shown to refuse
+/// anything, because there is nothing to ask it for.
+/// </para>
+/// <para>
+/// It reaches no store. The reports in this plan read through a layer rather
+/// than through the store's interface, which is issue #51, and
+/// <c>no-store-write-outside-the-write-path</c> refuses that interface being
+/// named outside the write path at all. What this holds instead is
+/// <see cref="HeldYears"/>, which is handed the fold as a function where the
+/// plugin is assembled, so the store is opened by that function and never here.
+/// </para>
+/// </remarks>
+[ApiController]
+[Authorize]
+[Route("Stats/Users/{userId}/Years")]
+[Produces(MediaTypeNames.Application.Json)]
+public sealed class YourYearController : ControllerBase
+{
+    /// <summary>
+    /// How many rows a top list in an answer may hold.
+    /// </summary>
+    /// <remarks>
+    /// A constant rather than a setting, for the reason the minimum group size
+    /// on issue #41 is one: a number an installation can turn up is a number
+    /// every test has to pin before it can assert anything, and a list length
+    /// somebody can raise to a thousand is a top list that has stopped being
+    /// one. It is not the response bound in the configuration either, which
+    /// bounds how many rows a response may carry rather than how long a top
+    /// list is, and reading a bound as a length is how a top ten becomes a
+    /// dump of everything the account ever watched.
+    /// </remarks>
+    public const int TopListLength = 10;
+
+    /// <summary>
+    /// The oldest year this endpoint will answer for.
+    /// </summary>
+    /// <remarks>
+    /// A bound rather than a claim about the rows. A held answer is kept per
+    /// year asked for, so a year taken from the request with nothing in front
+    /// of it is an unbounded number of held answers for one account, each one
+    /// folded by walking that account's rows. What the floor is worth is
+    /// stated rather than dressed up: it bounds the count and it is not the
+    /// bound this plugin eventually wants, which is the set of years the store
+    /// actually holds rows for. That read exists on the store already and
+    /// reaching it from here needs a seam this change does not build. Issue #56
+    /// is where every query being bounded is argued, and it is where a tighter
+    /// bound belongs.
+    /// </remarks>
+    public const int EarliestYearAnswered = 1970;
+
+    private readonly HeldYears _years;
+    private readonly IAuthorizationContext _callers;
+    private readonly Func<PluginConfiguration> _configuration;
+    private readonly TimeProvider _clock;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="YourYearController"/> class.
+    /// </summary>
+    /// <param name="years">Where a folded year is asked for.</param>
+    /// <param name="callers">What the server says about who made a request.</param>
+    /// <param name="configuration">The current settings, read at the moment one is needed rather than held.</param>
+    /// <param name="clock">Says which year the server is in, so a year that has not happened is refused rather than folded.</param>
+    public YourYearController(
+        HeldYears years,
+        IAuthorizationContext callers,
+        Func<PluginConfiguration> configuration,
+        TimeProvider clock)
+    {
+        ArgumentNullException.ThrowIfNull(years);
+        ArgumentNullException.ThrowIfNull(callers);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(clock);
+
+        _years = years;
+        _callers = callers;
+        _configuration = configuration;
+        _clock = clock;
+    }
+
+    /// <summary>
+    /// Reads one calendar year of the calling account's own plays.
+    /// </summary>
+    /// <remarks>
+    /// The refusal is a status and not an empty year. A year the caller may not
+    /// see and a year in which they watched nothing are different facts, and an
+    /// endpoint answering both with the same body has destroyed the difference
+    /// before anything can draw it.
+    /// </remarks>
+    /// <param name="userId">The account whose year is wanted, which has to be the account asking.</param>
+    /// <param name="year">The calendar year, read in the zone the settings name.</param>
+    /// <returns>The year.</returns>
+    /// <response code="200">The caller's own year.</response>
+    /// <response code="401">The request carried no authenticated caller.</response>
+    /// <response code="403">The request named an account other than the caller's.</response>
+    /// <response code="404">The year is outside what this endpoint answers for.</response>
+    [HttpGet("{year:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<YearInReview>> GetYear([FromRoute] Guid userId, [FromRoute] int year)
+    {
+        var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
+
+        if (!CallerIdentity.AsksForTheirOwnRows(userId, caller))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+
+        if (year < EarliestYearAnswered || year > LocalDay.Of(_clock.GetUtcNow(), zone).Year)
+        {
+            return NotFound();
+        }
+
+        return Ok(_years.For(userId, year, zone, TopListLength));
+    }
+}
