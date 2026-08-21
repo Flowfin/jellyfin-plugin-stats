@@ -19,6 +19,13 @@ habit, not a gate, and it will stay one until a check is written for it.
 Nothing has been released from this repository. Entries collect here until the
 first release exists.
 
+- The 10.11 line's version stream starts at `0.1.0.0`, which `build.yaml` now
+  carries in place of `0.0.0.0`. The 12.0 line's stream starts at `1.0.0.0`, so
+  the leading number says which server line a release is for rather than how
+  settled the plugin is, and `README.md` says so where a reader meets the
+  number. Nothing is released by this: the number is raised before a tag exists
+  because a release deleted to correct its number burns that tag permanently.
+
 - The version is written once, in `build.yaml`, and read from there by the
   build. It was previously a literal in two files that disagreed with each
   other. The number the compiled assembly already carried is the one kept,

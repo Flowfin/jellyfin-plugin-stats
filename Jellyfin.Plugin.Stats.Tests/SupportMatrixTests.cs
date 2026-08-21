@@ -30,9 +30,26 @@ public class SupportMatrixTests
     private const string NoneReleased = "none released";
 
     /// <summary>
-    /// The version build.yaml carries while nothing has been released.
+    /// Where the document writes the version that is waiting for its first tag.
     /// </summary>
-    private const string UnreleasedVersion = "0.0.0.0";
+    /// <remarks>
+    /// This was the literal <c>0.0.0.0</c>, on the reading that the version in
+    /// <c>build.yaml</c> moves when a release is cut. It does not. Issue #133
+    /// settled the sequence as raising the number first and tagging second,
+    /// because a release deleted to correct its number burns that tag
+    /// permanently, so there is a window in which the file names a version that
+    /// nothing has published. Pinned to the old literal, this check refused
+    /// exactly the first step of that sequence.
+    /// <para>
+    /// What it compares instead is the file against the number the document
+    /// declares is awaiting a tag, which is the same shape of statement as
+    /// every other row here: two written numbers that have to agree. It keeps
+    /// the force the old constant had, because the rows still say nothing has
+    /// been released and the comparison still has to be brought along when that
+    /// stops being true.
+    /// </para>
+    /// </remarks>
+    private const string AwaitingItsFirstTag = "(?m)^    awaiting its first tag:[ ]*(?<value>[0-9.]+)$";
 
     /// <summary>
     /// A row of the table, under the framework it is about.
@@ -129,7 +146,12 @@ public class SupportMatrixTests
 
         if (Table().Any(row => string.Equals(row.PluginVersions, NoneReleased, StringComparison.Ordinal)))
         {
-            Assert.Equal(UnreleasedVersion, version);
+            var awaiting = Captured(
+                File.ReadAllText(Path.Combine(RepositoryRoot(), "docs", "support-matrix.md")),
+                AwaitingItsFirstTag,
+                "the plugin versions section of docs/support-matrix.md");
+
+            Assert.Equal(awaiting, version);
         }
     }
 
