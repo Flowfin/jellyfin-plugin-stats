@@ -53,10 +53,28 @@ Nothing has been released:
     gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
     0
 
-    grep -n '^version:' build.yaml
-    4:version: "0.0.0.0"
+Both rows say so. `build.yaml` no longer agrees with them by carrying a version
+that could not be a release, and this section said it did:
 
-Both rows say so, and the check reads the second of those two commands. When a
-version ships, the rows stop saying "none released" and the check stops
-accepting `0.0.0.0`, so the first release cannot land without this table being
-brought with it.
+    grep -n '^version:' build.yaml
+    10:version: "0.1.0.0"
+
+The number moved before any tag exists, on purpose. Issue #133 settled the
+sequence as raising `build.yaml` first and tagging second, because a release
+deleted to correct its number burns that tag permanently, so there is a window in
+which the file names a version and no release carries it. This is that window.
+
+So the column and the file say two different true things, and the check compares
+the file against the number written here rather than against a version that means
+nothing has shipped:
+
+    awaiting its first tag: 0.1.0.0
+
+That is the 10.11 line, which is the line `build.yaml` is. The 12.0 line's stream
+starts at `1.0.0.0`, and where that number is written when the second artifact is
+tagged is the release route in issue #80 rather than this file, so no line here
+claims it is written anywhere yet.
+
+When a version ships, the rows stop saying "none released" and this comparison
+stops being made at all, so the first release cannot land without this table
+being brought with it.

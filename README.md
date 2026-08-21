@@ -70,6 +70,14 @@ manifest rather than the official catalogue, so installing means adding a
 repository URL to the server and then installing the plugin from it. One
 archive per server line, and the server picks the one matching its version.
 
+The two lines are told apart by the version number, because a catalogue admits
+one tag shape and a suffix cannot carry the difference. The 10.11 line's
+releases start at `0.1.0.0` and the 12.0 line's start at `1.0.0.0`. **The
+leading number says which server line a release is for and not how finished the
+plugin is.** `1.0.0.0` is the same unfinished interface `0.1.0.0` carries, built
+from the same source, and reading it as a mature release and the other as a
+provisional one is the mistake this paragraph exists against.
+
 ## Configuration
 
 The plugin's settings page appears on the server dashboard under Plugins. Every
