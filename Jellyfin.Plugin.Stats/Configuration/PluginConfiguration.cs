@@ -214,6 +214,52 @@ public class PluginConfiguration : BasePluginConfiguration
     public string[] RejectedFields => [.. _rejected];
 
     /// <summary>
+    /// Gets why this plugin's store could not be opened, or an empty string
+    /// where nothing has failed to open it.
+    /// </summary>
+    /// <remarks>
+    /// Not stored, and not a setting. It is what the plugin is doing rather
+    /// than what it was told, and it travels here for the reason
+    /// <see cref="RejectedFields"/> does: the settings page is handed this
+    /// object and nothing else, so a state the page has to show has to be on
+    /// it. Issues #31 and #65.
+    /// <para>
+    /// An empty string rather than a null reference, because the page reads
+    /// this out of JSON and a field that is sometimes absent is a field the
+    /// page has to test for two ways.
+    /// </para>
+    /// </remarks>
+    [XmlIgnore]
+    [TakesEffect(WhenAChangeTakesEffect.NotASetting)]
+    public string WhyTheStoreCouldNotBeOpened => PluginState.Current.WhyTheStoreCouldNotBeOpened ?? string.Empty;
+
+    /// <summary>
+    /// Gets when the oldest play this plugin still holds started, as an
+    /// instant, or an empty string where it holds none or could not be read.
+    /// </summary>
+    /// <remarks>
+    /// Not stored, and not a setting, for the same reason as the field above.
+    /// <para>
+    /// The instant is written out whole and is not formatted here. A date on a
+    /// settings page is read by somebody in their own zone, and this plugin
+    /// counts days in the zone <see cref="RollupTimeZone"/> names, so a string
+    /// formatted in the server process would be a third answer belonging to
+    /// neither of them.
+    /// </para>
+    /// <para>
+    /// Empty says two different things and the field above is what tells them
+    /// apart: a store that was read and holds nothing, and a store that could
+    /// not be read at all. A page that reported the first without looking at
+    /// the second would tell an operator with a broken store that their server
+    /// has never played anything.
+    /// </para>
+    /// </remarks>
+    [XmlIgnore]
+    [TakesEffect(WhenAChangeTakesEffect.NotASetting)]
+    public string OldestStoredPlay =>
+        PluginState.Current.OldestPlayStartedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    /// <summary>
     /// Describes what this plugin refused, in one line, or an empty string.
     /// </summary>
     /// <remarks>

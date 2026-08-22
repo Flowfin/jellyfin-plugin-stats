@@ -29,6 +29,7 @@ namespace Jellyfin.Plugin.Stats.Tests;
 /// correct. Issue #78.
 /// </para>
 /// </summary>
+[Collection(ConfigurationModelCollection.Name)]
 public class ConfigurationReferenceTests
 {
     /// <summary>

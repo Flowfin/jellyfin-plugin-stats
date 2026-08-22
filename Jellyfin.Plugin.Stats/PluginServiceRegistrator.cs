@@ -53,6 +53,20 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IPlaybackEventSink, PlayTracker>();
         serviceCollection.AddHostedService<PlaybackEventListener>();
 
+        // What carries the plugin's own state to the settings page. It is a
+        // hosted service rather than a line here because it publishes a seam
+        // that has to be withdrawn again when the host stops, and because the
+        // writer it reads is resolved from this container rather than built
+        // here. Nothing is opened while the container is being built: the
+        // function below runs when a page asks, and the writer answers from a
+        // field.
+        serviceCollection.AddHostedService(provider =>
+        {
+            var writer = provider.GetRequiredService<QueuedPlayWriter>();
+
+            return new PluginStateReport(() => writer.WhyTheStoreCouldNotBeOpened, OldestStoredPlay);
+        });
+
         // What the server needs to be able to build the retention sweep task.
         // It builds every scheduled task in the assembly out of this container
         // and fails the whole plugin over an argument it cannot resolve, so a
@@ -152,4 +166,22 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     /// <returns>The store.</returns>
     private static SqlitePlayStore OpenTheStore()
         => new(Plugin.Instance!.DataFolderPath);
+
+    /// <summary>
+    /// Reads the oldest play the store holds.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than in the report that publishes it, because this is the
+    /// one file in the plugin that knows how a store is opened, and a second
+    /// one that did would be a second answer about where the data folder is.
+    /// The store is opened for the length of the question and closed again, the
+    /// way a folded year is read.
+    /// </remarks>
+    /// <returns>When the oldest stored play started, or null where there is none.</returns>
+    private static DateTime? OldestStoredPlay()
+    {
+        using var store = OpenTheStore();
+
+        return store.OldestPlayStartedUtc();
+    }
 }

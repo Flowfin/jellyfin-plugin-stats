@@ -62,6 +62,8 @@ what it governs.
 | `ExcludedItemTypes`           | empty   | names the server's own item kinds carry              | Item types whose plays are not recorded. An entry the server has no such kind for is dropped and the rest of the list is kept.       |
 | `ConfigurationVersion`        | `1`     | written by the plugin                                | Not a setting. It records which shape the stored file is in, and the plugin moves an older file forward before the server reads it.  |
 | `RejectedFields`              | empty   | read only                                            | Not a setting and not stored. It names the fields whose stored value was refused, and the page reads it to say which went to default. |
+| `WhyTheStoreCouldNotBeOpened`  | empty   | read only                                            | Not a setting and not stored. It names the failure the plugin met opening its store, and is empty where nothing has failed to open it. |
+| `OldestStoredPlay`            | empty   | read only                                            | Not a setting and not stored. When the oldest play still held started. Empty means the store holds none, or that it could not be read. |
 
 ## What takes effect when, and what it leaves alone
 
