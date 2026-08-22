@@ -41,14 +41,13 @@ public sealed class PluginStateReport : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // One registration is held rather than replaced, because nothing in
-        // the server promises a single start. No case below asserts it, and
-        // that is deliberate rather than an omission: a registration carries no
-        // identity, so a second one replacing the first leaves exactly the same
-        // seam standing and exactly the same withdrawal on stop. Replacing the
-        // line with a plain assignment was run against this suite and reddened
-        // nothing, which is why no test claims otherwise.
-        _registration ??= PluginState.ReadFrom(Read);
+        // A second start replaces the registration rather than being refused,
+        // and nothing in the server promises there will not be one. Holding the
+        // first instead was written and taken out again: a registration carries
+        // no identity, so either spelling leaves the same seam standing and the
+        // same withdrawal on stop, and the branch it added was one no case
+        // could reach for a reason of its own.
+        _registration = PluginState.ReadFrom(Read);
 
         return Task.CompletedTask;
     }
