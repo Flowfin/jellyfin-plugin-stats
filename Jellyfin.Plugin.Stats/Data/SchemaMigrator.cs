@@ -28,7 +28,8 @@ public static class SchemaMigrator
         "CREATE TABLE IF NOT EXISTS schema_version (Version INTEGER NOT NULL)";
 
     private const string ReadTheVersion =
-        "SELECT Version FROM schema_version LIMIT 1";
+        @"-- bound: LIMIT 1, over a table that holds one row
+          SELECT Version FROM schema_version LIMIT 1";
 
     private const string ForgetTheVersion =
         "DELETE FROM schema_version";
