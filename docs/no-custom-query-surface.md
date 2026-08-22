@@ -46,14 +46,44 @@ at all.
 
 ## What is not held yet
 
-There is no endpoint in this plugin. Nothing in the tree carries a controller,
-and the one file that matches is the near miss, which is not compiled:
+There are two endpoints now, and the sentence here used to say there are none:
 
     git grep -lE "ControllerBase|ApiController|HttpGet|HttpPost" -- '*.cs'
+    Jellyfin.Plugin.Stats.Tests/AValueTheEndpointCannotReadTests.cs
+    Jellyfin.Plugin.Stats.Tests/AuthorizationMatrixTests.cs
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs
     tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs
+    tools/invariants/near-miss/no-time-offset-from-the-request/DaysInTheCallersZone.cs
 
-So the part of this that says every filter and sort parameter maps through a
-closed set describes no code. It is a statement about how the first endpoint is
-to be written, and it is not proved by anything until one exists. Issue #55
-stays open on that, and the greppable rules above are what stands in the
-meantime: they refuse the shape before there is a route to attach it to.
+The two under `tools/invariants` are near misses and are not compiled. The two
+suite files walk the actions by reflection, one asking who each of them admits
+and the other what each of them takes.
+
+Between them the two endpoints take four values off a request, and the whole set
+is readable in one command:
+
+    git grep -nE 'FromQuery|FromRoute|FromBody|FromForm|FromHeader' -- 'Jellyfin.Plugin.Stats/Api/*.cs'
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:115:        [FromRoute] Guid userId,
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:116:        [FromQuery] DateTimeOffset? from,
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:117:        [FromQuery] DateTimeOffset? to)
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:135:    public async Task<ActionResult<YearInReview>> GetYear([FromRoute] Guid userId, [FromRoute] int year)
+
+An account, a year and two instants. Three of them come off the route and one
+pair comes off the query, and not one of them names a column, a table, a
+dimension or an order.
+
+So the half of the sentence at the top about a value outside a set being refused
+rather than passed through is held for the values that exist. A window instant
+the endpoint cannot read is refused rather than being taken for a window nobody
+named, which on that route is the difference between an empty request and
+somebody's whole history, and a query parameter this plugin declares nothing
+about reaches nothing.
+
+**The other half still describes no code.** Filtering and sorting chosen from
+closed sets needs a filter or a sort to choose, and there is neither: an instant
+is not a member of a set anybody could enumerate, and no endpoint here takes an
+order at all. That part remains a statement about how the first report endpoint
+is to be written, proved by nothing until one exists. Issue #55 stays open on
+it, and the greppable rules above are what stands in the meantime: they refuse
+the shape before there is a route to attach it to.
