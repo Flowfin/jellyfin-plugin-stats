@@ -1,0 +1,38 @@
+Version: 1
+
+What this server records about you
+
+This plugin keeps a row for each thing you play: which item it was, when the
+play started and ended, how much of it you watched, whether you reached the end,
+the client and device you played it on, and whether the server had to re-encode
+it. It records no network address, no file path and no search you made.
+
+Those rows are kept whether or not you agree to anything here. An administrator
+who runs a server needs to know what that server did.
+
+What agreeing changes
+
+Agreeing lets an administrator see those rows as yours, by name, in the views
+this plugin draws.
+
+Without your agreement, your plays are still counted in figures that name
+nobody: how much was watched on this server, which clients were used, how often
+it had to re-encode. No view shows an administrator which of those plays were
+yours.
+
+Agreeing is not a condition of using this server, and nothing about what you can
+watch changes either way.
+
+What you can do afterwards
+
+You can withdraw at any time. It takes effect for every view from that moment,
+and no view keeps a copy of the old answer.
+
+Withdrawing does not delete anything. It stops your rows being shown as yours,
+and they go on being counted in the figures that name nobody. Deleting your
+history is a separate thing to ask for, and it cannot be undone.
+
+Your agreement records which version of this wording you were shown, which is
+the number at the top of this text. If the wording changes, that number changes
+with it, and you are asked again rather than being taken to have agreed to
+something you never read.
