@@ -175,8 +175,10 @@ public class PlaybackEventListenerTests
         using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
 
-        Assert.Single(hosted);
-        Assert.IsType<PlaybackEventListener>(hosted[0]);
+        // Named rather than counted. A count would move whenever this plugin
+        // gained a service that has nothing to do with the subscription, and
+        // what this case is about is that the listener is one of them.
+        Assert.Contains(hosted, service => service is PlaybackEventListener);
     }
 
     [Fact]

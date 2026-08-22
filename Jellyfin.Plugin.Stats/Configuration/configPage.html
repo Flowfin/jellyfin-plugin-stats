@@ -18,6 +18,7 @@
                         class="fieldDescription"
                         style="display: none"
                     ></div>
+                    <div id="StatsPluginState" class="fieldDescription"></div>
                     <form id="StatsConfigForm">
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
@@ -209,6 +210,9 @@
                         );
                     });
 
+                    document.querySelector('#StatsPluginState').textContent =
+                        statsStateSentence(config);
+
                     var rejected = document.querySelector('#StatsRejectedFields');
                     var refused = config.RejectedFields || [];
                     if (refused.length) {
@@ -222,6 +226,40 @@
                         rejected.textContent = '';
                         rejected.style.display = 'none';
                     }
+                }
+
+                // What the plugin is doing, as against what it was told. Three
+                // states and they are not the same fault: a store that cannot
+                // be opened is broken and is losing plays, a capture switch
+                // that is off is somebody's decision, and a store that holds
+                // nothing is neither. Reading the empty date without reading
+                // the failure first would tell an operator whose store is
+                // broken that their server has never played anything.
+                //
+                // The moment is rendered by the browser and never by the
+                // server. A date on this page is read by whoever opened it, in
+                // their own zone; the zone this plugin folds days under is a
+                // setting on this same page and is a different question.
+                function statsStateSentence(config) {
+                    if (config.WhyTheStoreCouldNotBeOpened) {
+                        return (
+                            'This plugin is not storing anything. Its store could not be' +
+                            ' opened (' +
+                            config.WhyTheStoreCouldNotBeOpened +
+                            '), so plays are being lost for as long as that lasts. The server' +
+                            ' log carries the failure itself.'
+                        );
+                    }
+
+                    var kept = config.OldestStoredPlay
+                        ? 'The oldest play kept is ' +
+                          new Date(config.OldestStoredPlay).toLocaleString() +
+                          '.'
+                        : 'Nothing is stored yet.';
+
+                    return config.CaptureEnabled
+                        ? 'Recording. ' + kept
+                        : 'Recording is switched off, so nothing new is being written. ' + kept;
                 }
 
                 // Said here rather than by naming the field, because the page

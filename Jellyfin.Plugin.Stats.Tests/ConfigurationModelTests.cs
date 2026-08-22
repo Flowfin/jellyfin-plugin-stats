@@ -154,6 +154,34 @@ public class ConfigurationModelTests
     }
 
     /// <summary>
+    /// The page says what the plugin is doing, and reads both halves of it off
+    /// the object the server hands it. The element and the two properties that
+    /// fill it are all named here, because a page reading a property the model
+    /// does not have shows nothing and looks fine.
+    /// </summary>
+    /// <remarks>
+    /// The three states are named as well as the fields. A page that read the
+    /// date without reading the failure first would tell an operator whose
+    /// store is broken that their server has never played anything, and that is
+    /// the one mistake this display can make that is worse than showing
+    /// nothing. Issues #31 and #65.
+    /// </remarks>
+    [Fact]
+    public void TheConfigurationPageShowsWhatThePluginIsDoing()
+    {
+        var page = EmbeddedConfigurationPage();
+
+        Assert.Contains("id=\"StatsPluginState\"", page, StringComparison.Ordinal);
+        Assert.Contains("config." + nameof(PluginConfiguration.WhyTheStoreCouldNotBeOpened), page, StringComparison.Ordinal);
+        Assert.Contains("config." + nameof(PluginConfiguration.OldestStoredPlay), page, StringComparison.Ordinal);
+
+        Assert.Contains("This plugin is not storing anything.", page, StringComparison.Ordinal);
+        Assert.Contains("Recording is switched off", page, StringComparison.Ordinal);
+        Assert.Contains("Nothing is stored yet.", page, StringComparison.Ordinal);
+        Assert.Contains("The oldest play kept is ", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The page has somewhere to go when a save is refused. The plugin refuses a
     /// save whole rather than field by field, so a page holding only the success
     /// path would leave an operator under a loading message, looking at the
