@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.Stats.Data;
 
 /// <summary>
-/// Where finished plays are kept, and the only way the rest of the plugin
-/// reaches them.
+/// Where plays are kept, both the ones that have finished and the ones that are
+/// still running, and the only way the rest of the plugin reaches them.
 /// </summary>
 /// <remarks>
 /// Nothing in these signatures names a storage technology, a connection, a
@@ -34,6 +34,14 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// from the paragraph above rather than an exception to it.
 /// </para>
 /// <para>
+/// Every removal here reaches the open plays as well as the finished ones, and
+/// that is the store's own doing rather than something each caller remembers.
+/// An open row holds the same account and the same item name a finished row
+/// does, so a deletion that took one and left the other would answer a request
+/// to be forgotten with the rows still there. The set of removals is small and
+/// closed; the set of reads is not, which is why the covering is on this side.
+/// </para>
+/// <para>
 /// The rest carry no bound and are not reads over rows either, because the
 /// store reduces the column rather than handing the rows back:
 /// <see cref="CountPlaysStartedBefore"/> answers with one number,
@@ -50,6 +58,77 @@ public interface IPlayStore : IDisposable
     /// </summary>
     /// <param name="play">The play to keep.</param>
     void Add(PlayRecord play);
+
+    /// <summary>
+    /// Writes a play that has started and not stopped, replacing what was
+    /// written for the same key.
+    /// </summary>
+    /// <remarks>
+    /// The key is the row's identity, so a play reported a thousand times is
+    /// one row and a play reported twice is one row. That is what stops the
+    /// file growing with how often a session checks in, and it is the reason
+    /// this is a write rather than an append. Issue #220.
+    /// <para>
+    /// It is a second table and not a flag on the finished rows. Every read in
+    /// this plugin answers a question about plays that happened, and a running
+    /// play in that table makes every one of those reads wrong unless it
+    /// remembers a condition nobody would notice missing.
+    /// </para>
+    /// </remarks>
+    /// <param name="play">The play as it stands.</param>
+    void NoteOpenPlay(OpenPlay play);
+
+    /// <summary>
+    /// Adds one finished play and takes away the open row it came from, both
+    /// or neither.
+    /// </summary>
+    /// <remarks>
+    /// One transaction, because the two halves apart are how a play appears
+    /// twice. A process that died between them would leave the finished row
+    /// beside an open row for the same play, and whatever finishes what a
+    /// restart left open would then write the play a second time. Appearing
+    /// exactly once is the property the three pieces of issue #36 share, and
+    /// this is where it is kept.
+    /// <para>
+    /// A key with no open row against it is not a failure. A play whose start
+    /// this plugin never saw, and a play whose open row a sweep has already
+    /// taken, both arrive here with nothing to remove, and the finished row is
+    /// still the answer.
+    /// </para>
+    /// </remarks>
+    /// <param name="play">The finished play.</param>
+    /// <param name="playKey">The key the open row was written under.</param>
+    void AddAndForgetOpenPlay(PlayRecord play, string playKey);
+
+    /// <summary>
+    /// Takes away the open row for one key, without writing a finished play.
+    /// </summary>
+    /// <remarks>
+    /// What a play that is no longer being recorded leaves behind. Capture
+    /// turned off, or a user excluded, part of the way through a play means the
+    /// finished row is refused, and an open row already on the file would
+    /// otherwise stay there for a play nobody may keep.
+    /// </remarks>
+    /// <param name="playKey">The key the open row was written under.</param>
+    void ForgetOpenPlay(string playKey);
+
+    /// <summary>
+    /// Reads every play the file holds as still running.
+    /// </summary>
+    /// <remarks>
+    /// What a previous process left behind, for whatever finishes it. The
+    /// sequence is walked once and drawn a row at a time, which is the same
+    /// justification the export's reads carry: a caller holding all of them is
+    /// a caller that chose to. In practice it is one row per session that was
+    /// playing when the server stopped.
+    /// <para>
+    /// A row in here is not a play that happened. It is what the server had
+    /// said about a play up to the last time it heard from the session, and
+    /// nothing in it says the play ended.
+    /// </para>
+    /// </remarks>
+    /// <returns>The open plays, in key order.</returns>
+    IEnumerable<OpenPlay> OpenPlays();
 
     /// <summary>
     /// Reads back the most recently started plays, newest first.
@@ -227,7 +306,7 @@ public interface IPlayStore : IDisposable
     /// </remarks>
     /// <param name="userId">The user whose rows go.</param>
     /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
-    /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
+    /// <returns>How many finished rows this call deleted, and zero where there were none left to delete.</returns>
     int DeletePlaysFor(Guid userId, int limit);
 
     /// <summary>

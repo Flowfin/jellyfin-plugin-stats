@@ -5,8 +5,7 @@ using Jellyfin.Plugin.Stats.Data;
 namespace Jellyfin.Plugin.Stats.Capture;
 
 /// <summary>
-/// Decides whether a finished play is recorded, and is the only thing that
-/// decides it.
+/// Decides whether a play is recorded, and is the only thing that decides it.
 /// </summary>
 /// <remarks>
 /// A setting that turns capture off has to stop the writing rather than the
@@ -14,6 +13,20 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// disk: the administrator who turned it off has a display preference wearing
 /// the name of a control, and the user who asked not to be recorded is being
 /// recorded. Issue #39.
+/// <para>
+/// It judges a play that is still running by the same three answers as a
+/// finished one, because a row on the file is a row on the file whether or not
+/// the play it is about has ended. A gate that only judged the stop would write
+/// an excluded user's viewing to disk for the length of every play they watched
+/// and take it away afterwards, which is not what "not recorded" means.
+/// </para>
+/// <para>
+/// A setting that changes part of the way through a play is answered in the
+/// direction that keeps least. Capture turned off, or a user excluded, while
+/// something is playing means the finished row is refused and the open row that
+/// is already on the file is taken away, so the change reaches the rows that
+/// exist because of it rather than only the ones after it.
+/// </para>
 /// <para>
 /// This sits between the tracker and the queue, so a play that is not recorded
 /// never enters the queue and never reaches the store. It is also why the
@@ -29,9 +42,9 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// about.
 /// </para>
 /// </remarks>
-public sealed class CaptureGate : IFinishedPlaySink
+public sealed class CaptureGate : IPlaySink
 {
-    private readonly IFinishedPlaySink _inner;
+    private readonly IPlaySink _inner;
     private readonly Func<PluginConfiguration> _configuration;
 
     /// <summary>
@@ -39,7 +52,7 @@ public sealed class CaptureGate : IFinishedPlaySink
     /// </summary>
     /// <param name="inner">Where a play that is recorded goes next.</param>
     /// <param name="configuration">Reads the configuration as it stands now.</param>
-    public CaptureGate(IFinishedPlaySink inner, Func<PluginConfiguration> configuration)
+    public CaptureGate(IPlaySink inner, Func<PluginConfiguration> configuration)
     {
         _inner = inner;
         _configuration = configuration;
@@ -70,7 +83,7 @@ public sealed class CaptureGate : IFinishedPlaySink
     /// the configuration cannot hold.
     /// </para>
     /// </remarks>
-    /// <param name="play">The finished play.</param>
+    /// <param name="play">The play, finished or still running.</param>
     /// <param name="configuration">The configuration to judge it against.</param>
     /// <returns>True where the play is recorded.</returns>
     public static bool Records(PlayRecord play, PluginConfiguration configuration)
@@ -101,13 +114,47 @@ public sealed class CaptureGate : IFinishedPlaySink
     /// same personal detail in a file that outlives every retention setting.
     /// </remarks>
     /// <param name="play">The row the play came to.</param>
-    public void Add(PlayRecord play)
+    /// <param name="playKey">The key the play's events were joined on.</param>
+    public void Add(PlayRecord play, string playKey)
     {
         if (!Records(play, _configuration()))
+        {
+            // The open row goes even though the finished one does not. It is
+            // there because the settings allowed it when the play started, and
+            // leaving it would keep on the file exactly what the setting that
+            // has since changed exists to stop being kept.
+            _inner.ForgetOpen(playKey);
+            return;
+        }
+
+        _inner.Add(play, playKey);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Judged by the same function as the stop. A play that may not be recorded
+    /// may not be recorded while it is running either, and nothing is written
+    /// about the refusal for the reason the stop gives.
+    /// </remarks>
+    /// <param name="play">The play as it stands.</param>
+    public void NoteOpen(OpenPlay play)
+    {
+        ArgumentNullException.ThrowIfNull(play);
+
+        if (!Records(play.SoFar, _configuration()))
         {
             return;
         }
 
-        _inner.Add(play);
+        _inner.NoteOpen(play);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Passed through without being judged. This takes a row away, and a
+    /// removal that a setting could refuse is a removal that leaves something
+    /// behind when the setting says not to keep it.
+    /// </remarks>
+    /// <param name="playKey">The key the play's events were joined on.</param>
+    public void ForgetOpen(string playKey) => _inner.ForgetOpen(playKey);
 }

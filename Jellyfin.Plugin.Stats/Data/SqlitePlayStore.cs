@@ -50,6 +50,61 @@ public sealed class SqlitePlayStore : IPlayStore
               $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
           )";
 
+    // The open table's write. INSERT OR REPLACE rather than an upsert clause
+    // naming every column twice: the key is the primary key and there is no
+    // column here the write does not carry, so replacing the row and updating
+    // it in place are the same answer and one of the two is half the text.
+    //
+    // This is what keeps one running play to one row. A session reporting every
+    // ten seconds for three hours writes the same key a thousand times and
+    // leaves one row behind it.
+    private const string WriteTheOpenPlay =
+        @"INSERT OR REPLACE INTO open_plays (
+              PlayKey,
+              SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+              StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+              ClientName, DeviceId, DeviceName, PlayMethod,
+              TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
+              TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+          ) VALUES (
+              $playKey,
+              $schemaVersion, $userId, $itemId, $itemType, $parentId, $itemName, $itemRuntimeTicks,
+              $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, $reachedTheEnd,
+              $clientName, $deviceId, $deviceName, $playMethod,
+              $transcodeVideoCodec, $transcodeAudioCodec, $transcodeVideoWasDirect, $transcodeAudioWasDirect,
+              $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
+          )";
+
+    // The key is read last so the ordinals in front of it are the finished
+    // row's own, and one function reads a row out of either table.
+    private const string SelectEveryOpenPlay =
+        @"-- unbounded: walked
+          SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+                 StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons,
+                 PlayKey
+          FROM open_plays
+          ORDER BY PlayKey";
+
+    private const string ForgetTheOpenPlay =
+        "DELETE FROM open_plays WHERE PlayKey = $playKey";
+
+    // The three removals below reach this table too, so a request to be
+    // forgotten does not leave the running play behind. Each is unbounded
+    // because the table holds one row per session that is playing right now,
+    // which is a set the bite exists to protect the finished table from and
+    // this one cannot grow into.
+    private const string ForgetTheOpenPlaysOfAUser =
+        "DELETE FROM open_plays WHERE UserId = $userId";
+
+    private const string ForgetTheOpenPlaysOfAUserBetween =
+        "DELETE FROM open_plays WHERE UserId = $userId AND StartedUtcTicks >= $from AND StartedUtcTicks < $to";
+
+    private const string ForgetTheOpenPlaysBefore =
+        "DELETE FROM open_plays WHERE StartedUtcTicks < $cutoff";
+
     // Spelled out rather than assembled from a shared column list, because
     // assembling it is the concatenation the invariant rule refuses, and the
     // reason it refuses it is that a statement built from strings is a statement
@@ -285,32 +340,89 @@ public sealed class SqlitePlayStore : IPlayStore
 
         using var command = _connection.CreateCommand();
         command.CommandText = InsertPlay;
-
-        command.Parameters.AddWithValue("$schemaVersion", play.SchemaVersion);
-        command.Parameters.AddWithValue("$userId", Text(play.UserId));
-        command.Parameters.AddWithValue("$itemId", Text(play.ItemId));
-        command.Parameters.AddWithValue("$itemType", play.ItemType);
-        command.Parameters.AddWithValue("$parentId", Text(play.ParentId));
-        command.Parameters.AddWithValue("$itemName", play.ItemName);
-        command.Parameters.AddWithValue("$itemRuntimeTicks", Ticks(play.ItemRuntime));
-        command.Parameters.AddWithValue("$startedUtcTicks", UtcTicks(play.StartedUtc, nameof(play.StartedUtc)));
-        command.Parameters.AddWithValue("$endedUtcTicks", UtcTicks(play.EndedUtc, nameof(play.EndedUtc)));
-        command.Parameters.AddWithValue("$watchedDurationTicks", play.WatchedDuration.Ticks);
-        command.Parameters.AddWithValue("$reachedTheEnd", play.ReachedTheEnd);
-        command.Parameters.AddWithValue("$clientName", play.ClientName);
-        command.Parameters.AddWithValue("$deviceId", play.DeviceId);
-        command.Parameters.AddWithValue("$deviceName", play.DeviceName);
-        command.Parameters.AddWithValue("$playMethod", (int)play.PlayMethod);
-        command.Parameters.AddWithValue("$transcodeVideoCodec", Text(play.Transcode.VideoCodec));
-        command.Parameters.AddWithValue("$transcodeAudioCodec", Text(play.Transcode.AudioCodec));
-        command.Parameters.AddWithValue("$transcodeVideoWasDirect", play.Transcode.VideoWasDirect);
-        command.Parameters.AddWithValue("$transcodeAudioWasDirect", play.Transcode.AudioWasDirect);
-        command.Parameters.AddWithValue("$transcodePeakBitrate", Number(play.Transcode.PeakBitrate));
-        command.Parameters.AddWithValue("$transcodeTypicalBitrate", Number(play.Transcode.TypicalBitrate));
-        command.Parameters.AddWithValue("$transcodeHardwareAcceleration", Text(play.Transcode.HardwareAcceleration));
-        command.Parameters.AddWithValue("$transcodeReasons", JoinReasons(play.Transcode.Reasons));
+        BindThePlay(command, play);
 
         command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public void NoteOpenPlay(OpenPlay play)
+    {
+        ArgumentNullException.ThrowIfNull(play);
+        ArgumentException.ThrowIfNullOrEmpty(play.PlayKey);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = WriteTheOpenPlay;
+        command.Parameters.AddWithValue("$playKey", play.PlayKey);
+        BindThePlay(command, play.SoFar);
+
+        command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public void AddAndForgetOpenPlay(PlayRecord play, string playKey)
+    {
+        ArgumentNullException.ThrowIfNull(play);
+        ArgumentException.ThrowIfNullOrEmpty(playKey);
+
+        // One transaction over both statements. The finished row and the open
+        // row apart are how one play becomes two, and the window between two
+        // separate writes is exactly the moment a restart is most likely to
+        // land in: the server is stopping and every session is finishing at
+        // once.
+        using var transaction = _connection.BeginTransaction();
+
+        using (var insert = _connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = InsertPlay;
+            BindThePlay(insert, play);
+            insert.ExecuteNonQuery();
+        }
+
+        using (var forget = _connection.CreateCommand())
+        {
+            forget.Transaction = transaction;
+            forget.CommandText = ForgetTheOpenPlay;
+            forget.Parameters.AddWithValue("$playKey", playKey);
+            forget.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    /// <inheritdoc />
+    public void ForgetOpenPlay(string playKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(playKey);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = ForgetTheOpenPlay;
+        command.Parameters.AddWithValue("$playKey", playKey);
+
+        command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// An iterator for the reason the export's walks are iterators, and the
+    /// key is the last column so the ordinals in front of it are the finished
+    /// row's own and one function reads a row out of either table.
+    /// </remarks>
+    public IEnumerable<OpenPlay> OpenPlays()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectEveryOpenPlay;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            yield return new OpenPlay
+            {
+                SoFar = ReadPlay(reader),
+                PlayKey = reader.GetString(23)
+            };
+        }
     }
 
     /// <inheritdoc />
@@ -488,9 +600,23 @@ public sealed class SqlitePlayStore : IPlayStore
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
 
+        var cutoff = UtcTicks(cutoffUtc, nameof(cutoffUtc));
+
+        // The open rows first, and unbounded, because a play older than the
+        // retention window that is still marked as running is a leftover rather
+        // than a session anybody is watching, and there is one row per session
+        // rather than one per play. Doing it before the bite means a sweep that
+        // finds no finished rows left has still taken them.
+        using (var stale = _connection.CreateCommand())
+        {
+            stale.CommandText = ForgetTheOpenPlaysBefore;
+            stale.Parameters.AddWithValue("$cutoff", cutoff);
+            stale.ExecuteNonQuery();
+        }
+
         using var command = _connection.CreateCommand();
         command.CommandText = DeletePlaysBefore;
-        command.Parameters.AddWithValue("$cutoff", UtcTicks(cutoffUtc, nameof(cutoffUtc)));
+        command.Parameters.AddWithValue("$cutoff", cutoff);
         command.Parameters.AddWithValue("$limit", limit);
 
         return command.ExecuteNonQuery();
@@ -500,6 +626,16 @@ public sealed class SqlitePlayStore : IPlayStore
     public int DeletePlaysFor(Guid userId, int limit)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        // The account's running play goes too, and it goes first. A caller
+        // bites until this answers nought, so anything left to the last call
+        // would be left to a call that never comes.
+        using (var running = _connection.CreateCommand())
+        {
+            running.CommandText = ForgetTheOpenPlaysOfAUser;
+            running.Parameters.AddWithValue("$userId", Text(userId));
+            running.ExecuteNonQuery();
+        }
 
         using var command = _connection.CreateCommand();
         command.CommandText = DeletePlaysOfAUser;
@@ -529,6 +665,17 @@ public sealed class SqlitePlayStore : IPlayStore
 
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(from, to, nameof(fromUtc));
 
+        // The account's running play as well, where it started inside the
+        // window, and first for the reason the deletion above gives.
+        using (var running = _connection.CreateCommand())
+        {
+            running.CommandText = ForgetTheOpenPlaysOfAUserBetween;
+            running.Parameters.AddWithValue("$userId", Text(userId));
+            running.Parameters.AddWithValue("$from", from);
+            running.Parameters.AddWithValue("$to", to);
+            running.ExecuteNonQuery();
+        }
+
         using var command = _connection.CreateCommand();
         command.CommandText = DeletePlaysOfAUserBetween;
 
@@ -556,6 +703,44 @@ public sealed class SqlitePlayStore : IPlayStore
     {
         _connection.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Puts one play's fields on a command, under the names both writes use.
+    /// </summary>
+    /// <remarks>
+    /// One function for the finished write and the open one, because the two
+    /// statements carry the same columns and two copies of this list would
+    /// drift the first time a column is added to one of them. What the open
+    /// write adds beyond this is its key, which is bound by the caller.
+    /// </remarks>
+    /// <param name="command">The command being built.</param>
+    /// <param name="play">The play.</param>
+    private static void BindThePlay(SqliteCommand command, PlayRecord play)
+    {
+        command.Parameters.AddWithValue("$schemaVersion", play.SchemaVersion);
+        command.Parameters.AddWithValue("$userId", Text(play.UserId));
+        command.Parameters.AddWithValue("$itemId", Text(play.ItemId));
+        command.Parameters.AddWithValue("$itemType", play.ItemType);
+        command.Parameters.AddWithValue("$parentId", Text(play.ParentId));
+        command.Parameters.AddWithValue("$itemName", play.ItemName);
+        command.Parameters.AddWithValue("$itemRuntimeTicks", Ticks(play.ItemRuntime));
+        command.Parameters.AddWithValue("$startedUtcTicks", UtcTicks(play.StartedUtc, nameof(play.StartedUtc)));
+        command.Parameters.AddWithValue("$endedUtcTicks", UtcTicks(play.EndedUtc, nameof(play.EndedUtc)));
+        command.Parameters.AddWithValue("$watchedDurationTicks", play.WatchedDuration.Ticks);
+        command.Parameters.AddWithValue("$reachedTheEnd", play.ReachedTheEnd);
+        command.Parameters.AddWithValue("$clientName", play.ClientName);
+        command.Parameters.AddWithValue("$deviceId", play.DeviceId);
+        command.Parameters.AddWithValue("$deviceName", play.DeviceName);
+        command.Parameters.AddWithValue("$playMethod", (int)play.PlayMethod);
+        command.Parameters.AddWithValue("$transcodeVideoCodec", Text(play.Transcode.VideoCodec));
+        command.Parameters.AddWithValue("$transcodeAudioCodec", Text(play.Transcode.AudioCodec));
+        command.Parameters.AddWithValue("$transcodeVideoWasDirect", play.Transcode.VideoWasDirect);
+        command.Parameters.AddWithValue("$transcodeAudioWasDirect", play.Transcode.AudioWasDirect);
+        command.Parameters.AddWithValue("$transcodePeakBitrate", Number(play.Transcode.PeakBitrate));
+        command.Parameters.AddWithValue("$transcodeTypicalBitrate", Number(play.Transcode.TypicalBitrate));
+        command.Parameters.AddWithValue("$transcodeHardwareAcceleration", Text(play.Transcode.HardwareAcceleration));
+        command.Parameters.AddWithValue("$transcodeReasons", JoinReasons(play.Transcode.Reasons));
     }
 
     /// <summary>

@@ -323,6 +323,14 @@ public sealed class UserDeletedTests : IDisposable
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
 
+        public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
+
+        public void AddAndForgetOpenPlay(PlayRecord play, string playKey) => throw NotPartOfThis();
+
+        public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
+
+        public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
 
         private static NotSupportedException NotPartOfThis()

@@ -658,6 +658,19 @@ public class PlayTrackerTests
         return rows;
     }
 
+    /// <summary>
+    /// A session whose play session identifier is known, for the cases that
+    /// assert which key a running play was written under.
+    /// </summary>
+    private static SessionInfo ARunningSession(FakeSessionManager sessions)
+    {
+        return new PlaySessionBuilder(sessions)
+            .ForUser(FakeUserManager.NewUser("viewer"))
+            .Playing(PlaySessionBuilder.Video("A Film", TimeSpan.FromMinutes(90)))
+            .Identified("session-1", "play-1")
+            .Build();
+    }
+
     private static SessionInfo APlay(FakeSessionManager sessions)
     {
         return new PlaySessionBuilder(sessions)
@@ -712,12 +725,103 @@ public class PlayTrackerTests
         };
     }
 
-    private sealed class RecordingPlaySink : IFinishedPlaySink
+    /// <summary>
+    /// A sink that keeps everything the tracker hands it, in order.
+    /// </summary>
+    /// <remarks>
+    /// The open plays are kept as a list rather than folded into a map, because
+    /// what several cases here are about is how many times a running play was
+    /// written and what each of those said, and a map would answer only the
+    /// last of them. What the file ends up holding is the store's answer and is
+    /// asserted where a store is driven.
+    /// </remarks>
+    /// <summary>
+    /// A play that has started is handed over as a running play, and handed
+    /// over again on every progress report, so what the file says about it
+    /// follows it. Issue #220.
+    /// </summary>
+    [Fact]
+    public void ARunningPlayIsHandedOverOnTheStartAndOnEveryReport()
+    {
+        var sessions = new FakeSessionManager();
+        var sink = Watching(sessions, out var tracker);
+        var session = ARunningSession(sessions);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(20), at: Eight.AddMinutes(20));
+
+        Assert.Equal(3, sink.Open.Count);
+        Assert.All(sink.Open, play => Assert.Equal("play-1", play.PlayKey));
+
+        // Each one says more than the one before it, which is the whole reason
+        // to send the second and the third.
+        Assert.Equal(
+            sink.Open.Select(play => play.SoFar.WatchedDuration).OrderBy(watched => watched),
+            sink.Open.Select(play => play.SoFar.WatchedDuration));
+
+        // And none of them claims the play ended.
+        Assert.All(sink.Open, play => Assert.False(play.SoFar.ReachedTheEnd));
+
+        Assert.Empty(sink.Rows);
+        Assert.Equal(1, tracker.OpenPlays);
+    }
+
+    /// <summary>
+    /// The stop carries the key the play's events were joined on, so the
+    /// finished row arriving and the running row going are one act. Without
+    /// the key they are two writes, and a process that stopped between them
+    /// leaves the play on the file twice.
+    /// </summary>
+    [Fact]
+    public void TheStopCarriesTheKeyTheRunningRowWasWrittenUnder()
+    {
+        var sessions = new FakeSessionManager();
+        var sink = Watching(sessions, out var tracker);
+        var session = ARunningSession(sessions);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(30), at: Eight.AddMinutes(30));
+
+        Assert.Single(sink.Rows);
+        Assert.Equal("play-1", Assert.Single(sink.Keys));
+        Assert.Empty(sink.Forgotten);
+        Assert.Equal(0, tracker.OpenPlays);
+    }
+
+    private sealed class RecordingPlaySink : IPlaySink
     {
         private readonly List<PlayRecord> _rows = new();
+        private readonly List<OpenPlay> _open = new();
+        private readonly List<string> _keys = new();
+        private readonly List<string> _forgotten = new();
 
         public IReadOnlyList<PlayRecord> Rows => _rows;
 
-        public void Add(PlayRecord play) => _rows.Add(play);
+        /// <summary>
+        /// Gets every running play this was handed, in the order it was handed
+        /// them.
+        /// </summary>
+        public IReadOnlyList<OpenPlay> Open => _open;
+
+        /// <summary>
+        /// Gets the keys of the finished plays, in order.
+        /// </summary>
+        public IReadOnlyList<string> Keys => _keys;
+
+        /// <summary>
+        /// Gets the keys this was told to take away without a finished play.
+        /// </summary>
+        public IReadOnlyList<string> Forgotten => _forgotten;
+
+        public void Add(PlayRecord play, string playKey)
+        {
+            _rows.Add(play);
+            _keys.Add(playKey);
+        }
+
+        public void NoteOpen(OpenPlay play) => _open.Add(play);
+
+        public void ForgetOpen(string playKey) => _forgotten.Add(playKey);
     }
 }

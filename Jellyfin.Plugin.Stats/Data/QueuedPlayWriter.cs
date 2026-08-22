@@ -8,8 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Stats.Data;
 
 /// <summary>
-/// Takes a finished play off the server's thread and writes it from one of its
-/// own.
+/// Takes a play off the server's thread and writes it from one of its own.
 /// </summary>
 /// <remarks>
 /// The plugin is handed its events from inside the server's own event dispatch,
@@ -28,7 +27,19 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// <para>
 /// What sits in the queue is therefore a row and never a sample. A progress
 /// report is folded into memory by the tracker at the moment it arrives, which
-/// is the same thread it arrived on, and it never reaches this class at all.
+/// is the same thread it arrived on; what reaches this class is the play as it
+/// stands after that fold, which is a row of the same shape as the finished
+/// one.
+/// </para>
+/// <para>
+/// Three things can be queued and all three are one row's worth of work: the
+/// play as it stands while it is running, the play once it has stopped, and the
+/// taking away of a running play no finished row is coming for. They share one
+/// queue and one thread, so the store sees one writer and the order a play's
+/// own events were queued in is the order they reach the file. Two queues would
+/// have let a stop overtake the last progress report of the play it ends, which
+/// would put the open row back after the finished one had taken it away. Issue
+/// #220.
 /// </para>
 /// <para>
 /// The store is opened by the writer thread on the first row rather than by
@@ -52,7 +63,7 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// Reading one while a play is in flight reads a number that is moving.
 /// </para>
 /// </remarks>
-public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
+public sealed class QueuedPlayWriter : IPlaySink, IDisposable
 {
     /// <summary>
     /// How many finished rows may wait at once.
@@ -62,13 +73,19 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     /// seconds, so this is hours of backlog rather than seconds of it. It is
     /// named here rather than left to a caller because a bound chosen per call
     /// site is a bound nobody can state.
+    /// <para>
+    /// A progress report costs a place in it as well now, so the backlog this
+    /// covers is shorter in hours than it was. It is still hours: a session
+    /// reports on a timer measured in tens of seconds, and this is a thousand
+    /// places.
+    /// </para>
     /// </remarks>
     public const int DefaultBound = 1024;
 
     private const string TheQueueIsFull = "the queue is full";
     private const string TheWriterHasStopped = "the writer has stopped";
 
-    private readonly BlockingCollection<PlayRecord> _pending;
+    private readonly BlockingCollection<Pending> _pending;
     private readonly Func<IPlayStore> _openStore;
     private readonly ILogger<QueuedPlayWriter> _logger;
     private readonly HashSet<string> _alreadyReported = new(StringComparer.Ordinal);
@@ -98,7 +115,7 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     {
         _openStore = openStore;
         _logger = logger;
-        _pending = new BlockingCollection<PlayRecord>(bound);
+        _pending = new BlockingCollection<Pending>(bound);
 
         _writer = new Thread(Drain)
         {
@@ -113,13 +130,27 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     }
 
     /// <summary>
-    /// Gets how many rows this has taken responsibility for.
+    /// Gets how many pieces of work this has taken responsibility for.
     /// </summary>
+    /// <remarks>
+    /// Every queued thing rather than every finished play, because what this
+    /// number is about is the queue: it is the count that
+    /// <see cref="Refused"/> is the other half of, and a place in the queue is
+    /// a place whatever is standing in it.
+    /// </remarks>
     public int Accepted => _accepted;
 
     /// <summary>
-    /// Gets how many rows have reached the store.
+    /// Gets how many finished plays have reached the store.
     /// </summary>
+    /// <remarks>
+    /// Finished plays and not writes. A running play is written to the file
+    /// again on every progress report, so a counter that took those in would
+    /// move with how often a session checked in, which is the thing this
+    /// plugin's file size deliberately does not do and the last number that
+    /// should. What it counts is plays that are over, which is what it counted
+    /// before there was a second kind of write.
+    /// </remarks>
     public int Written => _written;
 
     /// <summary>
@@ -171,25 +202,29 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
     /// playback event.
     /// </remarks>
     /// <param name="play">The row the play came to.</param>
-    public void Add(PlayRecord play)
+    /// <param name="playKey">The key the play's events were joined on.</param>
+    public void Add(PlayRecord play, string playKey)
+        => Queue(new Pending(play, playKey, OpenPlayKey: null));
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Turned away when the queue is full, like a finished row. The next
+    /// progress report of the same play carries everything this one did, so
+    /// what is lost by dropping one is how far a play had got at a moment that
+    /// has already passed, which is the cheapest thing in the queue to lose.
+    /// </remarks>
+    /// <param name="play">The play as it stands.</param>
+    public void NoteOpen(OpenPlay play)
     {
-        lock (_gate)
-        {
-            if (_stopped)
-            {
-                Turn(TheWriterHasStopped);
-                return;
-            }
+        ArgumentNullException.ThrowIfNull(play);
 
-            if (!_pending.TryAdd(play))
-            {
-                Turn(TheQueueIsFull);
-                return;
-            }
-
-            _accepted++;
-        }
+        Queue(new Pending(play.SoFar, PlayKey: null, OpenPlayKey: play.PlayKey));
     }
+
+    /// <inheritdoc />
+    /// <param name="playKey">The key the play's events were joined on.</param>
+    public void ForgetOpen(string playKey)
+        => Queue(new Pending(Finished: null, PlayKey: null, OpenPlayKey: playKey));
 
     /// <inheritdoc />
     /// <remarks>
@@ -247,7 +282,7 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
 
         try
         {
-            foreach (var play in _pending.GetConsumingEnumerable())
+            foreach (var pending in _pending.GetConsumingEnumerable())
             {
                 if (store is null)
                 {
@@ -267,8 +302,12 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
 
                 try
                 {
-                    store.Add(play);
-                    _written++;
+                    Write(store, pending);
+
+                    if (pending.PlayKey is not null)
+                    {
+                        _written++;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -280,6 +319,64 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
         finally
         {
             store?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Does one queued thing to the store.
+    /// </summary>
+    /// <remarks>
+    /// The three cases are told apart by which of the two keys is there, and
+    /// the record that carries them refuses any other combination when it is
+    /// built, so nothing here has a fourth branch nobody could reach.
+    /// </remarks>
+    /// <param name="store">The open store.</param>
+    /// <param name="pending">What was queued.</param>
+    private static void Write(IPlayStore store, Pending pending)
+    {
+        if (pending.Finished is null)
+        {
+            store.ForgetOpenPlay(pending.OpenPlayKey!);
+            return;
+        }
+
+        if (pending.OpenPlayKey is not null)
+        {
+            store.NoteOpenPlay(new OpenPlay { PlayKey = pending.OpenPlayKey, SoFar = pending.Finished });
+            return;
+        }
+
+        store.AddAndForgetOpenPlay(pending.Finished, pending.PlayKey!);
+    }
+
+    /// <summary>
+    /// Puts one thing on the queue, or counts it as turned away.
+    /// </summary>
+    /// <remarks>
+    /// This returns without waiting for anything, which is the whole of what
+    /// the class is for. A full queue turns the work away rather than holding
+    /// the caller until there is room: the caller is the server, and a plugin
+    /// that makes the server wait for its own backlog has turned a slow report
+    /// into a slow playback event.
+    /// </remarks>
+    /// <param name="pending">What to do.</param>
+    private void Queue(Pending pending)
+    {
+        lock (_gate)
+        {
+            if (_stopped)
+            {
+                Turn(TheWriterHasStopped);
+                return;
+            }
+
+            if (!_pending.TryAdd(pending))
+            {
+                Turn(TheQueueIsFull);
+                return;
+            }
+
+            _accepted++;
         }
     }
 
@@ -323,7 +420,28 @@ public sealed class QueuedPlayWriter : IFinishedPlaySink, IDisposable
 
         _logger.LogError(
             exception,
-            "A finished play was not stored, because {OccurrenceClass}. Further plays lost the same way are counted and not logged.",
+            "A play was not stored, because {OccurrenceClass}. Further plays lost the same way are counted and not logged.",
             occurrenceClass);
     }
+
+    /// <summary>
+    /// One thing waiting to be done to the store.
+    /// </summary>
+    /// <remarks>
+    /// Three shapes in one type rather than three queues, because one queue is
+    /// what keeps a play's own events in the order they happened. Which shape
+    /// an entry is, is decided by the two keys, and the three places that build
+    /// one are the three methods above, each of which names its shape in one
+    /// line.
+    /// <para>
+    /// Nothing is refused here. The store refuses a key that is empty and a
+    /// play that is null, at the moment it would write one, which is a refusal
+    /// a case can reach; a second one in this record would be a branch no route
+    /// could take and no proof could bite on.
+    /// </para>
+    /// </remarks>
+    /// <param name="Finished">The play, and null where an open row is only being taken away.</param>
+    /// <param name="PlayKey">The key of a stop, and null otherwise.</param>
+    /// <param name="OpenPlayKey">The key of a play still running, or of one being taken away, and null on a stop.</param>
+    private sealed record Pending(PlayRecord? Finished, string? PlayKey, string? OpenPlayKey);
 }

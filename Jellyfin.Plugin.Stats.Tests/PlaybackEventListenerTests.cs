@@ -197,7 +197,7 @@ public class PlaybackEventListenerTests
         // anything can see it here, and a registration that stopped resolving
         // is caught here rather than on a server.
         Assert.IsType<PlayTracker>(provider.GetRequiredService<IPlaybackEventSink>());
-        Assert.IsType<CaptureGate>(provider.GetRequiredService<IFinishedPlaySink>());
+        Assert.IsType<CaptureGate>(provider.GetRequiredService<IPlaySink>());
         Assert.NotNull(provider.GetRequiredService<StatsData.QueuedPlayWriter>());
     }
 
@@ -217,7 +217,7 @@ public class PlaybackEventListenerTests
         // this line. It does not, because the writer opens it on its own thread
         // when the first row arrives. That is what keeps a store which cannot
         // be opened from being a server that will not start.
-        Assert.NotNull(provider.GetRequiredService<IFinishedPlaySink>());
+        Assert.NotNull(provider.GetRequiredService<IPlaySink>());
     }
 
     private static PlaybackEventListener ListenerOver(ISessionManager sessions, IPlaybackEventSink sink)
