@@ -95,9 +95,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // so that a reader arriving later cannot be the change that has to
         // remember to wire them.
         serviceCollection.AddSingleton(provider => new HeldYears(
-            (userId, year, zone, topCount) =>
-            {
-                using var store = OpenTheStore();
+            (userId, year, zone, topCount) => ReadFromTheStore.Answering(OpenTheStore, store =>
 
                 // The oldest row comes from the same store and the same open as
                 // the plays, so what the answer says it covers and what it was
@@ -106,14 +104,13 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
                 // every account rather than over this one, because what a
                 // window is about is the days the store has lost and not the
                 // day this person started watching.
-                return YearInReview.Over(
+                YearInReview.Over(
                     store.PlaysFor(userId),
                     userId,
                     year,
                     zone,
                     topCount,
-                    store.OldestPlayStartedUtc());
-            },
+                    store.OldestPlayStartedUtc())),
             provider.GetRequiredService<TimeProvider>()));
 
         // The sweep takes the same store-opening function the writer does, and
@@ -176,6 +173,15 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     /// one that did would be a second answer about where the data folder is.
     /// The store is opened for the length of the question and closed again, the
     /// way a folded year is read.
+    /// <para>
+    /// It opens the store directly rather than through
+    /// <see cref="ReadFromTheStore"/>, and that is the difference between the
+    /// two readers rather than an oversight. What catches this one reports the
+    /// exception's type to the settings page, so wrapping the open would put
+    /// this plugin's own type in front of an operator in place of the one the
+    /// file system or the migration actually raised, which is the sentence that
+    /// tells them what to do next.
+    /// </para>
     /// </remarks>
     /// <returns>When the oldest stored play started, or null where there is none.</returns>
     private static DateTime? OldestStoredPlay()

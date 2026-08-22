@@ -3,6 +3,7 @@ using System.Net.Mime;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Configuration;
+using Jellyfin.Plugin.Stats.Data;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -110,6 +111,12 @@ public sealed class YourYearController : ControllerBase
     /// see and a year in which they watched nothing are different facts, and an
     /// endpoint answering both with the same body has destroyed the difference
     /// before anything can draw it.
+    /// <para>
+    /// A store that cannot be opened is a third fact and leaves here as a third
+    /// status. It is the half of issue #31 the settings page does not cover: an
+    /// operator reads the reason on that page, and a caller reads that the
+    /// plugin is unavailable rather than that they watched nothing all year.
+    /// </para>
     /// </remarks>
     /// <param name="userId">The account whose year is wanted, which has to be the account asking.</param>
     /// <param name="year">The calendar year, read in the zone the settings name.</param>
@@ -118,11 +125,13 @@ public sealed class YourYearController : ControllerBase
     /// <response code="401">The request carried no authenticated caller.</response>
     /// <response code="403">The request named an account other than the caller's.</response>
     /// <response code="404">The year is outside what this endpoint answers for.</response>
+    /// <response code="503">The plugin could not open its store, so it has no answer rather than an empty one.</response>
     [HttpGet("{year:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<YearInReview>> GetYear([FromRoute] Guid userId, [FromRoute] int year)
     {
         var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
@@ -139,6 +148,25 @@ public sealed class YourYearController : ControllerBase
             return NotFound();
         }
 
-        return Ok(_years.For(userId, year, zone, TopListLength));
+        try
+        {
+            return Ok(_years.For(userId, year, zone, TopListLength));
+        }
+        catch (StoreCouldNotBeOpenedException)
+        {
+            // The one failure that is answered rather than thrown. A store that
+            // will not open is the plugin having no answer, and an empty year
+            // is an answer, so the two leave here as different statuses. What
+            // is not said is why: the reason names a file this plugin was given
+            // and this response goes to whoever asked, so the operator reads it
+            // on the settings page and the caller reads that there is nothing
+            // to be had right now.
+            //
+            // Narrow on purpose. Everything else this action can throw is a
+            // defect in the plugin rather than a state of the file, and a
+            // handler that caught those too would report every one of them as
+            // a store that is briefly unavailable and be believed.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
     }
 }
