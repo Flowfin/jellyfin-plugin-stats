@@ -83,6 +83,13 @@ public sealed class YourHistoryController : ControllerBase
     /// where the zone is known and sends those.
     /// </para>
     /// <para>
+    /// Leaving both out is how a caller asks for everything, and that is the
+    /// only spelling of it. A parameter that is named and carries nothing this
+    /// endpoint can read as an instant is refused, because the alternative is
+    /// reading it as the parameter having been left out, which on this route
+    /// means the account's whole history.
+    /// </para>
+    /// <para>
     /// A store that cannot be opened leaves here as a status rather than as a
     /// success over nothing. An answer saying rows went, from a plugin that
     /// never reached the file, is the one wrong answer this endpoint must not
@@ -90,11 +97,11 @@ public sealed class YourHistoryController : ControllerBase
     /// </para>
     /// </remarks>
     /// <param name="userId">The account whose plays are to go, which has to be the account asking.</param>
-    /// <param name="from">The first moment of the window, or absent for every play the account has.</param>
-    /// <param name="to">The first moment after the window, or absent for every play the account has.</param>
+    /// <param name="from">The first moment of the window, or left out of the query for every play the account has.</param>
+    /// <param name="to">The first moment after the window, or left out of the query for every play the account has.</param>
     /// <returns>How many rows went.</returns>
     /// <response code="200">The rows are gone, and the body says how many there were.</response>
-    /// <response code="400">One end of the window was named without the other, or the window ends at or before it begins.</response>
+    /// <response code="400">A window parameter was named and carried no instant this endpoint could read, one end of the window was named without the other, or the window ends at or before it begins.</response>
     /// <response code="401">The request carried no authenticated caller.</response>
     /// <response code="403">The request named an account other than the caller's.</response>
     /// <response code="503">The plugin could not open its store, so nothing was deleted.</response>
@@ -114,6 +121,11 @@ public sealed class YourHistoryController : ControllerBase
         if (!CallerIdentity.AsksForTheirOwnRows(userId, caller))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (NamedButUnreadable(nameof(from), from) || NamedButUnreadable(nameof(to), to))
+        {
+            return BadRequest();
         }
 
         if (from.HasValue != to.HasValue)
@@ -148,4 +160,32 @@ public sealed class YourHistoryController : ControllerBase
             return StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
     }
+
+    /// <summary>
+    /// Says whether the request named a window parameter and gave it a value
+    /// this endpoint could not read as an instant.
+    /// </summary>
+    /// <remarks>
+    /// Binding answers with an instant or with nothing, and nothing is two
+    /// different facts: the caller left the parameter out, or the caller sent
+    /// it empty. Only the first of those means every play the account has, and
+    /// the two arrive at this action as the same <c>null</c>.
+    /// <para>
+    /// The difference is destructive here. A form with two empty date fields
+    /// sends <c>?from=&amp;to=</c>, which reads as a window nobody named, and a
+    /// window nobody named is the account's whole history. That is the guess
+    /// the refusal below it already refuses to make for one missing end, made
+    /// silently for both.
+    /// </para>
+    /// <para>
+    /// A value that is present and is not an instant at all never reaches this:
+    /// binding fails and the framework answers 400 before the action runs, so
+    /// what is left to catch is the value that binds to nothing. Issue #55.
+    /// </para>
+    /// </remarks>
+    /// <param name="name">The parameter's name, as it appears in the query.</param>
+    /// <param name="bound">What binding made of it.</param>
+    /// <returns><c>true</c> where the query carries the name and the action was handed no instant.</returns>
+    private bool NamedButUnreadable(string name, DateTimeOffset? bound)
+        => !bound.HasValue && Request.Query.ContainsKey(name);
 }
