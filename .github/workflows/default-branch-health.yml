@@ -1,0 +1,118 @@
+# Notice when the default branch goes red.
+#
+# Several checks in this plan run on a schedule rather than on a pull request.
+# A pull request check announces itself: it sits on the change and refuses the
+# merge. A scheduled check announces nothing, so a weekly scan that failed and a
+# weekly scan that passed look the same until somebody opens the runs list.
+#
+# This reads the newest concluded run of every active workflow on the default
+# branch and fails if any of them did not succeed. Failing is the report: a
+# scheduled run that fails is what GitHub itself tells the repository about, so
+# nothing outside this repository decides whether the branch is red and no
+# service has to be subscribed to for the message to arrive.
+#
+# It reads and never writes. The token is granted read on the repository and on
+# the actions API and nothing else, and no step pushes, comments or opens
+# anything.
+#
+# The judge that decides which runs are red is a separate file with its own
+# fixtures, and the first step below runs them. That step runs on pull requests
+# as well, where the reading steps do not, so a change that stops this noticing
+# a red run reds the pull request that made it rather than being found on the
+# day something breaks. Issue #82.
+name: Default branch health
+
+on:
+  schedule:
+    # Daily. Two of the three scheduled workflows here run weekly, so a daily
+    # read covers both cadences; a weekly read would leave a failure standing
+    # for up to a week before anybody heard about it.
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Read-only. contents to check the judge out, actions to read the run history.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Report a red default branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only the judge is needed, and nothing here pushes, so the history is
+          # not fetched and the token is not persisted.
+          persist-credentials: false
+
+      # First, because a judge that has stopped recognising a failure reports
+      # nothing and passes, which reads exactly like a branch with nothing wrong
+      # with it. This is the same reason the invariant lint self-tests before it
+      # scans.
+      - name: The judge still reports a red run
+        run: python3 .github/workflows/default-branch-health.py --self-test
+
+      - name: Read the newest concluded run of every workflow
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEALTH_REPO: ${{ github.repository }}
+          # The branch the repository declares as its default, rather than a
+          # name written here, so a rename is followed instead of watched
+          # wrongly. An empty value is refused below: the runs API answers a
+          # request with no branch with every branch there is, which would be a
+          # different question answered quietly.
+          HEALTH_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTH_BRANCH}" ]; then
+            echo "::error::The event carried no default branch name, so there is nothing to read runs for." >&2
+            exit 1
+          fi
+          echo "Reading ${HEALTH_REPO} on ${HEALTH_BRANCH}."
+
+          # Only active workflows. A workflow somebody disabled has a last run
+          # that says nothing about the branch today.
+          gh api --paginate "repos/${HEALTH_REPO}/actions/workflows" \
+            --jq '.workflows[] | select(.state == "active") | {id: .id, path: .path}' \
+            > workflows.json
+          echo "$(wc -l < workflows.json) active workflow(s)"
+
+          # One request per workflow for its newest completed run, rather than
+          # one page of recent runs for the whole repository: a busy workflow
+          # fills a page on its own and pushes every other workflow off it, and
+          # a workflow pushed off a page is a workflow nothing reports on.
+          #
+          # The method is stated because gh sends a request carrying parameters
+          # as a POST unless it is told otherwise, and this API answers a POST
+          # with a 404, which reads as a workflow that does not exist.
+          : > runs.json
+          jq -r '[.id, .path] | @tsv' workflows.json | while IFS=$'\t' read -r id path; do
+            WF_PATH="${path}" gh api --method GET "repos/${HEALTH_REPO}/actions/workflows/${id}/runs" \
+              -f branch="${HEALTH_BRANCH}" -f status=completed -f per_page=1 \
+              --jq '.workflow_runs[] | {id: .id, workflow_id: .workflow_id, name: .name, event: .event, conclusion: .conclusion, started: .run_started_at, number: .run_number, url: .html_url, path: $ENV.WF_PATH}' \
+              >> runs.json
+          done
+          echo "$(wc -l < runs.json) concluded run(s) to judge"
+
+      - name: Say which of them did not succeed
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          HEALTH_BRANCH: ${{ github.event.repository.default_branch }}
+          # This job is one of the workflows it reads. Without this it would
+          # latch: its own failed run is the newest run of its own workflow, and
+          # every run after it reports that and fails for having reported it,
+          # long after the thing it was reporting was repaired.
+          HEALTH_SELF: .github/workflows/default-branch-health.yml
+        run: python3 .github/workflows/default-branch-health.py
