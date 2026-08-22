@@ -30,6 +30,17 @@ public class SupportMatrixTests
     private const string NoneReleased = "none released";
 
     /// <summary>
+    /// The one line ending every pattern here is written against.
+    /// </summary>
+    /// <remarks>
+    /// A character rather than an escape in a literal, because this file is one
+    /// of the tracked files whose line endings are the thing in question, and a
+    /// literal carrying the byte it is about is a literal a clone can rewrite
+    /// under it.
+    /// </remarks>
+    private static readonly string LineFeed = ((char)10).ToString();
+
+    /// <summary>
     /// Where the document writes the version that is waiting for its first tag.
     /// </summary>
     /// <remarks>
@@ -262,13 +273,38 @@ public class SupportMatrixTests
     /// <summary>
     /// Reads one capture out of a file's text.
     /// </summary>
+    /// <remarks>
+    /// The line endings are levelled first, and that is the difference between
+    /// a check anybody can run and one only the runner can run. This repository
+    /// has no attributes file, so git decides per clone how a tracked document
+    /// is written to disk, and a pattern anchored at the end of a line meets a
+    /// carriage return on a clone that took the other answer. In .NET a dollar
+    /// in multiline mode matches before the newline and never before the
+    /// carriage return, so the capture cannot reach its anchor and the check
+    /// refuses a document that says exactly what it is supposed to say. The
+    /// message it refuses with names the document, which sends a reader to edit
+    /// the line the pattern is looking at.
+    /// <para>
+    /// What it costs is that a difference in line endings alone walks through
+    /// here. That is the same weakening the consent wording's fingerprint took
+    /// on issue #42 and states beside itself, and no cell of this table is
+    /// about a line ending: every one of them is a version, a framework or an
+    /// abi.
+    /// </para>
+    /// <para>
+    /// The wider answer is for this repository to declare its line endings once
+    /// so that no check depends on which clone it runs in. That reaches every
+    /// tracked file and every reader of one, so it is a decision rather than a
+    /// repair, and it is not taken here. Issue #133.
+    /// </para>
+    /// </remarks>
     /// <param name="text">The text to read.</param>
     /// <param name="pattern">A pattern with a group named value.</param>
     /// <param name="what">What is being read, for the failure message.</param>
     /// <returns>The captured value.</returns>
     private static string Captured(string text, string pattern, string what)
     {
-        var matches = Regex.Matches(text, pattern);
+        var matches = Regex.Matches(text.ReplaceLineEndings(LineFeed), pattern);
 
         Assert.True(
             matches.Count == 1,
