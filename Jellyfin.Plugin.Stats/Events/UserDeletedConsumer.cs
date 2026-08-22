@@ -83,8 +83,8 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
     }
 
     /// <summary>
-    /// Deletes every row belonging to the deleted user, then reclaims the
-    /// space they were using.
+    /// Deletes every row belonging to the deleted user, and what that user
+    /// said about being named, then reclaims the space they were using.
     /// </summary>
     /// <remarks>
     /// The reclaim is what makes this a deletion rather than a soft one. A
@@ -110,6 +110,17 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
         var userId = eventArgs.Argument.Id;
 
         using var store = _openStore();
+
+        // What that account said about being named goes with its rows. The
+        // answer is a fact about a person, and an account the server no longer
+        // has has nobody left to have answered; a record kept past the account
+        // is a stored statement about somebody who is gone. Issue #44's first
+        // condition names it beside the rows.
+        //
+        // Before the rows rather than after, so a deletion that fails part of
+        // the way through the plays has already taken the smaller and more
+        // personal of the two.
+        store.ForgetConsentFor(userId);
 
         var deleted = 0;
         while (true)

@@ -124,6 +124,13 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             OwnHistoryDeletion.DefaultBite,
             provider.GetRequiredService<HeldYears>()));
 
+        // What holds each account's answer to the question of being named. The
+        // clock is the registered one, so what a moment on that record means is
+        // the same moment every other part of this plugin would have written.
+        serviceCollection.AddSingleton(provider => new ConsentRegister(
+            OpenTheStore,
+            provider.GetRequiredService<TimeProvider>()));
+
         // The sweep takes the same store-opening function the writer does, and
         // opens the store for the length of one run. Nothing is opened here:
         // this is a constructor call, and the function is only run when a sweep

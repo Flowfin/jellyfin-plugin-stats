@@ -500,6 +500,12 @@ public sealed class OwnHistoryDeletionTests : IDisposable
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
 
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("A deletion of one account's own history reads nothing and writes nothing, so this fake answers nothing else.");
 

@@ -19,6 +19,7 @@ using Jellyfin.Plugin.Stats;
 using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Events;
+using Jellyfin.Plugin.Stats.Privacy;
 using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -172,6 +173,59 @@ public sealed class UserDeletedTests : IDisposable
     }
 
     /// <summary>
+    /// The consent half of the first condition of issue #44. What the account
+    /// said about being named goes with its rows, and nobody else's answer
+    /// does.
+    /// </summary>
+    /// <remarks>
+    /// Read back through a store opened again over the same file, like every
+    /// other deletion asserted here. An account the server no longer has has
+    /// nobody left to have answered, so a record kept past the account is a
+    /// stored statement about somebody who is gone.
+    /// </remarks>
+    /// <returns>The running test.</returns>
+    [Fact]
+    public async Task WhatTheDeletedAccountSaidAboutBeingNamedGoesTooAndNobodyElsesDoes()
+    {
+        var march = new DateTimeOffset(2026, 3, 14, 9, 0, 0, TimeSpan.Zero);
+
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayBy(Alice));
+        }
+
+        var register = new ConsentRegister(() => new SqlitePlayStore(_root), new FixedClock(march));
+
+        register.Agree(Alice, ConsentWording.Version);
+        register.Withdraw(Bob);
+
+        Assert.NotNull(register.For(Alice));
+        Assert.NotNull(register.For(Bob));
+
+        await AConsumer().OnEvent(TheDeletionOf(Alice));
+
+        Assert.Null(register.For(Alice));
+        Assert.NotNull(register.For(Bob));
+    }
+
+    /// <summary>
+    /// The removal is asked for once whether or not the account had rows. An
+    /// account that was excluded from capture, or that never watched anything,
+    /// still answered the question and the answer still has to go.
+    /// </summary>
+    /// <returns>The running test.</returns>
+    [Fact]
+    public async Task TheAnswerIsTakenAwayEvenWhereTheAccountHadNoRows()
+    {
+        var store = new CountingPlayStore(rowsPerUser: 0);
+
+        await AConsumerOver(store).OnEvent(TheDeletionOf(Alice));
+
+        Assert.Equal(1, store.ConsentsForgotten);
+        Assert.Equal(0, store.Reclaims);
+    }
+
+    /// <summary>
     /// The third condition of issue #44. The server asks its container for
     /// every consumer of the event it is about to publish, so what has to
     /// resolve is the interface closed over that event and not this class by
@@ -288,6 +342,12 @@ public sealed class UserDeletedTests : IDisposable
         public int Reclaims { get; private set; }
 
         /// <summary>
+        /// Gets how many times the account's answer about being named was
+        /// taken away.
+        /// </summary>
+        public int ConsentsForgotten { get; private set; }
+
+        /// <summary>
         /// Gets whether the consumer disposed of this store.
         /// </summary>
         public bool Disposed { get; private set; }
@@ -331,6 +391,17 @@ public sealed class UserDeletedTests : IDisposable
         public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        /// <summary>
+        /// Counted rather than refused. Taking away what the account said is
+        /// part of what the consumer does now, so a fake that threw here would
+        /// fail every case in this file for a reason none of them is about.
+        /// </summary>
+        public void ForgetConsentFor(Guid userId) => ConsentsForgotten++;
 
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
 

@@ -342,6 +342,50 @@ public interface IPlayStore : IDisposable
     int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit);
 
     /// <summary>
+    /// Reads what one account has said about being named, and null where it has
+    /// said nothing.
+    /// </summary>
+    /// <remarks>
+    /// Null and a record saying no are different answers and both are needed.
+    /// An account that has never been asked has not refused, and a view that
+    /// treated the two the same could never tell somebody they had a question
+    /// waiting. Issue #42.
+    /// </remarks>
+    /// <param name="userId">The account.</param>
+    /// <returns>What that account has said, or null where it has said nothing.</returns>
+    ConsentRecord? ConsentFor(Guid userId);
+
+    /// <summary>
+    /// Writes what one account has said, replacing whatever it said before.
+    /// </summary>
+    /// <remarks>
+    /// The account is the key, because the question has one answer at a time
+    /// and what every reader asks is what that answer is now. The record
+    /// carries both moments, so replacing it does not lose the agreement a
+    /// withdrawal is a withdrawal of.
+    /// </remarks>
+    /// <param name="consent">What the account has said.</param>
+    void RecordConsent(ConsentRecord consent);
+
+    /// <summary>
+    /// Takes away what one account said, leaving no record that it was asked.
+    /// </summary>
+    /// <remarks>
+    /// For an account the server no longer has. It is not what a withdrawal
+    /// does: withdrawing is an answer and is recorded as one, and an account
+    /// that is gone has nobody left to have answered.
+    /// <para>
+    /// It is separate from the removals over plays, and deliberately. A person
+    /// deleting their own history is still on the server and their answer to
+    /// this question is still theirs, so a removal that took the two together
+    /// would make somebody who cleared their history look like somebody who had
+    /// never been asked.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The account.</param>
+    void ForgetConsentFor(Guid userId);
+
+    /// <summary>
     /// Gives the space that deleted rows were occupying back to the file
     /// system.
     /// </summary>
