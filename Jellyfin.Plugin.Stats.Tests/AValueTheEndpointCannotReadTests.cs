@@ -254,6 +254,14 @@ public class AValueTheEndpointCannotReadTests
 
         public void Add(PlayRecord play) => throw NotPartOfThis();
 
+        public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
+
+        public void AddAndForgetOpenPlay(PlayRecord play, string playKey) => throw NotPartOfThis();
+
+        public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
+
+        public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
         public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
         public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();
