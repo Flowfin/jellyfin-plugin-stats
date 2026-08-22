@@ -39,13 +39,13 @@ public sealed class SqlitePlayStore : IPlayStore
         @"INSERT INTO plays (
               SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-              ClientName, DeviceId, DeviceName, PlayMethod,
+              ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
               TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
               TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
           ) VALUES (
               $schemaVersion, $userId, $itemId, $itemType, $parentId, $itemName, $itemRuntimeTicks,
               $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, $reachedTheEnd,
-              $clientName, $deviceId, $deviceName, $playMethod,
+              $clientName, $deviceId, $deviceName, $playMethodAtStart, $playMethodChangedUtcTicks,
               $transcodeVideoCodec, $transcodeAudioCodec, $transcodeVideoWasDirect, $transcodeAudioWasDirect,
               $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
           )";
@@ -63,14 +63,14 @@ public sealed class SqlitePlayStore : IPlayStore
               PlayKey,
               SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-              ClientName, DeviceId, DeviceName, PlayMethod,
+              ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
               TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
               TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
           ) VALUES (
               $playKey,
               $schemaVersion, $userId, $itemId, $itemType, $parentId, $itemName, $itemRuntimeTicks,
               $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, $reachedTheEnd,
-              $clientName, $deviceId, $deviceName, $playMethod,
+              $clientName, $deviceId, $deviceName, $playMethodAtStart, $playMethodChangedUtcTicks,
               $transcodeVideoCodec, $transcodeAudioCodec, $transcodeVideoWasDirect, $transcodeAudioWasDirect,
               $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
           )";
@@ -81,7 +81,7 @@ public sealed class SqlitePlayStore : IPlayStore
         @"-- unbounded: walked
           SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
                  TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons,
                  PlayKey
@@ -113,7 +113,7 @@ public sealed class SqlitePlayStore : IPlayStore
         @"-- bound: $limit
           SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
                  TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
           FROM plays
@@ -133,7 +133,7 @@ public sealed class SqlitePlayStore : IPlayStore
         @"-- unbounded: walked
           SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
                  TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
           FROM plays
@@ -143,7 +143,7 @@ public sealed class SqlitePlayStore : IPlayStore
         @"-- unbounded: walked
           SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-                 ClientName, DeviceId, DeviceName, PlayMethod,
+                 ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
                  TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
           FROM plays
@@ -420,7 +420,7 @@ public sealed class SqlitePlayStore : IPlayStore
             yield return new OpenPlay
             {
                 SoFar = ReadPlay(reader),
-                PlayKey = reader.GetString(23)
+                PlayKey = reader.GetString(24)
             };
         }
     }
@@ -732,7 +732,10 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$clientName", play.ClientName);
         command.Parameters.AddWithValue("$deviceId", play.DeviceId);
         command.Parameters.AddWithValue("$deviceName", play.DeviceName);
-        command.Parameters.AddWithValue("$playMethod", (int)play.PlayMethod);
+        command.Parameters.AddWithValue("$playMethodAtStart", (int)play.PlayMethodAtStart);
+        command.Parameters.AddWithValue(
+            "$playMethodChangedUtcTicks",
+            play.PlayMethodChangedUtc is { } changed ? UtcTicks(changed, nameof(play.PlayMethodChangedUtc)) : DBNull.Value);
         command.Parameters.AddWithValue("$transcodeVideoCodec", Text(play.Transcode.VideoCodec));
         command.Parameters.AddWithValue("$transcodeAudioCodec", Text(play.Transcode.AudioCodec));
         command.Parameters.AddWithValue("$transcodeVideoWasDirect", play.Transcode.VideoWasDirect);
@@ -767,17 +770,18 @@ public sealed class SqlitePlayStore : IPlayStore
             ClientName = reader.GetString(11),
             DeviceId = reader.GetString(12),
             DeviceName = reader.GetString(13),
-            PlayMethod = (PlayMethod)reader.GetInt32(14),
+            PlayMethodAtStart = (PlayMethod)reader.GetInt32(14),
+            PlayMethodChangedUtc = MomentOrNull(reader, 15),
             Transcode = new TranscodeSummary
             {
-                VideoCodec = TextOrNull(reader, 15),
-                AudioCodec = TextOrNull(reader, 16),
-                VideoWasDirect = reader.GetBoolean(17),
-                AudioWasDirect = reader.GetBoolean(18),
-                PeakBitrate = IntOrNull(reader, 19),
-                TypicalBitrate = IntOrNull(reader, 20),
-                HardwareAcceleration = TextOrNull(reader, 21),
-                Reasons = Reasons(reader.GetString(22))
+                VideoCodec = TextOrNull(reader, 16),
+                AudioCodec = TextOrNull(reader, 17),
+                VideoWasDirect = reader.GetBoolean(18),
+                AudioWasDirect = reader.GetBoolean(19),
+                PeakBitrate = IntOrNull(reader, 20),
+                TypicalBitrate = IntOrNull(reader, 21),
+                HardwareAcceleration = TextOrNull(reader, 22),
+                Reasons = Reasons(reader.GetString(23))
             }
         };
     }
@@ -891,6 +895,15 @@ public sealed class SqlitePlayStore : IPlayStore
     private static object Text(string? value) => value is null ? DBNull.Value : value;
 
     private static object Ticks(TimeSpan? value) => value is null ? DBNull.Value : value.Value.Ticks;
+
+    /// <summary>
+    /// Reads a moment that may not be there, in UTC.
+    /// </summary>
+    /// <param name="reader">A reader standing on a row.</param>
+    /// <param name="ordinal">Which column.</param>
+    /// <returns>The moment, or null where the column holds none.</returns>
+    private static DateTime? MomentOrNull(SqliteDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : Utc(reader.GetInt64(ordinal));
 
     private static object Number(int? value) => value is null ? DBNull.Value : value.Value;
 }

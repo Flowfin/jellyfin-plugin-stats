@@ -51,6 +51,23 @@ public sealed class PlayStoreIndexTests : IDisposable
         @"INSERT INTO plays (
               SchemaVersion, UserId, ItemId, ItemType, ItemName,
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+              ClientName, DeviceId, DeviceName, PlayMethodAtStart,
+              TranscodeVideoWasDirect, TranscodeAudioWasDirect, TranscodeReasons
+          ) VALUES (
+              $schemaVersion, $userId, $itemId, $itemType, $itemName,
+              $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, 1,
+              'Web', 'a-device', 'A device', 0,
+              1, 1, ''
+          )";
+
+    // The same insert against the schema as it was before the delivery method
+    // was named for its moment. The one case that seeds a store at the first
+    // step has to write the column that step created, and a shared statement
+    // would make that case impossible or the other cases wrong.
+    private const string InsertASeededPlayUnderTheFirstStep =
+        @"INSERT INTO plays (
+              SchemaVersion, UserId, ItemId, ItemType, ItemName,
+              StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
               ClientName, DeviceId, DeviceName, PlayMethod,
               TranscodeVideoWasDirect, TranscodeAudioWasDirect, TranscodeReasons
           ) VALUES (
@@ -297,7 +314,7 @@ public sealed class PlayStoreIndexTests : IDisposable
             // The step list as it was one version ago, which is the first entry
             // of the real one rather than a list this file made up.
             SchemaMigrator.MigrateToLatest(before, [SchemaMigrations.All[0]]);
-            Seed(before);
+            Seed(before, InsertASeededPlayUnderTheFirstStep);
 
             Assert.Empty(IndexNames(before));
         }
@@ -507,16 +524,16 @@ public sealed class PlayStoreIndexTests : IDisposable
         }.ToString());
 
         connection.Open();
-        Seed(connection);
+        Seed(connection, InsertASeededPlay);
         return connection;
     }
 
-    private void Seed(SqliteConnection connection)
+    private void Seed(SqliteConnection connection, string insert)
     {
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = InsertASeededPlay;
+        command.CommandText = insert;
 
         var schemaVersion = command.Parameters.Add("$schemaVersion", SqliteType.Integer);
         var userId = command.Parameters.Add("$userId", SqliteType.Text);

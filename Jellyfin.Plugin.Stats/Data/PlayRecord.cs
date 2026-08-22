@@ -95,9 +95,48 @@ public sealed record PlayRecord
     public required string DeviceName { get; init; }
 
     /// <summary>
-    /// Gets how the server delivered the item.
+    /// Gets how the server was delivering the item when the play began.
     /// </summary>
-    public required PlayMethod PlayMethod { get; init; }
+    /// <remarks>
+    /// The moment is in the name because this field and
+    /// <see cref="Transcode"/> are about different moments and read as one
+    /// answer. The delivery method is taken once, off the state the session was
+    /// in when playback started; the transcode summary is folded from every
+    /// sample that arrived while the play ran. A play that begins direct and is
+    /// re-encoded from the second minute has a start method saying direct play
+    /// and a summary saying the video was not direct, and both are true.
+    /// <para>
+    /// It stays the value at the start rather than becoming a fold, because the
+    /// transcode shares are computed from it and that was decided on issue #53.
+    /// What says the two moments disagree is
+    /// <see cref="PlayMethodChangedUtc"/>. Issue #158.
+    /// </para>
+    /// </remarks>
+    public required PlayMethod PlayMethodAtStart { get; init; }
+
+    /// <summary>
+    /// Gets when the server first reported a delivery method other than the one
+    /// the play began with, and null where it never reported another.
+    /// </summary>
+    /// <remarks>
+    /// The change as its own fact, so a reader can say that the two fields
+    /// above are about different moments and when the two parted company. A
+    /// row where this is null is a play whose method never moved, and the start
+    /// value describes the whole of it.
+    /// <para>
+    /// The first such moment and not the last. A play can move more than once,
+    /// and what a reader of a report needs is whether the start value still
+    /// described the play and from when it did not; the last move would answer
+    /// neither for a play that moved twice.
+    /// </para>
+    /// <para>
+    /// A sample the server gave no method for leaves this alone, the way a
+    /// sample it gave no transcoding state for leaves the summary alone. The
+    /// server having nothing to say about a session is not the session having
+    /// changed.
+    /// </para>
+    /// </remarks>
+    public required DateTime? PlayMethodChangedUtc { get; init; }
 
     /// <summary>
     /// Gets what the transcoding state of the session came to over the play.

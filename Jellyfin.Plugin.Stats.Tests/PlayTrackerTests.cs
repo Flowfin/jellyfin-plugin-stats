@@ -69,7 +69,7 @@ public class PlayTrackerTests
         Assert.Equal("Jellyfin Web", row.ClientName);
         Assert.Equal("device-1", row.DeviceId);
         Assert.Equal("A browser", row.DeviceName);
-        Assert.Equal(StoredPlayMethod.DirectPlay, row.PlayMethod);
+        Assert.Equal(StoredPlayMethod.DirectPlay, row.PlayMethodAtStart);
         Assert.Null(row.ParentId);
         Assert.Equal(1, row.SchemaVersion);
         Assert.Equal(0, tracker.EventsWithNoOpenPlay);
@@ -316,7 +316,7 @@ public class PlayTrackerTests
         sessions.RaisePlaybackStart(session, Eight);
         sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(10), at: Eight.AddMinutes(10));
 
-        Assert.Equal(stored, Assert.Single(rows.Rows).PlayMethod);
+        Assert.Equal(stored, Assert.Single(rows.Rows).PlayMethodAtStart);
     }
 
     [Fact]
@@ -333,7 +333,7 @@ public class PlayTrackerTests
         // Unknown rather than one of the three. A row that names a delivery
         // method nobody reported is the transcode ratio quietly gaining a
         // denominator it did not earn.
-        Assert.Equal(StoredPlayMethod.Unknown, Assert.Single(rows.Rows).PlayMethod);
+        Assert.Equal(StoredPlayMethod.Unknown, Assert.Single(rows.Rows).PlayMethodAtStart);
     }
 
     [Fact]

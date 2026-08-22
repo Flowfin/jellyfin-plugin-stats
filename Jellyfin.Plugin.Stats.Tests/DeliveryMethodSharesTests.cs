@@ -184,7 +184,8 @@ public class DeliveryMethodSharesTests
         ClientName = "Jellyfin Web",
         DeviceId = "device-1",
         DeviceName = "A browser",
-        PlayMethod = method,
+        PlayMethodAtStart = method,
+        PlayMethodChangedUtc = null,
         Transcode = new TranscodeSummary
         {
             VideoCodec = "h264",

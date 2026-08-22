@@ -105,7 +105,7 @@ public sealed record DeliveryMethodShares
         {
             counted++;
 
-            switch (play.PlayMethod)
+            switch (play.PlayMethodAtStart)
             {
                 case PlayMethod.DirectPlay:
                     directPlay++;

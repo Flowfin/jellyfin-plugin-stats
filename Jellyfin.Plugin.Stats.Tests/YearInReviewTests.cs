@@ -102,7 +102,7 @@ public class YearInReviewTests
             Assert.Equal((long)mine.Count(play => !play.ReachedTheEnd), review.Abandoned);
             Assert.Equal(review.Plays, review.Finished + review.Abandoned);
             Assert.Equal(review.Plays, review.Delivery!.Plays);
-            Assert.Equal((long)mine.Count(play => play.PlayMethod == PlayMethod.Transcode), review.Delivery.Transcode);
+            Assert.Equal((long)mine.Count(play => play.PlayMethodAtStart == PlayMethod.Transcode), review.Delivery.Transcode);
 
             var byDay = mine
                 .GroupBy(play => DayOf(play, zone))
@@ -493,7 +493,8 @@ public class YearInReviewTests
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = method,
+            PlayMethodAtStart = method,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

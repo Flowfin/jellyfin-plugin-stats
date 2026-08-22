@@ -43,7 +43,8 @@ These are the columns of `plays`, which is the table every report is built on.
 | `ClientName`                    | The client application the play came from.                                                                 |
 | `DeviceId`                      | The server's identifier for the device the play came from.                                                 |
 | `DeviceName`                    | The device's reported name, which is whatever its owner called it.                                         |
-| `PlayMethod`                    | How the server delivered the item: direct play, direct stream, transcode, or unknown.                      |
+| `PlayMethodAtStart`             | How the server was delivering the item when the play began: direct play, direct stream, transcode, or unknown. |
+| `PlayMethodChangedUtcTicks`     | When the server first reported a different delivery method, and empty where it never did. A row written before this column existed is empty here whatever the play did. |
 | `TranscodeVideoCodec`           | The video codec the session ended up using, and empty where the play carried no video.                     |
 | `TranscodeAudioCodec`           | The audio codec the session ended up using, and empty where the play carried no audio.                     |
 | `TranscodeVideoWasDirect`       | Whether the video stream was passed through for the whole play.                                            |
@@ -65,6 +66,7 @@ play has not answered them yet.
 | `PlayKey`       | What the server's events for this play are joined on, and the identity of the row. Writing the same key again replaces it. |
 | `EndedUtcTicks` | The last moment the server heard from the session, which moves forward as the play runs. It is not a claim that the play ended. |
 | `ReachedTheEnd` | Always false here. Nothing has said the item was played through, and the server only says so on the stop.                 |
+| `PlayMethodChangedUtcTicks` | The same field as above, filled in as soon as the server reports a different method rather than only at the stop.        |
 
 Every other column means what it means in the table above. A row here is not a
 play that happened: it is what the server had said about a play up to the last
@@ -77,10 +79,35 @@ server no longer has, a person deleting their own history, and the retention
 window all take the running rows along with the finished ones. Nothing yet
 turns a leftover row into a finished play, which is issue #221.
 
+### Two fields about two moments
+
+`PlayMethodAtStart` and the transcode columns are about different moments and
+read as one answer, which is the confusion `PlayMethodChangedUtcTicks` exists to
+end.
+
+The delivery method is taken once, off the state the session was in when
+playback started. The transcode columns are folded from every sample that
+arrived while the play ran. So a play that begins as a direct play and is
+re-encoded from its second minute has a start method saying direct play and a
+summary saying the video was not direct, and both are true statements about
+different parts of the same play.
+
+`PlayMethodChangedUtcTicks` is when the two parted company. Empty means the
+server never reported another method, and the start value then describes the
+whole play. It records the first such moment rather than the last, because what
+a reader needs is whether the start value still described the play and from when
+it did not.
+
+A sample the server gave no delivery method for leaves it empty, the same way a
+sample it gave no transcoding state for leaves the summary alone: the server
+having nothing to say about a session is not the session having changed.
+
 `WhatIsStoredTests` compares the first column of each table above against the
-statement the store runs to create that table, so a column added to either
+columns the schema steps leave that table with, so a column added to either
 schema without an entry here is a red test rather than a paragraph somebody has
-to remember to update.
+to remember to update. It walks the steps rather than reading the create
+statement alone, because a column added by a later step is on every
+installation's disk and would otherwise be invisible to the comparison.
 
 Two of these are personal in the ordinary sense and the rest are not.
 `UserId` names a person, indirectly but exactly. `DeviceName` is whatever the

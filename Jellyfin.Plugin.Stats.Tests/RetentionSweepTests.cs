@@ -50,7 +50,7 @@ public sealed class RetentionSweepTests : IDisposable
         @"INSERT INTO plays (
               SchemaVersion, UserId, ItemId, ItemType, ItemName,
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
-              ClientName, DeviceId, DeviceName, PlayMethod,
+              ClientName, DeviceId, DeviceName, PlayMethodAtStart,
               TranscodeVideoWasDirect, TranscodeAudioWasDirect, TranscodeReasons
           ) VALUES (
               $schemaVersion, $userId, $itemId, 'Episode', 'An episode',
@@ -295,7 +295,8 @@ public sealed class RetentionSweepTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = PlayMethod.DirectPlay,
+            PlayMethodAtStart = PlayMethod.DirectPlay,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

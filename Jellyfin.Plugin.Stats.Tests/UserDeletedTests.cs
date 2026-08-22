@@ -242,7 +242,8 @@ public sealed class UserDeletedTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = method,
+            PlayMethodAtStart = method,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

@@ -177,7 +177,7 @@ public class WhatIsStoredTests
     }
 
     /// <summary>
-    /// The column names out of the statement the store runs to create its table.
+    /// The column names a table ends up with once every step has run.
     /// </summary>
     /// <remarks>
     /// Read off <see cref="SchemaMigrations"/> rather than off
@@ -185,23 +185,80 @@ public class WhatIsStoredTests
     /// the table is what is on an administrator's disk. The two differ on
     /// purpose: one record property becomes eight columns, and a document
     /// compared against the record would list fields no file holds.
+    /// <para>
+    /// The create statement alone is not the answer once a step alters a table.
+    /// A column added by a later step would be on every installation's disk and
+    /// invisible here, so the document could stop describing it and this would
+    /// stay green. The steps are walked in order instead, and the two shapes
+    /// that change a column list are applied as they are met.
+    /// </para>
     /// </remarks>
     /// <param name="table">Which table.</param>
-    /// <returns>The column names, as the create statement spells them.</returns>
-    private static IEnumerable<string> ColumnsTheSchemaCreates(string table)
+    /// <returns>The column names, as the steps leave them.</returns>
+    private static IReadOnlyList<string> ColumnsTheSchemaCreates(string table)
     {
-        var create = SchemaMigrations.All
-            .SelectMany(step => step.Statements)
-            .SingleOrDefault(statement => statement.Contains("CREATE TABLE IF NOT EXISTS " + table + " ", StringComparison.Ordinal));
+        List<string>? columns = null;
 
-        Assert.True(create is not null, "No step in the schema creates a table called " + table + ", so there is nothing to compare the document against.");
+        foreach (var statement in SchemaMigrations.All.SelectMany(step => step.Statements))
+        {
+            var created = Match(statement, @"^\s*CREATE TABLE IF NOT EXISTS " + table + @"\s*\(");
+            if (created is not null)
+            {
+                Assert.True(columns is null, "Two steps create a table called " + table + ", so which one this should read is not decidable.");
 
-        var body = create![(create.IndexOf('(', StringComparison.Ordinal) + 1)..create.LastIndexOf(')')];
+                var body = statement[(statement.IndexOf('(', StringComparison.Ordinal) + 1)..statement.LastIndexOf(')')];
 
-        return body
-            .Split(',')
-            .Select(column => column.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0])
-            .ToList();
+                columns = body
+                    .Split(',')
+                    .Select(column => column.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0])
+                    .ToList();
+
+                continue;
+            }
+
+            if (columns is null)
+            {
+                continue;
+            }
+
+            var renamed = Match(statement, @"^\s*ALTER TABLE " + table + @" RENAME COLUMN (\w+) TO (\w+)\s*$");
+            if (renamed is not null)
+            {
+                var at = columns.IndexOf(renamed.Groups[1].Value);
+
+                Assert.True(at >= 0, "A step renames a column called " + renamed.Groups[1].Value + ", which " + table + " does not have by then.");
+
+                columns[at] = renamed.Groups[2].Value;
+                continue;
+            }
+
+            var added = Match(statement, @"^\s*ALTER TABLE " + table + @" ADD COLUMN (\w+)\b");
+            if (added is not null)
+            {
+                columns.Add(added.Groups[1].Value);
+            }
+        }
+
+        Assert.True(columns is not null, "No step in the schema creates a table called " + table + ", so there is nothing to compare the document against.");
+
+        return columns!;
+    }
+
+    /// <summary>
+    /// Matches one statement against one shape.
+    /// </summary>
+    /// <param name="statement">The statement.</param>
+    /// <param name="pattern">The shape.</param>
+    /// <returns>The match, or null where it is not that shape.</returns>
+    private static System.Text.RegularExpressions.Match? Match(string statement, string pattern)
+    {
+        var match = Regex.Match(
+            statement,
+            pattern,
+            RegexOptions.IgnoreCase | RegexOptions.Singleline,
+            TimeSpan.FromSeconds(5));
+
+        return match.Success ? match : null;
     }
 
     /// <summary>

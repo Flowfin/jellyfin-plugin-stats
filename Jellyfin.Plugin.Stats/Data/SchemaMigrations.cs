@@ -101,6 +101,28 @@ public static class SchemaMigrations
     private const string IndexPlaysByItemTypeAndStart =
         "CREATE INDEX IF NOT EXISTS ix_plays_item_type_started ON plays (ItemType, StartedUtcTicks)";
 
+    // What issue #158 asks for, on both tables. A row carried two accounts of
+    // how a play was delivered under names that read as one answer: a value
+    // taken at the start and a summary folded over the whole play. The rename
+    // puts the moment in the name, and the column beside it records the moment
+    // the two parted company.
+    //
+    // A rename and an addition rather than a table rebuilt. Both are statements
+    // SQLite performs on the table in place, so no row is read, written or
+    // discarded, and the rule against a statement that drops a table has
+    // nothing to refuse.
+    private const string NameThePlayMethodForItsMoment =
+        "ALTER TABLE plays RENAME COLUMN PlayMethod TO PlayMethodAtStart";
+
+    private const string RecordWhenTheMethodChanged =
+        "ALTER TABLE plays ADD COLUMN PlayMethodChangedUtcTicks INTEGER NULL";
+
+    private const string NameTheRunningPlayMethodForItsMoment =
+        "ALTER TABLE open_plays RENAME COLUMN PlayMethod TO PlayMethodAtStart";
+
+    private const string RecordWhenARunningPlaysMethodChanged =
+        "ALTER TABLE open_plays ADD COLUMN PlayMethodChangedUtcTicks INTEGER NULL";
+
     /// <summary>
     /// Gets the steps, in the order they are applied.
     /// </summary>
@@ -127,6 +149,13 @@ public static class SchemaMigrations
     /// row it had, because creating a table beside another one reads nothing
     /// and moves nothing.
     /// </para>
+    /// <para>
+    /// The fourth names the delivery method for the moment it is about and adds
+    /// the moment that method changed. A rename keeps every value where it was
+    /// under a name that says which moment it speaks about, and a column added
+    /// to a table that has rows is null on all of them, which is the honest
+    /// answer for a play written before anything was watching for the change.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
     [
@@ -150,6 +179,17 @@ public static class SchemaMigrations
         {
             Version = 3,
             Statements = [CreateTheOpenPlaysTable]
+        },
+        new SchemaMigration
+        {
+            Version = 4,
+            Statements =
+            [
+                NameThePlayMethodForItsMoment,
+                RecordWhenTheMethodChanged,
+                NameTheRunningPlayMethodForItsMoment,
+                RecordWhenARunningPlaysMethodChanged
+            ]
         }
     ];
 

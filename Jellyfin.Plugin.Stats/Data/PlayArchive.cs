@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.Stats.Data;
@@ -18,8 +19,8 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// and its nested transcode summary:
 /// </para>
 /// <code>
-/// {"Format":"jellyfin-plugin-stats/plays","SchemaVersion":2}
-/// {"SchemaVersion":2,"UserId":"...","ItemId":"...", ... }
+/// {"Format":"jellyfin-plugin-stats/plays","SchemaVersion":4}
+/// {"SchemaVersion":4,"UserId":"...","ItemId":"...", ... }
 /// </code>
 /// <para>
 /// A line at a time rather than one array holding everything, because both ends
@@ -38,11 +39,18 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// </para>
 /// <para>
 /// An archive from a later schema is refused rather than read, which is the
-/// second condition of issue #33. An archive from an earlier one is read as it
-/// stands: every schema this plugin has shipped writes the same row, so there
-/// is nothing yet to convert. The first schema that changes the row is the one
-/// that owes this a step list, and it will find the version it needs on the
-/// header line and on every row.
+/// second condition of issue #33. An archive from an earlier one is moved
+/// forward a step at a time before it is read, and the version each row needs
+/// is on the row rather than only on the header, so a file assembled by hand
+/// out of two exports is moved row by row. Issue #158 is the schema that first
+/// changed the row and this is the step list it owed.
+/// </para>
+/// <para>
+/// The steps work on the object as it was written rather than on the record,
+/// because the record is the newest shape and an older row cannot be read into
+/// it: that is the whole reason a step exists. Each one is named for what it
+/// does to a row and the list is walked in version order, so a second one is a
+/// line here rather than a rewrite.
 /// </para>
 /// </remarks>
 public static class PlayArchive
@@ -143,20 +151,70 @@ public static class PlayArchive
                 continue;
             }
 
-            var play = ReadObject<PlayRecord>(line);
+            var written = ReadObject<JsonObject>(line);
 
             // The row carries its own version as well as the header, and this
             // reads the row's. A file assembled by hand, or one header line
             // pasted in front of somebody else's rows, is the case where the
             // two disagree, and the row is the one that says what the fields
             // actually mean.
-            RefuseALaterSchema(play.SchemaVersion);
+            var version = VersionOf(written);
+            RefuseALaterSchema(version);
+
+            var play = ReadObject<PlayRecord>(MovedForward(written, version).ToJsonString(Format));
 
             into.Add(play);
             added++;
         }
 
         return added;
+    }
+
+    /// <summary>
+    /// Reads the schema version off a row as it was written.
+    /// </summary>
+    /// <remarks>
+    /// Off the object rather than off the record, because the record is the
+    /// newest shape and a row that needs a step cannot be read into it yet.
+    /// </remarks>
+    /// <param name="written">The row.</param>
+    /// <returns>The version the row was written under.</returns>
+    private static int VersionOf(JsonObject written)
+    {
+        if (written.TryGetPropertyValue(nameof(PlayRecord.SchemaVersion), out var version)
+            && version is not null
+            && version.GetValueKind() == JsonValueKind.Number)
+        {
+            return version.GetValue<int>();
+        }
+
+        throw new ArgumentException(
+            "A line of the archive carries no schema version. Every row written by this plugin does, and it is what says which shape the row is in.");
+    }
+
+    /// <summary>
+    /// Moves one row forward through every step it has not had.
+    /// </summary>
+    /// <param name="written">The row as it was written.</param>
+    /// <param name="version">The version it was written under.</param>
+    /// <returns>The row in the shape this build reads.</returns>
+    private static JsonObject MovedForward(JsonObject written, int version)
+    {
+        if (version < 4)
+        {
+            // Issue #158 named the delivery method for the moment it is about
+            // and added the moment it changed. A row written before that has
+            // the old name and no such moment, and null is the honest answer:
+            // nothing was watching for the change when it was recorded.
+            if (written.Remove("PlayMethod", out var method))
+            {
+                written[nameof(PlayRecord.PlayMethodAtStart)] = method;
+            }
+
+            written[nameof(PlayRecord.PlayMethodChangedUtc)] = null;
+        }
+
+        return written;
     }
 
     private static void RefuseALaterSchema(int version)

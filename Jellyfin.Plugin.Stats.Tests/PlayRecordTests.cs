@@ -31,7 +31,8 @@ public class PlayRecordTests
             "ItemRuntime",
             "ItemType",
             "ParentId",
-            "PlayMethod",
+            "PlayMethodAtStart",
+            "PlayMethodChangedUtc",
             "ReachedTheEnd",
             "SchemaVersion",
             "StartedUtc",
@@ -99,7 +100,8 @@ public class PlayRecordTests
             ClientName = "Jellyfin Web",
             DeviceId = "a-device",
             DeviceName = "A device",
-            PlayMethod = PlayMethod.DirectPlay,
+            PlayMethodAtStart = PlayMethod.DirectPlay,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",
