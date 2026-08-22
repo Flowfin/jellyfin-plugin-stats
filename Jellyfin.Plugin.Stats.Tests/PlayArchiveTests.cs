@@ -27,7 +27,7 @@ public sealed class PlayArchiveTests : IDisposable
 
     public PlayArchiveTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
+        _root = Path.Join(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
     }
 
     /// <summary>
@@ -356,7 +356,7 @@ public sealed class PlayArchiveTests : IDisposable
                 "\"SchemaVersion\":" + SchemaMigrations.Latest.ToString(CultureInfo.InvariantCulture),
                 StringComparison.Ordinal);
 
-        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var store = new SqlitePlayStore(Path.Join(_root, "read"));
         using var archiveReader = new StringReader(archive);
 
         Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
@@ -379,7 +379,7 @@ public sealed class PlayArchiveTests : IDisposable
                 RegexOptions.None,
                 TimeSpan.FromSeconds(5));
 
-        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var store = new SqlitePlayStore(Path.Join(_root, "read"));
         using var archiveReader = new StringReader(archive);
 
         Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
@@ -397,7 +397,7 @@ public sealed class PlayArchiveTests : IDisposable
             + Environment.NewLine
             + "{\"UserId\":\"6f9619ff8b86d011b42d00c04fc964ff\"}";
 
-        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var store = new SqlitePlayStore(Path.Join(_root, "read"));
         using var archiveReader = new StringReader(archive);
 
         Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
@@ -476,7 +476,7 @@ public sealed class PlayArchiveTests : IDisposable
 
     private string Export(IReadOnlyList<PlayRecord> plays)
     {
-        using var store = new SqlitePlayStore(Path.Combine(_root, "written"));
+        using var store = new SqlitePlayStore(Path.Join(_root, "written"));
         foreach (var play in plays)
         {
             store.Add(play);
@@ -490,7 +490,7 @@ public sealed class PlayArchiveTests : IDisposable
 
     private IReadOnlyList<PlayRecord> ImportIntoAFreshStore(string archive, out int added)
     {
-        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var store = new SqlitePlayStore(Path.Join(_root, "read"));
         using var archiveReader = new StringReader(archive);
 
         added = PlayArchive.Import(archiveReader, store);

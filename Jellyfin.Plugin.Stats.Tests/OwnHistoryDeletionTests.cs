@@ -41,7 +41,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
 
     public OwnHistoryDeletionTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
+        _root = Path.Join(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
     }
 
     /// <summary>
