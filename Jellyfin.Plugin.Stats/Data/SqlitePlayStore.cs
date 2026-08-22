@@ -55,7 +55,8 @@ public sealed class SqlitePlayStore : IPlayStore
     // reason it refuses it is that a statement built from strings is a statement
     // whose shape depends on its input. The ordinals below follow this order.
     private const string SelectMostRecent =
-        @"SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+        @"-- bound: $limit
+          SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethod,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
@@ -74,7 +75,8 @@ public sealed class SqlitePlayStore : IPlayStore
     // the query planner happened to produce, and a round trip would then differ
     // from its original for a reason that has nothing to do with the archive.
     private const string SelectEveryPlay =
-        @"SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+        @"-- unbounded: walked
+          SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethod,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
@@ -83,7 +85,8 @@ public sealed class SqlitePlayStore : IPlayStore
           ORDER BY Id";
 
     private const string SelectEveryPlayOfAUser =
-        @"SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+        @"-- unbounded: walked
+          SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethod,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
@@ -98,7 +101,8 @@ public sealed class SqlitePlayStore : IPlayStore
     // to put into a set, and the order is the column's own so two runs over an
     // unchanged file answer in the same order.
     private const string SelectTheUsersWithPlays =
-        @"SELECT DISTINCT UserId
+        @"-- unbounded: one row per account
+          SELECT DISTINCT UserId
           FROM plays
           ORDER BY UserId";
 
@@ -112,7 +116,8 @@ public sealed class SqlitePlayStore : IPlayStore
     // below turns it into an absent moment instead of a moment at the first
     // tick a clock can name.
     private const string SelectTheOldestStart =
-        @"SELECT MIN(StartedUtcTicks)
+        @"-- unbounded: one number
+          SELECT MIN(StartedUtcTicks)
           FROM plays";
 
     // One account's earliest start at or after a moment, which is what walking
@@ -126,14 +131,16 @@ public sealed class SqlitePlayStore : IPlayStore
     // offered, and an account that watched something in 2019 and again this year
     // costs three statements rather than one per year in between.
     private const string SelectTheFirstStartAtOrAfter =
-        @"SELECT MIN(StartedUtcTicks)
+        @"-- unbounded: one number
+          SELECT MIN(StartedUtcTicks)
           FROM plays
           WHERE UserId = $userId AND StartedUtcTicks >= $from";
 
     // The retention sweep's three statements. The count is what lets a sweep
     // say how far through it is, and it is asked once rather than per bite.
     private const string CountPlaysBefore =
-        @"SELECT COUNT(*)
+        @"-- unbounded: one number
+          SELECT COUNT(*)
           FROM plays
           WHERE StartedUtcTicks < $cutoff";
 
