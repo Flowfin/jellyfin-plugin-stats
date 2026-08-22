@@ -13,6 +13,7 @@
 // than being worked around.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Claims;
@@ -21,6 +22,8 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Api;
 using Jellyfin.Plugin.Stats.Configuration;
+using Jellyfin.Plugin.Stats.Data;
+using Jellyfin.Plugin.Stats.Privacy;
 using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authentication;
@@ -60,10 +63,12 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="fold">Folds one account's year. A test that reaches a year endpoint decides here what the store would have said.</param>
     /// <param name="configuration">The settings the endpoints read, or the defaults where none is given.</param>
     /// <param name="clock">The clock the endpoints read the current year from, or a fixed one in 2026 where none is given.</param>
+    /// <param name="deletion">What removes an account's own plays. A test that only reads statuses lets this default to one over a store holding nothing.</param>
     public InProcessEndpoints(
         Func<Guid, int, TimeZoneInfo, int, YearInReview>? fold = null,
         PluginConfiguration? configuration = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        OwnHistoryDeletion? deletion = null)
     {
         var settings = configuration ?? new PluginConfiguration();
         var moment = clock ?? new FixedClock(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
@@ -87,6 +92,7 @@ public sealed class InProcessEndpoints : IDisposable
         services.AddSingleton(_who);
         services.AddSingleton<IAuthorizationContext>(new CallerContext(_who));
         services.AddSingleton(new HeldYears(fold ?? NothingWatched, moment));
+        services.AddSingleton(deletion ?? new OwnHistoryDeletion(() => new NothingStored(), 1));
         services.AddSingleton<Func<PluginConfiguration>>(() => settings);
         services.AddSingleton(moment);
 
@@ -106,19 +112,44 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="path">The path, as it would appear after the host.</param>
     /// <param name="caller">Who is asking.</param>
     /// <returns>What came back.</returns>
+    public Task<Answer> Get(string path, Caller caller) => Send(HttpMethods.Get, path, caller);
+
+    /// <summary>
+    /// Sends one request as one of the four callers.
+    /// </summary>
+    /// <remarks>
+    /// The method is an argument rather than one wrapper per verb, because the
+    /// authorization matrix carries the method in each of its rows and a
+    /// harness that only sent one would answer every row over the same verb.
+    /// A row about a deletion would then be proved by whatever the same path
+    /// answers a read with, which on a route that has no read is a 405 in every
+    /// cell and reads as a refusal.
+    /// </remarks>
+    /// <param name="method">The request method.</param>
+    /// <param name="path">The path, as it would appear after the host, with its query if it has one.</param>
+    /// <param name="caller">Who is asking.</param>
+    /// <returns>What came back.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="caller"/> is <c>null</c>.</exception>
-    public async Task<Answer> Get(string path, Caller caller)
+    public async Task<Answer> Send(string method, string path, Caller caller)
     {
         ArgumentNullException.ThrowIfNull(caller);
+        ArgumentNullException.ThrowIfNull(path);
 
         _who.Is = caller;
 
         using var scope = _services.CreateScope();
         using var body = new MemoryStream();
 
+        var at = path.IndexOf('?', StringComparison.Ordinal);
+
         var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
-        context.Request.Method = HttpMethods.Get;
-        context.Request.Path = path;
+        context.Request.Method = method;
+        context.Request.Path = at < 0 ? path : path[..at];
+
+        if (at >= 0)
+        {
+            context.Request.QueryString = new QueryString(path[at..]);
+        }
 
         // The response body arrives through the feature rather than through the
         // property. Assigning the stream alone leaves the framework writing to
@@ -141,6 +172,50 @@ public sealed class InProcessEndpoints : IDisposable
 
     private static YearInReview NothingWatched(Guid userId, int year, TimeZoneInfo zone, int topCount)
         => YearInReview.Over([], userId, year, zone, topCount, null);
+
+    /// <summary>
+    /// A store with nothing in it, for the tests that only read statuses.
+    /// </summary>
+    /// <remarks>
+    /// It answers the two deletions with nought and refuses everything else,
+    /// so a test that reached this by accident fails rather than passing over
+    /// an answer nobody arranged.
+    /// </remarks>
+    private sealed class NothingStored : IPlayStore
+    {
+        public int DeletePlaysFor(Guid userId, int limit) => 0;
+
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => 0;
+
+        public void ReclaimFreedSpace()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        public void Add(PlayRecord play) => throw NotPartOfThis();
+
+        public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
+
+        public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();
+
+        public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
+
+        public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
+
+        public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+
+        public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();
+
+        public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
+
+        public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+
+        private static NotSupportedException NotPartOfThis()
+            => new("This store stands in for one with nothing in it, and answers only what a deletion asks.");
+    }
 
     /// <summary>
     /// What one request came back with.

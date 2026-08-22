@@ -323,6 +323,8 @@ public sealed class UserDeletedTests : IDisposable
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
 
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("A deletion by identifier reads nothing and writes nothing, so this fake answers nothing else.");
     }

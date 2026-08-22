@@ -179,6 +179,26 @@ public sealed class SqlitePlayStore : IPlayStore
               LIMIT $limit
           )";
 
+    // The same shape again with the window the account named, for the account
+    // deleting part of its own history. A third statement rather than a
+    // condition added to the one above where a caller passed bounds: a WHERE
+    // clause that is sometimes two conditions and sometimes three is assembled
+    // in C# and pasted into the text, which is what the concatenation rule
+    // refuses, and each of the three here is a constant that never moves.
+    //
+    // The window is half open, so two windows laid end to end delete each row
+    // once. The bound sits in the inner select for the same reason it does
+    // above.
+    private const string DeletePlaysOfAUserBetween =
+        @"DELETE FROM plays
+          WHERE Id IN (
+              SELECT Id
+              FROM plays
+              WHERE UserId = $userId AND StartedUtcTicks >= $from AND StartedUtcTicks < $to
+              ORDER BY Id
+              LIMIT $limit
+          )";
+
     // What turns freed pages back into free disk. It rewrites the file, so it
     // wants room for a second copy and it cannot run inside a transaction;
     // neither is a problem where it is called, once, at the end of a sweep.
@@ -488,6 +508,35 @@ public sealed class SqlitePlayStore : IPlayStore
         // any other way is a string the column does not hold, and the deletion
         // would then match nothing and report a clean zero.
         command.Parameters.AddWithValue("$userId", Text(userId));
+        command.Parameters.AddWithValue("$limit", limit);
+
+        return command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A window whose end is at or before its start is refused rather than
+    /// answered with nought. Nought is what a window holding no rows answers,
+    /// and a caller who swapped their two bounds would read that as their
+    /// history having nothing in it and stop asking.
+    /// </remarks>
+    public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var from = UtcTicks(fromUtc, nameof(fromUtc));
+        var to = UtcTicks(toUtc, nameof(toUtc));
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(from, to, nameof(fromUtc));
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = DeletePlaysOfAUserBetween;
+
+        // Through the same Text as the write and as PlaysFor, for the reason
+        // the deletion above gives.
+        command.Parameters.AddWithValue("$userId", Text(userId));
+        command.Parameters.AddWithValue("$from", from);
+        command.Parameters.AddWithValue("$to", to);
         command.Parameters.AddWithValue("$limit", limit);
 
         return command.ExecuteNonQuery();

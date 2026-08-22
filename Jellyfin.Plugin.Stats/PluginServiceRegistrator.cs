@@ -5,6 +5,7 @@ using Jellyfin.Plugin.Stats.Capture;
 using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Events;
+using Jellyfin.Plugin.Stats.Privacy;
 using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Events;
@@ -89,10 +90,11 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // function, so this is the only place the store is read for one, and
         // the store is opened when a year is asked for rather than here.
         //
-        // Nothing calls this yet. There is no route from the plugin to a page,
-        // so no year is folded on a server today and nothing is held; what this
-        // line does is make the three deletions below reach whatever holds one,
-        // so that a reader arriving later cannot be the change that has to
+        // The year endpoint asks it and no page reaches that endpoint yet, so
+        // on a server today a year is folded only for a caller who addresses
+        // the route by hand. What this line does beyond serving that caller is
+        // make the four removals below reach whatever holds a folded year, so
+        // that a reader arriving later cannot be the change that has to
         // remember to wire them.
         serviceCollection.AddSingleton(provider => new HeldYears(
             (userId, year, zone, topCount) => ReadFromTheStore.Answering(OpenTheStore, store =>
@@ -112,6 +114,15 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
                     topCount,
                     store.OldestPlayStartedUtc())),
             provider.GetRequiredService<TimeProvider>()));
+
+        // What removes one account's own plays when that account asks. It is
+        // registered rather than built in the controller because the store is
+        // opened by the function this file holds, and a controller that built
+        // its own would be a second answer about where the data folder is.
+        serviceCollection.AddSingleton(provider => new OwnHistoryDeletion(
+            OpenTheStore,
+            OwnHistoryDeletion.DefaultBite,
+            provider.GetRequiredService<HeldYears>()));
 
         // The sweep takes the same store-opening function the writer does, and
         // opens the store for the length of one run. Nothing is opened here:
