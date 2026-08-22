@@ -246,7 +246,8 @@ public class TranscodeReasonBreakdownTests
         ClientName = "Jellyfin Web",
         DeviceId = "device-1",
         DeviceName = "A browser",
-        PlayMethod = reasons.Length == 0 ? PlayMethod.DirectPlay : PlayMethod.Transcode,
+        PlayMethodAtStart = reasons.Length == 0 ? PlayMethod.DirectPlay : PlayMethod.Transcode,
+        PlayMethodChangedUtc = null,
         Transcode = new TranscodeSummary
         {
             VideoCodec = "h264",

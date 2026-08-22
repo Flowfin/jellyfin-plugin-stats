@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Jellyfin.Plugin.Stats.Data;
 using Microsoft.Data.Sqlite;
 using Xunit;
@@ -162,18 +163,93 @@ public sealed class SchemaMigrationTests : IDisposable
     /// first step is conditional, so the upgrade records the version it was
     /// already at and leaves every row alone.
     /// </summary>
+    /// <summary>
+    /// A store from before the delivery method was named for its moment keeps
+    /// the value it had, under the new name, and says nothing about a change it
+    /// was never watching for.
+    /// </summary>
+    /// <remarks>
+    /// The step renames a column and adds one, and neither reads a row, so what
+    /// this case is really about is that an installation arrives at the newest
+    /// shape without anything being rewritten. A step that rebuilt the table
+    /// instead would pass every other case here and lose the rows.
+    /// </remarks>
+    [Fact]
+    public void AStoreFromBeforeTheMethodWasNamedForItsMomentKeepsItsValue()
+    {
+        Directory.CreateDirectory(_root);
+
+        using (var connection = OpenAFile(SqlitePlayStore.FileName))
+        {
+            SchemaMigrator.MigrateToLatest(
+                connection,
+                SchemaMigrations.All.Where(step => step.Version <= 3).ToList());
+
+            using var insert = connection.CreateCommand();
+            insert.CommandText =
+                @"INSERT INTO plays (
+                      SchemaVersion, UserId, ItemId, ItemType, ItemName,
+                      StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                      ClientName, DeviceId, DeviceName, PlayMethod,
+                      TranscodeVideoWasDirect, TranscodeAudioWasDirect, TranscodeReasons
+                  ) VALUES (
+                      3, $userId, $itemId, 'Movie', 'An older film',
+                      $started, $ended, 0, 0,
+                      'Web', 'a-device', 'A device', 3,
+                      1, 1, ''
+                  )";
+            insert.Parameters.AddWithValue("$userId", Guid.NewGuid().ToString("N"));
+            insert.Parameters.AddWithValue("$itemId", Guid.NewGuid().ToString("N"));
+            insert.Parameters.AddWithValue("$started", new DateTime(2026, 1, 2, 20, 0, 0, DateTimeKind.Utc).Ticks);
+            insert.Parameters.AddWithValue("$ended", new DateTime(2026, 1, 2, 20, 41, 0, DateTimeKind.Utc).Ticks);
+            insert.ExecuteNonQuery();
+        }
+
+        using var reopened = new SqlitePlayStore(_root);
+
+        var read = Assert.Single(reopened.MostRecentPlays(10));
+
+        Assert.Equal("An older film", read.ItemName);
+        Assert.Equal(PlayMethod.Transcode, read.PlayMethodAtStart);
+        Assert.Null(read.PlayMethodChangedUtc);
+    }
+
     [Fact]
     public void AStoreWrittenBeforeThereWasAVersionKeepsItsRows()
     {
-        using (var store = new SqlitePlayStore(_root))
-        {
-            store.Add(APlay());
-        }
+        // The state that build left, built by running the one step it knew and
+        // then taking the version away, rather than by taking the version away
+        // from a store at the newest shape. The second is a state no build ever
+        // wrote: it has every later step's work already done and says it has
+        // had none, so replaying the steps over it is not the upgrade this case
+        // is about.
+        Directory.CreateDirectory(_root);
 
-        // Put the file back into the state that build left: the table and the
-        // rows, and nothing saying what version they are.
         using (var connection = OpenAFile(SqlitePlayStore.FileName))
         {
+            SchemaMigrator.MigrateToLatest(
+                connection,
+                SchemaMigrations.All.Where(step => step.Version <= 1).ToList());
+
+            using var insert = connection.CreateCommand();
+            insert.CommandText =
+                @"INSERT INTO plays (
+                      SchemaVersion, UserId, ItemId, ItemType, ItemName,
+                      StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                      ClientName, DeviceId, DeviceName, PlayMethod,
+                      TranscodeVideoWasDirect, TranscodeAudioWasDirect, TranscodeReasons
+                  ) VALUES (
+                      1, $userId, $itemId, 'Episode', 'An episode',
+                      $started, $ended, 0, 0,
+                      'Web', 'a-device', 'A device', 0,
+                      1, 1, ''
+                  )";
+            insert.Parameters.AddWithValue("$userId", Guid.NewGuid().ToString("N"));
+            insert.Parameters.AddWithValue("$itemId", Guid.NewGuid().ToString("N"));
+            insert.Parameters.AddWithValue("$started", new DateTime(2026, 1, 2, 20, 0, 0, DateTimeKind.Utc).Ticks);
+            insert.Parameters.AddWithValue("$ended", new DateTime(2026, 1, 2, 20, 41, 0, DateTimeKind.Utc).Ticks);
+            insert.ExecuteNonQuery();
+
             using var drop = connection.CreateCommand();
             drop.CommandText = "DELETE FROM schema_version";
             drop.ExecuteNonQuery();
@@ -313,7 +389,8 @@ public sealed class SchemaMigrationTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = PlayMethod.DirectPlay,
+            PlayMethodAtStart = PlayMethod.DirectPlay,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

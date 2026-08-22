@@ -51,11 +51,21 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
     private readonly string _root;
 
-    private SqlitePlayStore? _reader;
+    private readonly SqlitePlayStore _reader;
 
     public OpenPlaysReachTheFileTests()
     {
         _root = Path.Join(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
+
+        // Opened before anything is raised, which makes the file and runs the
+        // steps on this thread. Opening it later, while the writer's own thread
+        // is opening the same file for the first time, is two connections
+        // migrating one file at once: one of them loses, and the writer that
+        // loses counts a store it could not open and goes on without writing
+        // the running row. That is a wait which times out for a reason nothing
+        // in the case is about, and it was measured on the second framework
+        // line rather than reasoned about.
+        _reader = new SqlitePlayStore(_root);
     }
 
     /// <summary>
@@ -88,8 +98,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
         // And no finished row exists for it yet, which is the other half of
         // "still running" and the half a reader would otherwise have to take on
         // trust.
-        using var reader = new SqlitePlayStore(_root);
-        Assert.Empty(reader.AllPlays());
+        Assert.Empty(FinishedPlays());
 
         await listener.StopAsync(CancellationToken.None);
     }
@@ -247,7 +256,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
     public void Dispose()
     {
-        _reader?.Dispose();
+        _reader.Dispose();
 
         if (Directory.Exists(_root))
         {
@@ -280,43 +289,13 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
     /// Reads the running plays off the file, through a store of this test's own.
     /// </summary>
     /// <returns>What the file holds.</returns>
-    private IReadOnlyList<OpenPlay> OpenPlays()
-        => Reader() is { } reader ? reader.OpenPlays().ToArray() : Array.Empty<OpenPlay>();
+    private IReadOnlyList<OpenPlay> OpenPlays() => _reader.OpenPlays().ToArray();
 
     /// <summary>
     /// Reads the finished plays off the file, through a store of this test's own.
     /// </summary>
     /// <returns>What the file holds.</returns>
-    private IReadOnlyList<PlayRecord> FinishedPlays()
-        => Reader() is { } reader ? reader.AllPlays().ToArray() : Array.Empty<PlayRecord>();
-
-    /// <summary>
-    /// The second store, opened once the writer has made the file and held for
-    /// the rest of the case.
-    /// </summary>
-    /// <remarks>
-    /// Held rather than opened per look, because opening one runs the whole
-    /// migration list and a wait looks a hundred times a second. It waits for
-    /// the file rather than creating it, so a case asserting that nothing was
-    /// written is asserting the writer's silence and not this reader's.
-    /// </remarks>
-    /// <returns>The reader, or null while there is no file yet.</returns>
-    private SqlitePlayStore? Reader()
-    {
-        if (_reader is not null)
-        {
-            return _reader;
-        }
-
-        if (!File.Exists(Path.Join(_root, SqlitePlayStore.FileName)))
-        {
-            return null;
-        }
-
-        _reader = new SqlitePlayStore(_root);
-
-        return _reader;
-    }
+    private IReadOnlyList<PlayRecord> FinishedPlays() => _reader.AllPlays().ToArray();
 
     private IReadOnlyList<OpenPlay> WaitForOpenPlays(int howMany)
     {

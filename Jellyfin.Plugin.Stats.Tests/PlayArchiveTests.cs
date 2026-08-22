@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.Stats.Data;
 using Xunit;
 
@@ -320,6 +321,110 @@ public sealed class PlayArchiveTests : IDisposable
         Assert.Empty(store.AllPlays());
     }
 
+    /// <summary>
+    /// A row written before the delivery method was named for the moment it is
+    /// about is moved forward and read. Issue #158 is the first schema that
+    /// changed the row, and until it there was nothing for the step list to do.
+    /// </summary>
+    [Fact]
+    public void ARowFromTheSchemaBeforeTheRenameIsMovedForwardAndRead()
+    {
+        var archive = Header(3) + Environment.NewLine + AsWrittenUnderSchemaThree(APlay());
+
+        var read = Assert.Single(ImportIntoAFreshStore(archive, out var added));
+
+        Assert.Equal(1, added);
+        Assert.Equal(APlay().PlayMethodAtStart, read.PlayMethodAtStart);
+
+        // Nothing was watching for the change when that row was recorded, so
+        // empty is the honest answer rather than a moment worked out later.
+        Assert.Null(read.PlayMethodChangedUtc);
+    }
+
+    /// <summary>
+    /// The old spelling is refused where the row says it is from the newest
+    /// schema, so a row that was edited by hand into the wrong version is not
+    /// quietly moved forward twice.
+    /// </summary>
+    [Fact]
+    public void TheOldSpellingIsRefusedFromARowThatClaimsTheNewestSchema()
+    {
+        var archive = Header(SchemaMigrations.Latest)
+            + Environment.NewLine
+            + AsWrittenUnderSchemaThree(APlay()).Replace(
+                "\"SchemaVersion\":3",
+                "\"SchemaVersion\":" + SchemaMigrations.Latest.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+
+        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var archiveReader = new StringReader(archive);
+
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
+    }
+
+    /// <summary>
+    /// An older row that is missing the method altogether is refused rather
+    /// than moved forward into a row with a delivery method nobody reported.
+    /// The step renames what is there; it does not invent what is not.
+    /// </summary>
+    [Fact]
+    public void AnOlderRowMissingTheMethodIsRefusedRatherThanDefaulted()
+    {
+        var archive = Header(3)
+            + Environment.NewLine
+            + Regex.Replace(
+                AsWrittenUnderSchemaThree(APlay()),
+                "\"PlayMethod\":[0-9]+,",
+                string.Empty,
+                RegexOptions.None,
+                TimeSpan.FromSeconds(5));
+
+        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var archiveReader = new StringReader(archive);
+
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
+    }
+
+    /// <summary>
+    /// A row carrying no schema version is refused. Which shape a row is in is
+    /// what decides whether it needs a step, and a row that does not say is a
+    /// row nothing can place.
+    /// </summary>
+    [Fact]
+    public void ARowThatSaysNoVersionIsRefused()
+    {
+        var archive = Header(SchemaMigrations.Latest)
+            + Environment.NewLine
+            + "{\"UserId\":\"6f9619ff8b86d011b42d00c04fc964ff\"}";
+
+        using var store = new SqlitePlayStore(Path.Combine(_root, "read"));
+        using var archiveReader = new StringReader(archive);
+
+        Assert.Throws<ArgumentException>(() => PlayArchive.Import(archiveReader, store));
+    }
+
+    /// <summary>
+    /// One play as the build before the rename wrote it: the old column name,
+    /// no moment beside it, and the version that build stamped.
+    /// </summary>
+    /// <remarks>
+    /// Derived from what this build writes rather than pasted, so the fields
+    /// this issue did not touch stay in step with the shape and the fixture
+    /// cannot rot into one no build ever produced.
+    /// </remarks>
+    /// <param name="play">The play to write.</param>
+    /// <returns>The line.</returns>
+    private static string AsWrittenUnderSchemaThree(PlayRecord play)
+    {
+        return RowLine(play)
+            .Replace(
+                "\"SchemaVersion\":" + SchemaMigrations.Latest.ToString(CultureInfo.InvariantCulture),
+                "\"SchemaVersion\":3",
+                StringComparison.Ordinal)
+            .Replace("\"PlayMethodAtStart\":", "\"PlayMethod\":", StringComparison.Ordinal)
+            .Replace(",\"PlayMethodChangedUtc\":null", string.Empty, StringComparison.Ordinal);
+    }
+
     private static string Header(int schemaVersion)
     {
         return string.Format(
@@ -431,7 +536,8 @@ public sealed class PlayArchiveTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = PlayMethod.Transcode,
+            PlayMethodAtStart = PlayMethod.Transcode,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

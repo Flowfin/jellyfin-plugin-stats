@@ -457,7 +457,8 @@ public class HourAndWeekdayGridTests
         ClientName = "Jellyfin Web",
         DeviceId = "device-1",
         DeviceName = "A browser",
-        PlayMethod = PlayMethod.DirectPlay,
+        PlayMethodAtStart = PlayMethod.DirectPlay,
+        PlayMethodChangedUtc = null,
         Transcode = new TranscodeSummary
         {
             VideoCodec = "h264",

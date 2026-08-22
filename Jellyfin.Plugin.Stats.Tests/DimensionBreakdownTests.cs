@@ -308,7 +308,8 @@ public class DimensionBreakdownTests
             ClientName = client,
             DeviceId = deviceId,
             DeviceName = deviceName,
-            PlayMethod = method,
+            PlayMethodAtStart = method,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

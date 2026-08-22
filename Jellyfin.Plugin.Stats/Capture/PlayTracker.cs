@@ -256,7 +256,9 @@ public sealed class PlayTracker : IPlaybackEventSink
         private readonly string _clientName;
         private readonly string _deviceId;
         private readonly string _deviceName;
-        private readonly Data.PlayMethod _playMethod;
+        private readonly Data.PlayMethod _playMethodAtStart;
+
+        private DateTime? _playMethodChangedUtc;
 
         private TrackedPlay(PlaybackProgressEventArgs args)
         {
@@ -271,7 +273,7 @@ public sealed class PlayTracker : IPlaybackEventSink
             _clientName = args.ClientName;
             _deviceId = args.DeviceId;
             _deviceName = args.DeviceName;
-            _playMethod = MethodOf(args.Session.PlayState.PlayMethod);
+            _playMethodAtStart = MethodOf(args.Session.PlayState.PlayMethod);
             _startedUtc = HeardFrom(args);
             _watched = new WatchedTime(new DateTimeOffset(_startedUtc), PositionOf(args));
             _transcode.Observe(args.Session.TranscodingInfo);
@@ -297,6 +299,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         {
             _watched.Observe(new DateTimeOffset(HeardFrom(args)), PositionOf(args), args.IsPaused);
             _transcode.Observe(args.Session.TranscodingInfo);
+            NoticeAMethodChange(args);
         }
 
         /// <summary>
@@ -330,9 +333,56 @@ public sealed class PlayTracker : IPlaybackEventSink
                 ClientName = _clientName,
                 DeviceId = _deviceId,
                 DeviceName = _deviceName,
-                PlayMethod = _playMethod,
+                PlayMethodAtStart = _playMethodAtStart,
+                PlayMethodChangedUtc = _playMethodChangedUtc,
                 Transcode = _transcode.Finish()
             };
+        }
+
+        /// <summary>
+        /// Records the first moment the server reported a delivery method other
+        /// than the one the play began with.
+        /// </summary>
+        /// <remarks>
+        /// The first and not the last. What a reader needs is whether the start
+        /// value still described the play and from when it did not, and a play
+        /// that moved twice would have neither answered by the last move.
+        /// <para>
+        /// A sample the server gave no method for is skipped rather than read
+        /// as a move to unknown, the same way a sample it gave no transcoding
+        /// state for leaves the summary alone. The server having nothing to say
+        /// about a session is not the session having changed, and a play whose
+        /// client goes quiet for one report would otherwise be recorded as one
+        /// whose delivery changed twice.
+        /// </para>
+        /// <para>
+        /// A play that began before the server had decided is the case this is
+        /// least obvious for and it is deliberate: the start value is unknown,
+        /// the first method the server names is not that, and the moment is
+        /// recorded. The row then says the start value never described the play
+        /// and from when, which is exactly what a reader comparing it against
+        /// the transcode summary has to know.
+        /// </para>
+        /// </remarks>
+        /// <param name="args">The event.</param>
+        private void NoticeAMethodChange(PlaybackProgressEventArgs args)
+        {
+            if (_playMethodChangedUtc is not null)
+            {
+                return;
+            }
+
+            if (args.Session.PlayState.PlayMethod is not { } reported)
+            {
+                return;
+            }
+
+            if (MethodOf(reported) == _playMethodAtStart)
+            {
+                return;
+            }
+
+            _playMethodChangedUtc = HeardFrom(args);
         }
 
         /// <summary>

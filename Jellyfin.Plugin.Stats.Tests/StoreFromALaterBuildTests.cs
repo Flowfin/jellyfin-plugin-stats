@@ -217,7 +217,8 @@ public sealed class StoreFromALaterBuildTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethod = PlayMethod.Transcode,
+            PlayMethodAtStart = PlayMethod.Transcode,
+            PlayMethodChangedUtc = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",
