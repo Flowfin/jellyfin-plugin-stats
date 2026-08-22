@@ -151,4 +151,14 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
   </ItemGroup>
 
+  <!--
+    The consent wording. Embedded for the reason the page above is: what a
+    stored agreement points at has to be what was built and reviewed, and a file
+    beside the assembly is a file somebody can edit without a diff.
+  -->
+  <ItemGroup>
+    <None Remove="Privacy\consent.txt" />
+    <EmbeddedResource Include="Privacy\consent.txt" />
+  </ItemGroup>
+
 </Project>
