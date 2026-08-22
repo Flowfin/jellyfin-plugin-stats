@@ -534,6 +534,12 @@ public sealed class UnknownUserSweepTests : IDisposable
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
 
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
 
         private static NotSupportedException NotPartOfThis()

@@ -45,6 +45,11 @@ public class WhatIsStoredTests
     private const string OpenColumnHeading = "One row per play that is still running";
 
     /// <summary>
+    /// The heading of the section whose table lists the consent columns.
+    /// </summary>
+    private const string ConsentColumnHeading = "One row per account that has been asked about being named";
+
+    /// <summary>
     /// The heading of the section that names the settings reaching the data.
     /// </summary>
     private const string ControlHeading = "What an administrator controls";
@@ -99,6 +104,50 @@ public class WhatIsStoredTests
             Assert.True(
                 listed.Contains(column) || finished.Contains(column),
                 "The running table has a column called " + column + ", which neither section of the document describes.");
+        }
+    }
+
+    /// <summary>
+    /// The consent table's section lists exactly the columns the store creates
+    /// for it.
+    /// </summary>
+    [Fact]
+    public void TheConsentTableListsExactlyTheColumnsTheSchemaCreates()
+    {
+        var schema = ColumnsTheSchemaCreates("consents").OrderBy(name => name, StringComparer.Ordinal);
+        var documented = DocumentedColumns(ConsentColumnHeading).OrderBy(name => name, StringComparer.Ordinal);
+
+        Assert.Equal(schema, documented);
+    }
+
+    /// <summary>
+    /// Every table the schema creates is named in the document.
+    /// </summary>
+    /// <remarks>
+    /// The comparisons above are each about one table this file names, so a
+    /// third table added to the schema would be described by nothing and caught
+    /// by nothing: the document would go on claiming to be the account of what
+    /// is stored while a whole table sat outside it. This walks the steps
+    /// instead, so a table arriving is a table that has to be written about.
+    /// </remarks>
+    [Fact]
+    public void EveryTableTheSchemaCreatesIsNamedInTheDocument()
+    {
+        var document = Document();
+        var tables = SchemaMigrations.All
+            .SelectMany(step => step.Statements)
+            .Select(statement => Match(statement, @"CREATE TABLE IF NOT EXISTS (\w+)"))
+            .Where(match => match is not null)
+            .Select(match => match!.Groups[1].Value)
+            .ToList();
+
+        Assert.NotEmpty(tables);
+
+        foreach (var table in tables)
+        {
+            Assert.True(
+                document.Contains("`" + table + "`", StringComparison.Ordinal),
+                "The schema creates a table called " + table + ", which the document never names.");
         }
     }
 

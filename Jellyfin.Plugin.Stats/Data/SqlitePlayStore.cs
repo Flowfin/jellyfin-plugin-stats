@@ -254,6 +254,29 @@ public sealed class SqlitePlayStore : IPlayStore
               LIMIT $limit
           )";
 
+    // The consent table's three statements. The read is bounded by the key
+    // being the primary key, which is a limit of one however many accounts the
+    // server has.
+    private const string SelectTheConsentOfAUser =
+        @"-- bound: LIMIT 1, over a table keyed by the account
+          SELECT Agreed, AgreedUtcTicks, WithdrawnUtcTicks, WordingVersion
+          FROM consents
+          WHERE UserId = $userId
+          LIMIT 1";
+
+    // INSERT OR REPLACE for the reason the running play's write uses it: the
+    // account is the key, there is no column here the write does not carry, and
+    // the question has one answer at a time.
+    private const string WriteTheConsent =
+        @"INSERT OR REPLACE INTO consents (
+              UserId, Agreed, AgreedUtcTicks, WithdrawnUtcTicks, WordingVersion
+          ) VALUES (
+              $userId, $agreed, $agreedUtcTicks, $withdrawnUtcTicks, $wordingVersion
+          )";
+
+    private const string ForgetTheConsentOfAUser =
+        "DELETE FROM consents WHERE UserId = $userId";
+
     // What turns freed pages back into free disk. It rewrites the file, so it
     // wants room for a second copy and it cannot run inside a transaction;
     // neither is a problem where it is called, once, at the end of a sweep.
@@ -687,6 +710,64 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$limit", limit);
 
         return command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public ConsentRecord? ConsentFor(Guid userId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheConsentOfAUser;
+
+        // Through the same Text as every other read of an identifier here. A
+        // Guid formatted any other way is a string the column does not hold,
+        // and this would then answer that somebody who has agreed never was
+        // asked.
+        command.Parameters.AddWithValue("$userId", Text(userId));
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new ConsentRecord
+        {
+            UserId = userId,
+            Agreed = reader.GetBoolean(0),
+            AgreedUtc = MomentOrNull(reader, 1),
+            WithdrawnUtc = MomentOrNull(reader, 2),
+            WordingVersion = reader.GetInt32(3)
+        };
+    }
+
+    /// <inheritdoc />
+    public void RecordConsent(ConsentRecord consent)
+    {
+        ArgumentNullException.ThrowIfNull(consent);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = WriteTheConsent;
+        command.Parameters.AddWithValue("$userId", Text(consent.UserId));
+        command.Parameters.AddWithValue("$agreed", consent.Agreed);
+        command.Parameters.AddWithValue(
+            "$agreedUtcTicks",
+            consent.AgreedUtc is { } agreed ? UtcTicks(agreed, nameof(consent.AgreedUtc)) : DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$withdrawnUtcTicks",
+            consent.WithdrawnUtc is { } withdrawn ? UtcTicks(withdrawn, nameof(consent.WithdrawnUtc)) : DBNull.Value);
+        command.Parameters.AddWithValue("$wordingVersion", consent.WordingVersion);
+
+        command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public void ForgetConsentFor(Guid userId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = ForgetTheConsentOfAUser;
+        command.Parameters.AddWithValue("$userId", Text(userId));
+
+        command.ExecuteNonQuery();
     }
 
     /// <inheritdoc />

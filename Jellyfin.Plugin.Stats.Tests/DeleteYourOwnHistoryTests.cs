@@ -235,6 +235,12 @@ public class DeleteYourOwnHistoryTests
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
 
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("This store answers only what a deletion of one account's own history asks.");
 

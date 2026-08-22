@@ -123,6 +123,26 @@ public static class SchemaMigrations
     private const string RecordWhenARunningPlaysMethodChanged =
         "ALTER TABLE open_plays ADD COLUMN PlayMethodChangedUtcTicks INTEGER NULL";
 
+    // What one account has said about being named in the views this plugin
+    // draws. One row per account and the account is the key, because the
+    // question has one answer at a time and what a reader asks is what that
+    // answer is now.
+    //
+    // The moments are kept apart rather than folded into one. An account that
+    // agreed in March and withdrew in July has said two things, and a column
+    // holding only the last of them cannot answer for the months between.
+    //
+    // No index beside the key. This table holds one row per person on the
+    // server, and every read of it is by that key.
+    private const string CreateTheConsentsTable =
+        @"CREATE TABLE IF NOT EXISTS consents (
+              UserId TEXT PRIMARY KEY,
+              Agreed INTEGER NOT NULL,
+              AgreedUtcTicks INTEGER NULL,
+              WithdrawnUtcTicks INTEGER NULL,
+              WordingVersion INTEGER NOT NULL
+          )";
+
     /// <summary>
     /// Gets the steps, in the order they are applied.
     /// </summary>
@@ -155,6 +175,12 @@ public static class SchemaMigrations
     /// under a name that says which moment it speaks about, and a column added
     /// to a table that has rows is null on all of them, which is the honest
     /// answer for a play written before anything was watching for the change.
+    /// </para>
+    /// <para>
+    /// The fifth is the table of what each account has said about being named,
+    /// appended beside the others for the same reason the third was: creating a
+    /// table reads nothing and moves nothing, so a store from any earlier build
+    /// arrives with every row it had.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
@@ -190,6 +216,11 @@ public static class SchemaMigrations
                 NameTheRunningPlayMethodForItsMoment,
                 RecordWhenARunningPlaysMethodChanged
             ]
+        },
+        new SchemaMigration
+        {
+            Version = 5,
+            Statements = [CreateTheConsentsTable]
         }
     ];
 

@@ -64,11 +64,13 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="configuration">The settings the endpoints read, or the defaults where none is given.</param>
     /// <param name="clock">The clock the endpoints read the current year from, or a fixed one in 2026 where none is given.</param>
     /// <param name="deletion">What removes an account's own plays. A test that only reads statuses lets this default to one over a store holding nothing.</param>
+    /// <param name="consent">What holds each account's answer about being named. Defaults to one over a store that keeps answers in memory.</param>
     public InProcessEndpoints(
         Func<Guid, int, TimeZoneInfo, int, YearInReview>? fold = null,
         PluginConfiguration? configuration = null,
         TimeProvider? clock = null,
-        OwnHistoryDeletion? deletion = null)
+        OwnHistoryDeletion? deletion = null,
+        ConsentRegister? consent = null)
     {
         var settings = configuration ?? new PluginConfiguration();
         var moment = clock ?? new FixedClock(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
@@ -93,6 +95,12 @@ public sealed class InProcessEndpoints : IDisposable
         services.AddSingleton<IAuthorizationContext>(new CallerContext(_who));
         services.AddSingleton(new HeldYears(fold ?? NothingWatched, moment));
         services.AddSingleton(deletion ?? new OwnHistoryDeletion(() => new NothingStored(), 1));
+
+        // One store for the register rather than one per call, so an answer
+        // recorded through the endpoint is there when the next request reads
+        // it.
+        var answers = new NothingStored();
+        services.AddSingleton(consent ?? new ConsentRegister(() => answers, moment));
         services.AddSingleton<Func<PluginConfiguration>>(() => settings);
         services.AddSingleton(moment);
 
@@ -128,9 +136,10 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="method">The request method.</param>
     /// <param name="path">The path, as it would appear after the host, with its query if it has one.</param>
     /// <param name="caller">Who is asking.</param>
+    /// <param name="body">The request body as JSON, where the request carries one.</param>
     /// <returns>What came back.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="caller"/> is <c>null</c>.</exception>
-    public async Task<Answer> Send(string method, string path, Caller caller)
+    public async Task<Answer> Send(string method, string path, Caller caller, string? body = null)
     {
         ArgumentNullException.ThrowIfNull(caller);
         ArgumentNullException.ThrowIfNull(path);
@@ -138,7 +147,7 @@ public sealed class InProcessEndpoints : IDisposable
         _who.Is = caller;
 
         using var scope = _services.CreateScope();
-        using var body = new MemoryStream();
+        using var answered = new MemoryStream();
 
         var at = path.IndexOf('?', StringComparison.Ordinal);
 
@@ -151,17 +160,26 @@ public sealed class InProcessEndpoints : IDisposable
             context.Request.QueryString = new QueryString(path[at..]);
         }
 
+        if (body is not null)
+        {
+            var sent = System.Text.Encoding.UTF8.GetBytes(body);
+
+            context.Request.ContentType = "application/json";
+            context.Request.ContentLength = sent.Length;
+            context.Request.Body = new MemoryStream(sent);
+        }
+
         // The response body arrives through the feature rather than through the
         // property. Assigning the stream alone leaves the framework writing to
         // the pipe the feature holds, and a test then reads an empty buffer and
         // concludes the endpoint answered with nothing.
-        context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(body));
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(answered));
 
         await _pipeline(context).ConfigureAwait(false);
         await context.Response.CompleteAsync().ConfigureAwait(false);
 
-        body.Position = 0;
-        using var reader = new StreamReader(body);
+        answered.Position = 0;
+        using var reader = new StreamReader(answered);
         var text = await reader.ReadToEndAsync().ConfigureAwait(false);
 
         return new Answer(context.Response.StatusCode, text);
@@ -183,6 +201,15 @@ public sealed class InProcessEndpoints : IDisposable
     /// </remarks>
     private sealed class NothingStored : IPlayStore
     {
+        private readonly Dictionary<Guid, ConsentRecord> _consents = new();
+
+        public ConsentRecord? ConsentFor(Guid userId)
+            => _consents.TryGetValue(userId, out var consent) ? consent : null;
+
+        public void RecordConsent(ConsentRecord consent) => _consents[consent.UserId] = consent;
+
+        public void ForgetConsentFor(Guid userId) => _consents.Remove(userId);
+
         public int DeletePlaysFor(Guid userId, int limit) => 0;
 
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => 0;
@@ -220,6 +247,7 @@ public sealed class InProcessEndpoints : IDisposable
         public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
 
         private static NotSupportedException NotPartOfThis()
             => new("This store stands in for one with nothing in it, and answers only what a deletion asks.");

@@ -114,6 +114,37 @@ Two of these are personal in the ordinary sense and the rest are not.
 owner of the device typed into it, and people put their own names in there. The
 others describe what was played and how it was delivered.
 
+## One row per account that has been asked about being named
+
+`consents` holds what each account has said about an administrator seeing its
+plays as that account's. It is a separate question from whether the rows are
+kept: the rows are kept either way, and the wording a person is shown says so in
+its own words.
+
+| column              | holds                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `UserId`            | The account this record is about, and the identity of the row. There is one answer at a time.                      |
+| `Agreed`            | Whether the account is agreeing as things stand. A record exists for an account that has withdrawn as well as for one that is agreeing, so its presence says the question was answered rather than answered yes. |
+| `AgreedUtcTicks`    | When the account last agreed, and empty where it never has.                                                        |
+| `WithdrawnUtcTicks` | When the account last withdrew, and empty where it never has. A withdrawal keeps the agreement it withdraws beside it, because an account that agreed in March and withdrew in July has said two things. |
+| `WordingVersion`    | The version of the wording the account was shown when it last agreed, and nought where it has never agreed. No wording is version nought. |
+
+The version is what stops a later change to the words inheriting an old
+agreement. `Jellyfin.Plugin.Stats/Privacy/consent.txt` carries the words and the
+number at the top of the file, the assembly reads both, and an agreement naming
+any other version is refused rather than recorded. So an agreement always names
+words that exist, and words that have moved on leave an agreement a reader can
+see is about the older ones.
+
+Only the account itself writes this. An administrator cannot set it and cannot
+read it, which is one of the rows in the authorization matrix named above, and a
+consent an administrator could record is not consent.
+
+The record goes when the account does. Deleting a user takes what that user said
+along with their rows, because an account the server no longer has has nobody
+left to have answered. A person deleting their own history keeps their answer:
+they are still here, and the answer is still theirs.
+
 ## What is refused on purpose
 
 Three things a playback session carries are absent from the row and from the
@@ -207,10 +238,14 @@ A statistics plugin is usually expected to offer these, and this one does not.
 They are absences rather than controls, and none of them should be read as
 partly present.
 
-There is no consent. Nothing records whether a user agreed to be counted, and
-there is no setting a user can reach. Every play that gets past the four
-controls above is recorded, and the plugin has no such state to branch on.
-Issue #42 is where that record is built.
+Consent is recorded and nothing reads it yet. An account can say whether it may
+be named and read back what it said, and the record is the table above; what
+does not exist is any view that would show one person's plays as theirs, so
+there is nothing yet for an agreement to permit or a withdrawal to stop. Issue
+#42 stays open on that half.
+
+Every play that gets past the four controls above is recorded whatever the
+account said, which is what the wording tells the person reading it.
 
 A signed in user cannot export their own history. Reading their own year and
 deleting their own plays are the two routes named above; there is no endpoint

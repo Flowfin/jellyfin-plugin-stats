@@ -159,6 +159,15 @@ public sealed class HoldablePlayStore : IPlayStore
     }
 
     /// <inheritdoc />
+    public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+    /// <inheritdoc />
+    public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+    /// <inheritdoc />
+    public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+
+    /// <inheritdoc />
     public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
     /// <inheritdoc />

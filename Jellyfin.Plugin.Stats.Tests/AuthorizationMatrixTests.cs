@@ -14,6 +14,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Api;
+using Jellyfin.Plugin.Stats.Privacy;
 using Jellyfin.Plugin.Stats.Tests.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -39,7 +40,15 @@ public class AuthorizationMatrixTests
     /// GET    /Stats/Users/{userId}/Years/{year}   | somebody else's| 401       | 403              | 403                       | 403
     /// DELETE /Stats/Users/{userId}/Plays          | their own      | 401       | 200              | 200                       | 200
     /// DELETE /Stats/Users/{userId}/Plays          | somebody else's| 401       | 403              | 403                       | 403
+    /// GET    /Stats/Users/{userId}/Consent        | their own      | 401       | 200              | 200                       | 200
+    /// GET    /Stats/Users/{userId}/Consent        | somebody else's| 401       | 403              | 403                       | 403
+    /// PUT    /Stats/Users/{userId}/Consent        | their own      | 401       | 200              | 200                       | 200
+    /// PUT    /Stats/Users/{userId}/Consent        | somebody else's| 401       | 403              | 403                       | 403
     /// </code>
+    /// The two consent rows about somebody else's answer are the first
+    /// condition of issue #42. An administrator cannot set a person's consent
+    /// for them and cannot read what they said, and a consent an administrator
+    /// could record is not consent.
     /// The two deletion rows say the same thing about a stronger act, and the
     /// administrator cell is the one to read. Nobody may delete somebody else's
     /// history through this plugin, which follows from there being no elevated
@@ -56,6 +65,21 @@ public class AuthorizationMatrixTests
     /// #61 and #67 decided that and point here for the sentence.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// A body agreeing to the wording this build ships.
+    /// </summary>
+    /// <remarks>
+    /// Built from the wording rather than written as a number, so a row here
+    /// cannot be the thing that goes stale when the words change. A body naming
+    /// another version is refused by the endpoint, which is a different
+    /// statement from the one this table makes and is asserted where the
+    /// endpoint is driven.
+    /// </remarks>
+    public static readonly string Agreeing = string.Format(
+        CultureInfo.InvariantCulture,
+        "{{\"Agreed\":true,\"WordingVersion\":{0}}}",
+        ConsentWording.Version);
+
     public static readonly IReadOnlyList<Row> Matrix =
     [
         new Row(
@@ -93,7 +117,45 @@ public class AuthorizationMatrixTests
             Anonymous: 401,
             Someone: 403,
             SomeoneElse: 403,
-            Administrator: 403)
+            Administrator: 403),
+        new Row(
+            Action: "YourConsentController.GetConsent",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Consent",
+            RowsAskedFor: WhoseRows.TheCallersOwn,
+            Anonymous: 401,
+            Someone: 200,
+            SomeoneElse: 200,
+            Administrator: 200),
+        new Row(
+            Action: "YourConsentController.GetConsent",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Consent",
+            RowsAskedFor: WhoseRows.SomebodyElses,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 403),
+        new Row(
+            Action: "YourConsentController.SetConsent",
+            Method: "PUT",
+            Path: "/Stats/Users/{0}/Consent",
+            RowsAskedFor: WhoseRows.TheCallersOwn,
+            Anonymous: 401,
+            Someone: 200,
+            SomeoneElse: 200,
+            Administrator: 200,
+            Body: Agreeing),
+        new Row(
+            Action: "YourConsentController.SetConsent",
+            Method: "PUT",
+            Path: "/Stats/Users/{0}/Consent",
+            RowsAskedFor: WhoseRows.SomebodyElses,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 403,
+            Body: Agreeing)
     ];
 
     /// <summary>
@@ -144,7 +206,7 @@ public class AuthorizationMatrixTests
 
         using var endpoints = new InProcessEndpoints();
 
-        var answer = await endpoints.Send(expected.Method, expected.PathFor(caller), caller);
+        var answer = await endpoints.Send(expected.Method, expected.PathFor(caller), caller, expected.Body);
 
         Assert.Equal(expected.Expects(caller), answer.Status);
     }
@@ -219,6 +281,7 @@ public class AuthorizationMatrixTests
     /// <param name="Someone">What an ordinary signed-in user gets.</param>
     /// <param name="SomeoneElse">What a second ordinary signed-in user gets.</param>
     /// <param name="Administrator">What a signed-in administrator gets.</param>
+    /// <param name="Body">The request body, where the request carries one.</param>
     public sealed record Row(
         string Action,
         string Method,
@@ -227,7 +290,8 @@ public class AuthorizationMatrixTests
         int Anonymous,
         int Someone,
         int SomeoneElse,
-        int Administrator)
+        int Administrator,
+        string? Body = null)
     {
         /// <summary>
         /// The path one caller sends for this row.

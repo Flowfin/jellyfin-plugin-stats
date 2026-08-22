@@ -182,6 +182,11 @@ public class AValueTheEndpointCannotReadTests
     /// well, which is why that rule's own record says the shape is held and the
     /// meaning is not.
     /// </para>
+    /// <para>
+    /// The set below is closed and every entry has to earn its place, because a
+    /// list that grows whenever a run goes red is a list that records what
+    /// happened rather than what is allowed. Each entry says what it is.
+    /// </para>
     /// </remarks>
     [Fact]
     public void NoActionTakesAnythingButAnIdentityOrAWindow()
@@ -191,7 +196,15 @@ public class AValueTheEndpointCannotReadTests
             "userId",
             "year",
             "from",
-            "to"
+            "to",
+
+            // What a person is saying about themselves, on the consent
+            // endpoint. It is neither an identity nor a window and it is not
+            // what this condition is against either: a filter or a sort decides
+            // which rows the server reaches for, and this decides nothing about
+            // rows at all. It is admitted by name so the set stays closed, and
+            // that is the whole of what the set is worth. Issue #42.
+            "answer"
         };
 
         var taken = typeof(YourYearController).Assembly
@@ -261,6 +274,12 @@ public class AValueTheEndpointCannotReadTests
         public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
 
         public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
 
         public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
