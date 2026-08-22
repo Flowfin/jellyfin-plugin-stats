@@ -30,7 +30,7 @@ public sealed class OpenPlayStoreTests : IDisposable
 
     public OpenPlayStoreTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
+        _root = Path.Join(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
     }
 
     /// <summary>
@@ -226,7 +226,7 @@ public sealed class OpenPlayStoreTests : IDisposable
         using (var connection = new SqliteConnection(
             new SqliteConnectionStringBuilder
             {
-                DataSource = Path.Combine(_root, SqlitePlayStore.FileName),
+                DataSource = Path.Join(_root, SqlitePlayStore.FileName),
                 Pooling = false
             }.ToString()))
         {

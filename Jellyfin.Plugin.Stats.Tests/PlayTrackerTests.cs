@@ -793,6 +793,7 @@ public class PlayTrackerTests
     {
         private readonly List<PlayRecord> _rows = new();
         private readonly List<OpenPlay> _open = new();
+        private readonly List<string> _keys = new();
         private readonly List<string> _forgotten = new();
 
         public IReadOnlyList<PlayRecord> Rows => _rows;
@@ -806,7 +807,7 @@ public class PlayTrackerTests
         /// <summary>
         /// Gets the keys of the finished plays, in order.
         /// </summary>
-        public IReadOnlyList<string> Keys { get; } = new List<string>();
+        public IReadOnlyList<string> Keys => _keys;
 
         /// <summary>
         /// Gets the keys this was told to take away without a finished play.
@@ -816,7 +817,7 @@ public class PlayTrackerTests
         public void Add(PlayRecord play, string playKey)
         {
             _rows.Add(play);
-            ((List<string>)Keys).Add(playKey);
+            _keys.Add(playKey);
         }
 
         public void NoteOpen(OpenPlay play) => _open.Add(play);

@@ -55,7 +55,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
     public OpenPlaysReachTheFileTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
+        _root = Path.Join(Path.GetTempPath(), "jellyfin-plugin-stats-tests", Guid.NewGuid().ToString("N"));
     }
 
     /// <summary>
@@ -187,7 +187,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
         for (var i = 1; i <= 200; i++)
         {
-            sessions.RaisePlaybackProgress(noisy, TimeSpan.FromSeconds(i * 10), at: Midday.AddSeconds(i * 10));
+            sessions.RaisePlaybackProgress(noisy, TimeSpan.FromSeconds(i * 10d), at: Midday.AddSeconds(i * 10d));
         }
 
         sessions.RaisePlaybackProgress(quiet, TimeSpan.FromSeconds(10), at: Midday.AddSeconds(10));
@@ -221,15 +221,21 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
     public async Task ARunningRowOutlivesTheProcessThatWroteIt()
     {
         var sessions = new FakeSessionManager();
-        var writer = AWriter();
-        var listener = ListenerOver(sessions, writer);
-        await listener.StartAsync(CancellationToken.None);
 
-        sessions.RaisePlaybackStart(ASession(sessions, "play-1", "A Film"), Midday);
-        WaitForOpenPlays(1);
+        // The writer is disposed of by leaving this block, which is what stands
+        // in for the process that was holding the play going away. A line after
+        // the reads would be a line an assertion above it could skip, and the
+        // writer would then still be open while the file is read.
+        using (var writer = AWriter())
+        {
+            var listener = ListenerOver(sessions, writer);
+            await listener.StartAsync(CancellationToken.None);
 
-        await listener.StopAsync(CancellationToken.None);
-        writer.Dispose();
+            sessions.RaisePlaybackStart(ASession(sessions, "play-1", "A Film"), Midday);
+            WaitForOpenPlays(1);
+
+            await listener.StopAsync(CancellationToken.None);
+        }
 
         using var afterwards = new SqlitePlayStore(_root);
 
@@ -302,7 +308,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
             return _reader;
         }
 
-        if (!File.Exists(Path.Combine(_root, SqlitePlayStore.FileName)))
+        if (!File.Exists(Path.Join(_root, SqlitePlayStore.FileName)))
         {
             return null;
         }
