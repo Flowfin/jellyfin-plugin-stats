@@ -525,6 +525,8 @@ public sealed class UnknownUserSweepTests : IDisposable
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
 
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("A reconciliation reads the identifiers and deletes by one, so this fake answers nothing else.");
     }

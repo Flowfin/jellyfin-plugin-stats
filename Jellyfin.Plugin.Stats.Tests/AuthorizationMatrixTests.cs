@@ -34,10 +34,16 @@ public class AuthorizationMatrixTests
     /// <remarks>
     /// Read down a row and it says who may see what:
     /// <code>
-    /// endpoint                                | rows asked for | anonymous | an ordinary user | a different ordinary user | an administrator
-    /// GET /Stats/Users/{userId}/Years/{year}  | their own      | 401       | 200              | 200                       | 200
-    /// GET /Stats/Users/{userId}/Years/{year}  | somebody else's| 401       | 403              | 403                       | 403
+    /// endpoint                                   | rows asked for | anonymous | an ordinary user | a different ordinary user | an administrator
+    /// GET    /Stats/Users/{userId}/Years/{year}   | their own      | 401       | 200              | 200                       | 200
+    /// GET    /Stats/Users/{userId}/Years/{year}   | somebody else's| 401       | 403              | 403                       | 403
+    /// DELETE /Stats/Users/{userId}/Plays          | their own      | 401       | 200              | 200                       | 200
+    /// DELETE /Stats/Users/{userId}/Plays          | somebody else's| 401       | 403              | 403                       | 403
     /// </code>
+    /// The two deletion rows say the same thing about a stronger act, and the
+    /// administrator cell is the one to read. Nobody may delete somebody else's
+    /// history through this plugin, which follows from there being no elevated
+    /// route to it at all rather than from a second rule about deletions.
     /// The second row is the statement issue #43 is about. An administrator is
     /// in it, and is refused by the same line as everybody else, because the
     /// elevated route to one person's history is the thing this plugin exists
@@ -65,6 +71,24 @@ public class AuthorizationMatrixTests
             Action: "YourYearController.GetYear",
             Method: "GET",
             Path: "/Stats/Users/{0}/Years/2025",
+            RowsAskedFor: WhoseRows.SomebodyElses,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 403),
+        new Row(
+            Action: "YourHistoryController.DeleteMyPlays",
+            Method: "DELETE",
+            Path: "/Stats/Users/{0}/Plays",
+            RowsAskedFor: WhoseRows.TheCallersOwn,
+            Anonymous: 401,
+            Someone: 200,
+            SomeoneElse: 200,
+            Administrator: 200),
+        new Row(
+            Action: "YourHistoryController.DeleteMyPlays",
+            Method: "DELETE",
+            Path: "/Stats/Users/{0}/Plays",
             RowsAskedFor: WhoseRows.SomebodyElses,
             Anonymous: 401,
             Someone: 403,
@@ -120,7 +144,7 @@ public class AuthorizationMatrixTests
 
         using var endpoints = new InProcessEndpoints();
 
-        var answer = await endpoints.Get(expected.PathFor(caller), caller);
+        var answer = await endpoints.Send(expected.Method, expected.PathFor(caller), caller);
 
         Assert.Equal(expected.Expects(caller), answer.Status);
     }

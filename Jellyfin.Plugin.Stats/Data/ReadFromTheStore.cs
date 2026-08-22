@@ -20,6 +20,13 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// nothing above turns them into a store that is briefly away.
 /// </para>
 /// <para>
+/// The name is about the shape and not about the statements. What this holds is
+/// open, use, close, and the open told apart from the rest, and a deletion a
+/// caller asked for over an endpoint needs exactly that separation for exactly
+/// the same reason: a store that would not open must not come back as a call
+/// that removed no rows. Issue #46 is where the second caller arrived.
+/// </para>
+/// <para>
 /// It names no store type. The opening function decides what is opened, which
 /// is what lets the one place that knows where the data folder is stay the one
 /// place that knows, and lets the suite drive this with a store that is a

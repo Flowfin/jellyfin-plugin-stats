@@ -71,21 +71,29 @@ which fires on a near miss of its own.
 
 ## Who can read it
 
-Nothing in this plugin serves any of it. There is no route into the store from
-outside the server process, because the plugin has no endpoint at all:
+Two routes reach the store from outside the server process, and both of them
+serve one account itself:
 
-    git grep -lE "ControllerBase|ApiController|HttpGet|HttpPost" -- '*.cs'
-    tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs
+- `GET /Stats/Users/{userId}/Years/{year}` answers with that account's own
+  calendar year.
+- `DELETE /Stats/Users/{userId}/Plays` removes that account's own plays, all of
+  them or those that started inside a window the request names.
 
-The single hit is the near miss belonging to a rule, under `tools/invariants`,
-and it is not compiled into the plugin. The settings page reads settings and
-shows no stored row.
+Both refuse a request naming any account other than the one that made it, and an
+administrator is refused by the same line as anybody else. There is no elevated
+route to one person's history here, which is the whole of what this plugin has
+to say about who may reach it, and it is a table rather than a sentence:
+`Jellyfin.Plugin.Stats.Tests/AuthorizationMatrixTests.cs` carries every endpoint
+crossed with four callers, refuses an endpoint that has no row in it, and
+refuses one that has stopped carrying an authorization attribute.
 
-So the readers of this data are whoever can read the file. That is the server's
-own account and anyone with access to the server data directory or to a backup
-of it, and `docs/plugin-data.md` names the two paths. A user of the server
-cannot read their own rows, and an administrator cannot read anybody's through
-the plugin either.
+No page in this plugin sends either request. The settings page reads settings
+and shows no stored row, so a person reaching either route today addresses it by
+hand.
+
+Beyond those two, the readers of this data are whoever can read the file. That is
+the server's own account and anyone with access to the server data directory or
+to a backup of it, and `docs/plugin-data.md` names the two paths.
 
 There is also no route out. This plugin reads the server it runs inside and
 talks to nothing outside it, and the client that would make such a call is
@@ -140,8 +148,13 @@ there is no setting a user can reach. Every play that gets past the four
 controls above is recorded, and the plugin has no such state to branch on.
 Issue #42 is where that record is built.
 
-A signed in user cannot read their own history, export it, or delete it. There
-is no endpoint for any of that, which is issues #43 and #46.
+A signed in user cannot export their own history. Reading their own year and
+deleting their own plays are the two routes named above; there is no endpoint
+that hands somebody a copy of their rows to keep.
+
+Nor is there a page for any of it. The two routes exist and nothing in the
+server's interface offers them, so what a person can do about their own history
+today they can do only by addressing the route themselves.
 
 Nothing reports what the sweep for forgotten accounts removed. The count goes to
 the server's task list as the run's own result and to nothing that keeps it, and

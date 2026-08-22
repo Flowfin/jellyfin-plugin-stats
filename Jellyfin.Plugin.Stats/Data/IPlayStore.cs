@@ -231,6 +231,38 @@ public interface IPlayStore : IDisposable
     int DeletePlaysFor(Guid userId, int limit);
 
     /// <summary>
+    /// Deletes rows belonging to one user that started inside a window, up to a
+    /// limit, oldest written first.
+    /// </summary>
+    /// <remarks>
+    /// A third deletion rather than a window argument on the one above, because
+    /// a bound that is sometimes there is a condition assembled in C# and
+    /// pasted into a statement, which is the shape
+    /// <c>no-sql-built-by-concatenation</c> refuses. Each of the three is one
+    /// statement whose text never moves.
+    /// <para>
+    /// The window is half open: a row starting exactly at
+    /// <paramref name="fromUtc"/> goes and a row starting exactly at
+    /// <paramref name="toUtc"/> stays. Two windows laid end to end therefore
+    /// delete each row once, which a closed window would not, and a caller
+    /// deleting a calendar month names the first instant of the next one rather
+    /// than a tick before it.
+    /// </para>
+    /// <para>
+    /// Both bounds are refused unless they say they are in UTC, for the reason
+    /// the sweep's cutoff is: a local moment read as UTC moves the boundary by
+    /// the machine's offset, and on a deletion that is rows nobody asked to
+    /// lose and rows somebody asked to lose and still has.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The user whose rows go.</param>
+    /// <param name="fromUtc">The first moment in the window, in UTC.</param>
+    /// <param name="toUtc">The first moment after the window, in UTC.</param>
+    /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
+    /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
+    int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit);
+
+    /// <summary>
     /// Gives the space that deleted rows were occupying back to the file
     /// system.
     /// </summary>
