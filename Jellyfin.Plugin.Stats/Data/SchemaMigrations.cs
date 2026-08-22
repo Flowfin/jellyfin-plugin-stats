@@ -41,6 +41,45 @@ public static class SchemaMigrations
               TranscodeReasons TEXT NOT NULL
           )";
 
+    // The table a play sits in while it is still running. Its columns are the
+    // finished table's, so a play that stops is the same row moved rather than
+    // a second shape somebody has to keep in step, and the key the capture
+    // joins a play's events on is the primary key here.
+    //
+    // No index beside that one. This table holds one row per session that is
+    // playing right now, which is a handful on a household server and a few
+    // hundred on a large one, so every read and every removal over it is a scan
+    // of something that fits in a page. An index here would be a cost nobody
+    // measured against a table that never grows with how long the server has
+    // been recording.
+    private const string CreateTheOpenPlaysTable =
+        @"CREATE TABLE IF NOT EXISTS open_plays (
+              PlayKey TEXT PRIMARY KEY,
+              SchemaVersion INTEGER NOT NULL,
+              UserId TEXT NOT NULL,
+              ItemId TEXT NOT NULL,
+              ItemType TEXT NOT NULL,
+              ParentId TEXT NULL,
+              ItemName TEXT NOT NULL,
+              ItemRuntimeTicks INTEGER NULL,
+              StartedUtcTicks INTEGER NOT NULL,
+              EndedUtcTicks INTEGER NOT NULL,
+              WatchedDurationTicks INTEGER NOT NULL,
+              ReachedTheEnd INTEGER NOT NULL,
+              ClientName TEXT NOT NULL,
+              DeviceId TEXT NOT NULL,
+              DeviceName TEXT NOT NULL,
+              PlayMethod INTEGER NOT NULL,
+              TranscodeVideoCodec TEXT NULL,
+              TranscodeAudioCodec TEXT NULL,
+              TranscodeVideoWasDirect INTEGER NOT NULL,
+              TranscodeAudioWasDirect INTEGER NOT NULL,
+              TranscodePeakBitrate INTEGER NULL,
+              TranscodeTypicalBitrate INTEGER NULL,
+              TranscodeHardwareAcceleration TEXT NULL,
+              TranscodeReasons TEXT NOT NULL
+          )";
+
     // One index per shape of read the reports are built on, and no others. Each
     // one is named beside the query it serves in PlayStoreIndexTests, and that
     // suite also refuses an index on this table that no query there names, so an
@@ -81,6 +120,13 @@ public static class SchemaMigrations
     /// upgraded one has. Adding an index to a table that already has rows
     /// builds over those rows and moves none of them.
     /// </para>
+    /// <para>
+    /// The third step is the table a play sits in while it is running, and it
+    /// is appended for the same reason. A store from an earlier build arrives
+    /// with its finished rows and without this table, gets it, and keeps every
+    /// row it had, because creating a table beside another one reads nothing
+    /// and moves nothing.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
     [
@@ -99,6 +145,11 @@ public static class SchemaMigrations
                 IndexPlaysByItemAndStart,
                 IndexPlaysByItemTypeAndStart
             ]
+        },
+        new SchemaMigration
+        {
+            Version = 3,
+            Statements = [CreateTheOpenPlaysTable]
         }
     ];
 

@@ -67,7 +67,7 @@ public sealed class StoreFromALaterBuildTests : IDisposable
         // Neither of these may throw. Add is reached from inside the server's
         // own event dispatch and Dispose from its shutdown, so an exception out
         // of either is this plugin's failure arriving in the server's stack.
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(1, writer.Accepted);
@@ -97,7 +97,7 @@ public sealed class StoreFromALaterBuildTests : IDisposable
             QueuedPlayWriter.DefaultBound,
             new RecordingLogger<QueuedPlayWriter>()))
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
         }
 
         Assert.Equal(3, PlaysOnDisk());

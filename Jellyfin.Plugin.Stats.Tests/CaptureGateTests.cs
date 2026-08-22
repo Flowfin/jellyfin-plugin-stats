@@ -90,15 +90,93 @@ public sealed class CaptureGateTests
         var recorded = new RecordingPlaySink();
         var gate = new CaptureGate(recorded, () => configuration);
 
-        gate.Add(APlay(Alice));
+        gate.Add(APlay(Alice), "a-play");
 
         // Changed after the gate was built, which is what an administrator on
         // the settings page does. The next play is judged against it, and no
         // restart happens in between.
         configuration.CaptureEnabled = false;
-        gate.Add(APlay(Alice));
+        gate.Add(APlay(Alice), "a-play");
 
         Assert.Single(recorded.Rows);
+    }
+
+    /// <summary>
+    /// A play the settings refuse is refused while it is running as well. A
+    /// gate that only judged the stop would put an excluded account's viewing
+    /// on disk for the length of every play they watched and take it away
+    /// afterwards, which is not what not recording means.
+    /// </summary>
+    [Fact]
+    public void ARunningPlayIsJudgedByTheSameThreeAnswers()
+    {
+        var recorded = new RecordingPlaySink();
+        var gate = new CaptureGate(recorded, () => new PluginConfiguration
+        {
+            CaptureEnabled = true,
+            ExcludedUserIds = [Alice.ToString()]
+        });
+
+        gate.NoteOpen(ARunningPlay(Alice));
+        gate.NoteOpen(ARunningPlay(Bob));
+
+        // Both halves, because a gate that refused every running play would
+        // pass the first on its own and is the likelier mistake.
+        var kept = Assert.Single(recorded.Open);
+
+        Assert.Equal(Bob, kept.SoFar.UserId);
+    }
+
+    /// <summary>
+    /// Capture turned off part of the way through a play takes away the row
+    /// that play already has. The change has to reach what is on the file
+    /// because of it, and not only what would have been written after it.
+    /// </summary>
+    [Fact]
+    public void TurningCaptureOffDuringAPlayTakesAwayTheRowItAlreadyHas()
+    {
+        var configuration = new PluginConfiguration { CaptureEnabled = true };
+        var recorded = new RecordingPlaySink();
+        var gate = new CaptureGate(recorded, () => configuration);
+
+        gate.NoteOpen(ARunningPlay(Alice));
+
+        Assert.Single(recorded.Open);
+        Assert.Empty(recorded.Forgotten);
+
+        configuration.CaptureEnabled = false;
+        gate.Add(APlay(Alice), "a-play");
+
+        Assert.Empty(recorded.Rows);
+        Assert.Equal("a-play", Assert.Single(recorded.Forgotten));
+    }
+
+    /// <summary>
+    /// Taking a running row away is passed through without being judged. A
+    /// removal a setting could refuse is a removal that leaves something behind
+    /// exactly when the setting says not to keep it.
+    /// </summary>
+    [Fact]
+    public void TakingARunningRowAwayIsNeverRefused()
+    {
+        var recorded = new RecordingPlaySink();
+        var gate = new CaptureGate(recorded, () => new PluginConfiguration { CaptureEnabled = false });
+
+        gate.ForgetOpen("a-play");
+
+        Assert.Equal("a-play", Assert.Single(recorded.Forgotten));
+    }
+
+    /// <summary>
+    /// The gate refuses to judge a running play it was not given, rather than
+    /// reading a missing one as one nobody excluded.
+    /// </summary>
+    [Fact]
+    public void TheGateRefusesARunningPlayItWasNotGiven()
+    {
+        var gate = new CaptureGate(new RecordingPlaySink(), () => new PluginConfiguration());
+
+        Assert.Throws<ArgumentNullException>(() => gate.NoteOpen(null!));
     }
 
     [Fact]
@@ -160,6 +238,9 @@ public sealed class CaptureGateTests
     /// Runs one whole play for a user through the path a server drives, and
     /// waits until the write path has finished with it.
     /// </summary>
+    private static OpenPlay ARunningPlay(Guid userId)
+        => new() { PlayKey = "a-play", SoFar = APlay(userId) };
+
     private static async Task APlayThrough(IPlayStore store, PluginConfiguration configuration, Guid userId)
     {
         using var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, NullLogger<QueuedPlayWriter>.Instance);
@@ -222,12 +303,28 @@ public sealed class CaptureGateTests
         };
     }
 
-    private sealed class RecordingPlaySink : IFinishedPlaySink
+    private sealed class RecordingPlaySink : IPlaySink
     {
         private readonly System.Collections.Generic.List<PlayRecord> _rows = new();
+        private readonly System.Collections.Generic.List<OpenPlay> _open = new();
+        private readonly System.Collections.Generic.List<string> _forgotten = new();
 
         public System.Collections.Generic.IReadOnlyList<PlayRecord> Rows => _rows;
 
-        public void Add(PlayRecord play) => _rows.Add(play);
+        /// <summary>
+        /// Gets the running plays this was handed.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<OpenPlay> Open => _open;
+
+        /// <summary>
+        /// Gets the keys this was told to take away without a finished play.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<string> Forgotten => _forgotten;
+
+        public void Add(PlayRecord play, string playKey) => _rows.Add(play);
+
+        public void NoteOpen(OpenPlay play) => _open.Add(play);
+
+        public void ForgetOpen(string playKey) => _forgotten.Add(playKey);
     }
 }

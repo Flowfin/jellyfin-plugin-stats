@@ -26,10 +26,18 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// produce the same row. Issue #23 is the rule that refuses the other way.
 /// </para>
 /// <para>
-/// A play that never stops stays open here. Closing one is issue #36, which
-/// works in this type, and the reason it is not silently discarded on session
-/// end is that discarding and recording an unfinished play are different
-/// answers and that issue is where the choice is made.
+/// A play that has started and not stopped is also handed to the sink, on the
+/// start and again on every progress report, so it is on the file while it is
+/// running rather than only once it is over. That is what makes a play the
+/// server never finished a row somebody can still find, and it costs one row
+/// per play however often the session reports, because the sink writes each one
+/// under the key below and a key is a row. Issue #220.
+/// </para>
+/// <para>
+/// A play that never stops stays open here as well as on the file. Closing one
+/// is issue #221, which works in this type, and the reason it is not silently
+/// discarded on session end is that discarding and recording an unfinished play
+/// are different answers and that issue is where the choice is made.
 /// </para>
 /// </remarks>
 public sealed class PlayTracker : IPlaybackEventSink
@@ -41,9 +49,9 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </summary>
     private const int RowSchemaVersion = 1;
 
-    private readonly Dictionary<string, OpenPlay> _open = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TrackedPlay> _open = new(StringComparer.Ordinal);
     private readonly object _gate = new();
-    private readonly IFinishedPlaySink _sink;
+    private readonly IPlaySink _sink;
     private readonly ILogger<PlayTracker> _logger;
     private int _eventsWithNoOpenPlay;
 
@@ -52,7 +60,7 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </summary>
     /// <param name="sink">Where a finished play is handed to.</param>
     /// <param name="logger">The logger.</param>
-    public PlayTracker(IFinishedPlaySink sink, ILogger<PlayTracker> logger)
+    public PlayTracker(IPlaySink sink, ILogger<PlayTracker> logger)
     {
         _sink = sink;
         _logger = logger;
@@ -101,27 +109,44 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </remarks>
     public void PlaybackStarted(PlaybackProgressEventArgs args)
     {
-        var play = OpenPlay.From(args);
+        var play = TrackedPlay.From(args);
+        var key = KeyOf(args);
 
         lock (_gate)
         {
-            _open[KeyOf(args)] = play;
+            _open[key] = play;
         }
+
+        // Outside the lock, like the finished row below and for the same
+        // reason: the sink is the slowest thing on this path, and holding the
+        // lock across it would make every other session's event wait behind
+        // one write.
+        _sink.NoteOpen(SoFar(key, play));
     }
 
     /// <inheritdoc />
     public void PlaybackProgressed(PlaybackProgressEventArgs args)
     {
+        var key = KeyOf(args);
+        TrackedPlay play;
+
         lock (_gate)
         {
-            if (!_open.TryGetValue(KeyOf(args), out var play))
+            if (!_open.TryGetValue(key, out var found))
             {
                 NoOpenPlay("playback progress", args);
                 return;
             }
 
-            play.Observe(args);
+            found.Observe(args);
+            play = found;
         }
+
+        // The row is built outside the lock from a play only this session's
+        // events touch, so what is written is what the fold above just
+        // produced. A second report for the same key would have to come from
+        // the same session, and the server sends one at a time.
+        _sink.NoteOpen(SoFar(key, play));
     }
 
     /// <inheritdoc />
@@ -133,10 +158,10 @@ public sealed class PlayTracker : IPlaybackEventSink
     public void PlaybackStopped(PlaybackStopEventArgs args)
     {
         PlayRecord row;
+        var key = KeyOf(args);
 
         lock (_gate)
         {
-            var key = KeyOf(args);
             if (!_open.TryGetValue(key, out var play))
             {
                 NoOpenPlay("playback stop", args);
@@ -148,7 +173,12 @@ public sealed class PlayTracker : IPlaybackEventSink
             row = play.Finish(args.PlayedToCompletion);
         }
 
-        _sink.Add(row);
+        // The key travels with the row, so the finished row arriving and the
+        // running row going are one act rather than two. Apart, they are how
+        // one play becomes two: a process that stopped between them would leave
+        // both rows, and whatever finishes what a restart left open would write
+        // the play again.
+        _sink.Add(row, key);
     }
 
     /// <inheritdoc />
@@ -195,9 +225,24 @@ public sealed class PlayTracker : IPlaybackEventSink
     }
 
     /// <summary>
+    /// The play as the file should hold it while it is still running.
+    /// </summary>
+    /// <remarks>
+    /// The same row a stop would produce, with the two fields that cannot be
+    /// known yet reading as <see cref="OpenPlay"/> says they do: the end is the
+    /// last moment the server heard from the session, and nothing claims the
+    /// item was played through.
+    /// </remarks>
+    /// <param name="key">The key the play's events are joined on.</param>
+    /// <param name="play">The play so far.</param>
+    /// <returns>The open row.</returns>
+    private static OpenPlay SoFar(string key, TrackedPlay play)
+        => new() { PlayKey = key, SoFar = play.Finish(reachedTheEnd: false) };
+
+    /// <summary>
     /// One play that has started and not yet stopped.
     /// </summary>
-    private sealed class OpenPlay
+    private sealed class TrackedPlay
     {
         private readonly WatchedTime _watched;
         private readonly TranscodeFold _transcode = new();
@@ -213,7 +258,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         private readonly string _deviceName;
         private readonly Data.PlayMethod _playMethod;
 
-        private OpenPlay(PlaybackProgressEventArgs args)
+        private TrackedPlay(PlaybackProgressEventArgs args)
         {
             var item = args.Item;
 
@@ -237,7 +282,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         /// </summary>
         /// <param name="args">The start event.</param>
         /// <returns>The open play.</returns>
-        public static OpenPlay From(PlaybackProgressEventArgs args) => new(args);
+        public static TrackedPlay From(PlaybackProgressEventArgs args) => new(args);
 
         /// <summary>
         /// Folds one progress report, or the stop, into the play.

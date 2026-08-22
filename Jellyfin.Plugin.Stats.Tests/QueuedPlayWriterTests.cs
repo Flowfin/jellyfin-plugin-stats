@@ -89,7 +89,7 @@ public sealed class QueuedPlayWriterTests
         // and the count this test asserts would be one of two answers
         // depending on how the two threads were scheduled. Measured, on a
         // runner that gave the other one.
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
 
         Assert.True(
             store.Entered.Wait(LongEnoughToBeAFailure),
@@ -99,7 +99,7 @@ public sealed class QueuedPlayWriterTests
         // and the five after that have nowhere to go.
         for (var i = 0; i < 9; i++)
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
         }
 
         store.Release();
@@ -120,7 +120,7 @@ public sealed class QueuedPlayWriterTests
 
         for (var i = 0; i < 20; i++)
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
         }
 
         store.Release();
@@ -144,7 +144,7 @@ public sealed class QueuedPlayWriterTests
         // An event can still be in flight when the server stops the plugin.
         // What must not happen is an exception travelling back into the
         // server's event dispatch from a plugin that has finished.
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(1, writer.Refused);
@@ -161,7 +161,7 @@ public sealed class QueuedPlayWriterTests
 
         for (var i = 0; i < 12; i++)
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
         }
 
         writer.Dispose();
@@ -186,7 +186,7 @@ public sealed class QueuedPlayWriterTests
         // by the store. The two are different classes, and a reader who only
         // heard about one of them would draw the wrong conclusion about which
         // end is broken.
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
 
         Assert.True(
             store.Entered.Wait(LongEnoughToBeAFailure),
@@ -194,7 +194,7 @@ public sealed class QueuedPlayWriterTests
 
         for (var i = 0; i < 3; i++)
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
         }
 
         store.Release();
@@ -222,8 +222,8 @@ public sealed class QueuedPlayWriterTests
             QueuedPlayWriter.DefaultBound,
             logger);
 
-        writer.Add(APlay());
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         // The point of the lazy open: this never reached a constructor the
@@ -260,7 +260,7 @@ public sealed class QueuedPlayWriterTests
     private static QueuedPlayWriter WriterOver(IPlayStore store, int bound = QueuedPlayWriter.DefaultBound)
         => new(() => store, bound, NullLogger<QueuedPlayWriter>.Instance);
 
-    private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IFinishedPlaySink sink)
+    private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
         => new(
             sessions,
             new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
