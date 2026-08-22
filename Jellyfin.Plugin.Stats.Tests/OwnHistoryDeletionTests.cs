@@ -491,6 +491,14 @@ public sealed class OwnHistoryDeletionTests : IDisposable
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
 
+        public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
+
+        public void AddAndForgetOpenPlay(PlayRecord play, string playKey) => throw NotPartOfThis();
+
+        public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
+
+        public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("A deletion of one account's own history reads nothing and writes nothing, so this fake answers nothing else.");
 

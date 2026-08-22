@@ -47,7 +47,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // The gate reads the configuration off the plugin instance every time
         // it judges a play, rather than being handed a value once. That is what
         // makes a change on the settings page take effect on the next event.
-        serviceCollection.AddSingleton<IFinishedPlaySink>(provider => new CaptureGate(
+        serviceCollection.AddSingleton<IPlaySink>(provider => new CaptureGate(
             provider.GetRequiredService<QueuedPlayWriter>(),
             () => Plugin.Instance!.Configuration));
 

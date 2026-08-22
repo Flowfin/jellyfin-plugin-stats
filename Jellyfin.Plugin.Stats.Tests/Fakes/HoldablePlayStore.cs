@@ -9,6 +9,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Jellyfin.Plugin.Stats.Data;
 
@@ -20,6 +21,7 @@ namespace Jellyfin.Plugin.Stats.Tests.Fakes;
 public sealed class HoldablePlayStore : IPlayStore
 {
     private readonly List<PlayRecord> _rows = new();
+    private readonly Dictionary<string, OpenPlay> _openPlays = new(StringComparer.Ordinal);
     private readonly object _gate = new();
     private readonly ManualResetEventSlim _release = new(initialState: true);
 
@@ -43,6 +45,20 @@ public sealed class HoldablePlayStore : IPlayStore
     /// Gets whether this store has been disposed of.
     /// </summary>
     public bool Disposed { get; private set; }
+
+    /// <summary>
+    /// Gets the plays this store is holding as still running.
+    /// </summary>
+    public IReadOnlyList<OpenPlay> Running
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _openPlays.Values.ToArray();
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the rows this store took, in the order it took them.
@@ -89,6 +105,56 @@ public sealed class HoldablePlayStore : IPlayStore
         lock (_gate)
         {
             _rows.Add(play);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The finished half is the write above, hold and refusal included, because
+    /// what the cases here measure is the finished row reaching the store. The
+    /// open row goes afterwards, so a store that refused the write keeps it, the
+    /// way a real one does.
+    /// </remarks>
+    public void AddAndForgetOpenPlay(PlayRecord play, string playKey)
+    {
+        Add(play);
+
+        lock (_gate)
+        {
+            _openPlays.Remove(playKey);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Neither held nor refused. What the hold is for is a write the server is
+    /// waiting behind, and the cases that use it are about the finished row; a
+    /// running play that also waited would make every one of them wait twice
+    /// for a reason none of them is about.
+    /// </remarks>
+    public void NoteOpenPlay(OpenPlay play)
+    {
+        lock (_gate)
+        {
+            _openPlays[play.PlayKey] = play;
+        }
+    }
+
+    /// <inheritdoc />
+    public void ForgetOpenPlay(string playKey)
+    {
+        lock (_gate)
+        {
+            _openPlays.Remove(playKey);
+        }
+    }
+
+    /// <inheritdoc />
+    public IEnumerable<OpenPlay> OpenPlays()
+    {
+        lock (_gate)
+        {
+            return _openPlays.Values.ToArray();
         }
     }
 

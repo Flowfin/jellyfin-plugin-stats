@@ -57,8 +57,8 @@ public sealed class StoreThatCannotBeOpenedTests : IDisposable
 
         // Neither of these may throw. Add is reached from inside the server's
         // own event dispatch and Dispose from its shutdown.
-        writer.Add(APlay());
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(2, writer.Failed);
@@ -89,7 +89,7 @@ public sealed class StoreThatCannotBeOpenedTests : IDisposable
             QueuedPlayWriter.DefaultBound,
             logger);
 
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(1, writer.Failed);
@@ -111,7 +111,7 @@ public sealed class StoreThatCannotBeOpenedTests : IDisposable
             QueuedPlayWriter.DefaultBound,
             new RecordingLogger<QueuedPlayWriter>()))
         {
-            writer.Add(APlay());
+            writer.Add(APlay(), "a-play");
             writer.Dispose();
 
             Assert.Equal(1, writer.Written);
@@ -147,13 +147,13 @@ public sealed class StoreThatCannotBeOpenedTests : IDisposable
             QueuedPlayWriter.DefaultBound,
             new RecordingLogger<QueuedPlayWriter>());
 
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
 
         // Two calls to Add rather than one loop: the writer opens the store
         // when it has a row and no store, so the second attempt needs a second
         // row to arrive.
         WaitUntilTheFirstAttemptIsIn(writer);
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(2, attempts);
@@ -181,7 +181,7 @@ public sealed class StoreThatCannotBeOpenedTests : IDisposable
             QueuedPlayWriter.DefaultBound,
             new RecordingLogger<QueuedPlayWriter>());
 
-        writer.Add(APlay());
+        writer.Add(APlay(), "a-play");
         writer.Dispose();
 
         Assert.Equal(1, writer.Failed);

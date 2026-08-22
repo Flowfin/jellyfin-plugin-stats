@@ -13,11 +13,18 @@ different place with different readers. Nothing about the log is restated here.
 
 ## One row per finished play
 
-Nothing is written while a play is running. The row is assembled as the events
-arrive and reaches the store once the play is over, so a session that is still
-playing has nothing on disk yet.
+A play is written twice over its life and is one row at every moment of it.
+While it is running it is a row in `open_plays`, rewritten in place as the
+server reports; when it stops, that row is taken away and a row in `plays`
+takes its place, both in the same act so the play is never two rows and never
+none.
 
-The store holds one table, `plays`, and these are its columns.
+What a play costs the file therefore does not move with how often its session
+reported. A three hour film whose client checks in every ten seconds is one
+row while it plays and one row afterwards, the same as a play that reported
+twice.
+
+These are the columns of `plays`, which is the table every report is built on.
 
 | column                          | holds                                                                                                    |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -46,9 +53,34 @@ The store holds one table, `plays`, and these are its columns.
 | `TranscodeHardwareAcceleration` | The hardware acceleration the server reported, and empty where it reported none.                           |
 | `TranscodeReasons`              | Every transcode reason observed over the play, without repeats, as the server reported them at the time.   |
 
-`WhatIsStoredTests` compares that first column against the statement the store
-runs to create the table, so a column added to the schema without an entry here
-is a red test rather than a paragraph somebody has to remember to update.
+## One row per play that is still running
+
+`open_plays` is where a play sits between its start and its stop. Its columns
+are the ones above with the row's own number replaced by the key the server's
+events are joined on, and two of them are read differently because a running
+play has not answered them yet.
+
+| column          | holds                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `PlayKey`       | What the server's events for this play are joined on, and the identity of the row. Writing the same key again replaces it. |
+| `EndedUtcTicks` | The last moment the server heard from the session, which moves forward as the play runs. It is not a claim that the play ended. |
+| `ReachedTheEnd` | Always false here. Nothing has said the item was played through, and the server only says so on the stop.                 |
+
+Every other column means what it means in the table above. A row here is not a
+play that happened: it is what the server had said about a play up to the last
+time it heard from the session.
+
+A row is left behind here when the server stops while something is playing. It
+holds the same account and the same item name a finished row does, so every
+removal this plugin has reaches it: deleting a user, the sweep for accounts the
+server no longer has, a person deleting their own history, and the retention
+window all take the running rows along with the finished ones. Nothing yet
+turns a leftover row into a finished play, which is issue #221.
+
+`WhatIsStoredTests` compares the first column of each table above against the
+statement the store runs to create that table, so a column added to either
+schema without an entry here is a red test rather than a paragraph somebody has
+to remember to update.
 
 Two of these are personal in the ordinary sense and the rest are not.
 `UserId` names a person, indirectly but exactly. `DeviceName` is whatever the
@@ -67,7 +99,7 @@ was and what their disk holds.
 
 They are refused in the source rather than dropped afterwards, by
 `no-identifying-network-or-path-detail-in-the-store` in `tools/invariants/rules`,
-which fires on a near miss of its own.
+which fires on a near miss of its own. Neither table carries any of them.
 
 ## Who can read it
 
@@ -107,13 +139,18 @@ what it defaults to; this says only which ones reach the data.
 
 - `CaptureEnabled` stops rows being written. It is read immediately before the
   write rather than in a report, so switching it off stops the recording and not
-  merely the display.
-- `ExcludedUserIds` stops rows being written for named users. This is an
-  administrator excluding somebody, not somebody excluding themselves.
+  merely the display. Switching it off while something is playing also takes
+  away the row that play already has, so the change reaches what is on the file
+  because of it and not only what would have been.
+- `ExcludedUserIds` stops rows being written for named users, running and
+  finished alike. This is an administrator excluding somebody, not somebody
+  excluding themselves.
 - `ExcludedItemTypes` stops rows being written for named kinds of item.
 - `PlayRowRetentionDays` decides how old a row may get before the retention
   sweep deletes it. The sweep runs daily, can be started by hand from the
-  server's scheduled task list, and the deletion is permanent.
+  server's scheduled task list, and the deletion is permanent. It takes a
+  running row that started before the same cutoff as well, which on a server
+  that has been up for less than the window is a row no session is behind.
 
 None of the four reaches back over rows that are already stored, apart from the
 retention sweep, which deletes them.

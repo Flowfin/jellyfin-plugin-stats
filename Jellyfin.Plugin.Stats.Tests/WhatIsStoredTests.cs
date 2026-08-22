@@ -33,9 +33,16 @@ namespace Jellyfin.Plugin.Stats.Tests;
 public class WhatIsStoredTests
 {
     /// <summary>
-    /// The heading of the section whose table lists the stored columns.
+    /// The heading of the section whose table lists the finished columns, and
+    /// the table it is about.
     /// </summary>
     private const string ColumnHeading = "One row per finished play";
+
+    /// <summary>
+    /// The heading of the section whose table lists the running columns, and
+    /// the table it is about.
+    /// </summary>
+    private const string OpenColumnHeading = "One row per play that is still running";
 
     /// <summary>
     /// The heading of the section that names the settings reaching the data.
@@ -43,18 +50,56 @@ public class WhatIsStoredTests
     private const string ControlHeading = "What an administrator controls";
 
     /// <summary>
-    /// The table lists exactly the columns the store creates. A column added to
-    /// the schema and not to the table leaves the document claiming a complete
-    /// account while holding an incomplete one, and an entry left behind by a
-    /// column that went describes a field nobody's server holds.
+    /// The table of finished columns lists exactly the columns the store
+    /// creates. A column added to the schema and not to the table leaves the
+    /// document claiming a complete account while holding an incomplete one,
+    /// and an entry left behind by a column that went describes a field
+    /// nobody's server holds.
     /// </summary>
     [Fact]
     public void TheTableListsExactlyTheColumnsTheSchemaCreates()
     {
-        var schema = ColumnsTheSchemaCreates().OrderBy(name => name, StringComparer.Ordinal);
-        var documented = DocumentedColumns().OrderBy(name => name, StringComparer.Ordinal);
+        var schema = ColumnsTheSchemaCreates("plays").OrderBy(name => name, StringComparer.Ordinal);
+        var documented = DocumentedColumns(ColumnHeading).OrderBy(name => name, StringComparer.Ordinal);
 
         Assert.Equal(schema, documented);
+    }
+
+    /// <summary>
+    /// The running table's section lists only columns the store creates, and
+    /// every column it does not list is one the section above already
+    /// describes.
+    /// </summary>
+    /// <remarks>
+    /// Not an equality, unlike the comparison above, and the difference is the
+    /// point rather than a weaker check. The two tables carry the same columns
+    /// apart from three, so listing all of them twice would be the same account
+    /// written in two places and drifting between them. What this refuses
+    /// instead is a name in that section that no column answers to, and a
+    /// column in the running table that neither section describes.
+    /// </remarks>
+    [Fact]
+    public void TheRunningTableIsDescribedByTheTwoSectionsTogether()
+    {
+        var schema = ColumnsTheSchemaCreates("open_plays").ToHashSet(StringComparer.Ordinal);
+        var listed = DocumentedColumns(OpenColumnHeading);
+        var finished = DocumentedColumns(ColumnHeading).ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(listed);
+
+        foreach (var column in listed)
+        {
+            Assert.True(
+                schema.Contains(column),
+                "The document describes a column called " + column + ", which the running table does not have.");
+        }
+
+        foreach (var column in schema)
+        {
+            Assert.True(
+                listed.Contains(column) || finished.Contains(column),
+                "The running table has a column called " + column + ", which neither section of the document describes.");
+        }
     }
 
     /// <summary>
@@ -141,14 +186,15 @@ public class WhatIsStoredTests
     /// purpose: one record property becomes eight columns, and a document
     /// compared against the record would list fields no file holds.
     /// </remarks>
+    /// <param name="table">Which table.</param>
     /// <returns>The column names, as the create statement spells them.</returns>
-    private static IEnumerable<string> ColumnsTheSchemaCreates()
+    private static IEnumerable<string> ColumnsTheSchemaCreates(string table)
     {
         var create = SchemaMigrations.All
             .SelectMany(step => step.Statements)
-            .SingleOrDefault(statement => statement.Contains("CREATE TABLE", StringComparison.Ordinal));
+            .SingleOrDefault(statement => statement.Contains("CREATE TABLE IF NOT EXISTS " + table + " ", StringComparison.Ordinal));
 
-        Assert.True(create is not null, "No step in the schema creates a table, so there is nothing to compare the document against.");
+        Assert.True(create is not null, "No step in the schema creates a table called " + table + ", so there is nothing to compare the document against.");
 
         var body = create![(create.IndexOf('(', StringComparison.Ordinal) + 1)..create.LastIndexOf(')')];
 
@@ -161,10 +207,11 @@ public class WhatIsStoredTests
     /// <summary>
     /// The first cell of every row of the table under the column heading.
     /// </summary>
+    /// <param name="heading">The section whose table is wanted.</param>
     /// <returns>The column names the document claims.</returns>
-    private static IReadOnlyList<string> DocumentedColumns()
+    private static IReadOnlyList<string> DocumentedColumns(string heading)
     {
-        var rows = Section(ColumnHeading)
+        var rows = Section(heading)
             .Split('\n')
             .Select(line => line.Trim())
             .Where(line => line.StartsWith('|'))
