@@ -182,6 +182,8 @@ public sealed class HoldablePlayStore : IPlayStore
     public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
 
     /// <inheritdoc />
+    public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+
     public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
     /// <inheritdoc />

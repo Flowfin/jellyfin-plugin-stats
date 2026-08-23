@@ -6,6 +6,7 @@ using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Events;
 using Jellyfin.Plugin.Stats.Privacy;
+using Jellyfin.Plugin.Stats.Reports;
 using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Events;
@@ -152,6 +153,12 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             OpenTheStore,
             RetentionSweep.DefaultBite,
             provider.GetRequiredService<HeldYears>()));
+
+        // The five shapes every aggregate report is answered through, and the
+        // only route a report has to the plays. It takes the same store-opening
+        // function everything else here does and opens the store for the length
+        // of one shape, so nothing is opened while the container is built.
+        serviceCollection.AddSingleton(_ => new AggregateQueries(OpenTheStore));
 
         // The sweep that closes a play whose session stopped reporting without
         // ending. It is the one consumer of the registered clock whose subject

@@ -211,6 +211,8 @@ public class DeleteYourOwnHistoryTests
 
         public void Add(PlayRecord play) => throw NotPartOfThis();
 
+        public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+
         public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
         public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();

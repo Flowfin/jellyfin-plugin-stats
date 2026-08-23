@@ -120,6 +120,29 @@ public sealed class SqlitePlayStore : IPlayStore
           ORDER BY StartedUtcTicks DESC, Id DESC
           LIMIT $limit";
 
+    // The read every aggregate report is answered from. Half open at both ends,
+    // like the deletions above and for the same reason: two windows laid end to
+    // end read each play once. The index on StartedUtcTicks is what makes the
+    // range a seek rather than a scan of the table, and the limit is what stops
+    // a report over a decade being a way to make the server do arbitrary work.
+    //
+    // Ordered by the moment a play started rather than by the order rows were
+    // written, because what a truncated answer should hold is the oldest plays
+    // in the window and not whichever ones happened to be written first. Id
+    // breaks the tie, so two plays starting in the same tick come back in a
+    // fixed order rather than in whichever one the planner produced.
+    private const string SelectPlaysInAWindow =
+        @"-- bound: $limit
+          SELECT SchemaVersion, UserId, ItemId, ItemType, ParentId, ItemName, ItemRuntimeTicks,
+                 StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
+                 ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
+                 TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+          FROM plays
+          WHERE StartedUtcTicks >= $from AND StartedUtcTicks < $to
+          ORDER BY StartedUtcTicks, Id
+          LIMIT $limit";
+
     // The export's two reads. Spelled out for the same reason as the select
     // above: a column list shared between statements has to be pasted into them
     // to be used, and pasting is the concatenation the invariant rule refuses.
@@ -455,6 +478,27 @@ public sealed class SqlitePlayStore : IPlayStore
 
         using var command = _connection.CreateCommand();
         command.CommandText = SelectMostRecent;
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var plays = new List<PlayRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            plays.Add(ReadPlay(reader));
+        }
+
+        return plays;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectPlaysInAWindow;
+        command.Parameters.AddWithValue("$from", UtcTicks(fromUtc, nameof(fromUtc)));
+        command.Parameters.AddWithValue("$to", UtcTicks(toUtc, nameof(toUtc)));
         command.Parameters.AddWithValue("$limit", limit);
 
         var plays = new List<PlayRecord>();
