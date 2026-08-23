@@ -11,6 +11,11 @@
  * meets it: a wrap-up over part of a year says so, and no figure is scaled up to
  * a whole one.
  *
+ * The page half of the third condition is asserted here: the selector offers the
+ * years the store answered with and no others, and says which of the two reasons
+ * an absent year is absent for. The request that fetches those years is not here
+ * and is not claimed.
+ *
  * Run with the test runner built into node:
  *
  *     node --test Jellyfin.Plugin.Stats.Tests/Pages/
@@ -24,13 +29,15 @@ import { yourYear } from '../../Jellyfin.Plugin.Stats/Pages/yourYear.js';
  * A year with figures in it, whole unless the coverage says otherwise.
  *
  * @param {object} [coverage] What part of the year the store could answer for.
+ * @param {object} [years] The years the store holds, and the day retention keeps from.
  * @returns {object} The answer.
  */
-function aYear(coverage) {
+function aYear(coverage, years) {
     return {
         state: 'ready',
         year: 2025,
         zone: 'Europe/Berlin',
+        years: years ?? { held: [2025, 2024], keptFrom: null },
         anythingRecorded: true,
         plays: 120,
         watchedMinutes: 5400,
@@ -202,4 +209,74 @@ test('each of the four situations is drawn as itself', () => {
      * strings, so a view that drew the same empty frame for all of them fails
      * here rather than passing on four markup blobs nobody compared. */
     assert.equal(new Set([ready, empty, loading, failed]).size, 4);
+});
+
+test('the selector offers the years the store answered with and no others', () => {
+    const drawn = yourYear(aYear(undefined, { held: [2021, 2024, 2025], keptFrom: null }));
+
+    /* Most recent first, and the run between them is not filled. A selector
+     * built from the oldest year and the newest would offer 2022 and 2023, and
+     * each of them opens on a year this account has nothing in. */
+    assert.deepEqual(
+        [...drawn.matchAll(/data-year="([0-9]+)"/g)].map((found) => found[1]),
+        ['2025', '2024', '2021'],
+    );
+});
+
+test('the year being drawn is the one marked as open', () => {
+    const drawn = yourYear(aYear(undefined, { held: [2025, 2024], keptFrom: null }));
+
+    assert.match(drawn, /data-year="2025" aria-current="true"/);
+    assert.doesNotMatch(drawn, /data-year="2024" aria-current="true"/);
+});
+
+test('a year missing inside what is kept is said to hold nothing rather than to have been swept', () => {
+    const drawn = yourYear(aYear(undefined, { held: [2021, 2024, 2025], keptFrom: null }));
+
+    assert.match(drawn, /2022, 2023 are inside what is kept and have nothing of yours recorded/);
+    assert.doesNotMatch(drawn, /not kept/);
+});
+
+test('a year older than retention keeps is said to be unofferable and is not claimed to have held anything', () => {
+    const drawn = yourYear(aYear(undefined, { held: [2025], keptFrom: '2024-11-30' }));
+
+    const sentence = /<p class="stats-view-year-kept">([^<]*)<\/p>/.exec(drawn)[1];
+
+    assert.match(sentence, /^Plays from before 2024-11-30 are not kept/);
+    assert.match(sentence, /whatever was recorded in one\.$/);
+
+    /* The negative stays negative. A year whose rows are gone may have held
+     * nothing at all, and a sentence saying otherwise would invent the history
+     * it is apologising for. */
+    assert.doesNotMatch(sentence, /you watched|your plays|were removed|had/);
+});
+
+test('a store that removes nothing by age says so instead of naming a day', () => {
+    const drawn = yourYear(aYear(undefined, { held: [2025], keptFrom: null }));
+
+    assert.match(drawn, /Nothing here is removed by age/);
+    assert.doesNotMatch(drawn, /Plays from before/);
+});
+
+test('a wrap-up carrying no years is refused rather than drawn as the only year there is', () => {
+    const answer = aYear();
+    delete answer.years;
+
+    assert.throws(() => yourYear(answer), /years the store holds/);
+    assert.throws(
+        () => yourYear({ ...answer, years: { held: [], keptFrom: null } }),
+        /whole years/,
+    );
+});
+
+test('a year drawn that the store does not hold is refused rather than headed over figures', () => {
+    const answer = aYear(undefined, { held: [2024, 2023], keptFrom: null });
+
+    assert.throws(() => yourYear(answer), /not among the years the store holds/);
+});
+
+test('a missing retention day is refused rather than read as nothing having been swept', () => {
+    const answer = aYear(undefined, { held: [2025] });
+
+    assert.throws(() => yourYear(answer), /removed by age/);
 });
