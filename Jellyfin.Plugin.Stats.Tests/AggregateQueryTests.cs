@@ -278,6 +278,28 @@ public sealed class AggregateQueryTests : IDisposable
     }
 
     /// <summary>
+    /// A dimension this build has no name for is refused before anything is
+    /// counted.
+    /// </summary>
+    /// <remarks>
+    /// The layer reads the accounts behind each member of a dimension before the
+    /// fold does, so it spells that dimension out a second time and the two
+    /// spellings have to agree. A value neither of them knows is refused here
+    /// rather than counted into a group nobody named, which is what a fall
+    /// through would do: every play would land under one key, the group would
+    /// stand on every account on the server, and the rule would answer a
+    /// breakdown it has never seen the shape of.
+    /// </remarks>
+    [Fact]
+    public void ADimensionThisBuildHasNoNameForIsRefused()
+    {
+        Store(APlay(Alice, AFilm, March, "Jellyfin Web"));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new AggregateQueries(OpenTheStore).Breakdown(AWeekFrom(March), (PlayDimension)99));
+    }
+
+    /// <summary>
     /// A range with no plays in it is answered rather than withheld.
     /// </summary>
     /// <remarks>
