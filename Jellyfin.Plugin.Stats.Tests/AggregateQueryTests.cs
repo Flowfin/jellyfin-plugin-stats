@@ -345,10 +345,20 @@ public sealed class AggregateQueryTests : IDisposable
     }
 
     /// <summary>
-    /// A shape never reads more plays than the window's bound allows.
+    /// A shape refuses a range holding more plays than the window's bound
+    /// allows, rather than answering out of the rows that fitted.
     /// </summary>
+    /// <remarks>
+    /// This case asserted the other answer until issue #56's first condition
+    /// was built: twenty plays under a bound of five came back as a total of
+    /// five, and the case called that the bound working. It is the failure the
+    /// issue is about. Five is what the server watched, as far as any reader of
+    /// that total could tell, and nothing on the answer said a quarter of the
+    /// range had been read. What the bound is worth is that the work is capped;
+    /// what a caller is owed is being told when the cap was reached.
+    /// </remarks>
     [Fact]
-    public void AShapeReadsNoMorePlaysThanTheBoundAllows()
+    public void AShapeRefusesARangeHoldingMorePlaysThanTheBoundAllows()
     {
         var plays = new List<PlayRecord>();
         for (var i = 0; i < 20; i++)
@@ -358,10 +368,11 @@ public sealed class AggregateQueryTests : IDisposable
 
         Store(plays.ToArray());
 
-        var totals = new AggregateQueries(OpenTheStore)
-            .Total(QueryWindow.Of(March, March.AddDays(1), mostPlays: 5));
+        var refused = Assert.Throws<TooManyPlaysToAnswerException>(
+            () => new AggregateQueries(OpenTheStore)
+                .Total(QueryWindow.Of(March, March.AddDays(1), mostPlays: 5)));
 
-        Assert.Equal(5, totals.Plays);
+        Assert.Equal(5, refused.MostPlays);
     }
 
     /// <summary>

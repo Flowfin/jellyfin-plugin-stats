@@ -42,14 +42,45 @@ public sealed record QueryWindow
     /// read in memory, so the bound is what stops one request over a decade of
     /// history from being a way to make the server do arbitrary work.
     /// <para>
-    /// An answer that hit the ceiling is not marked, and that is a gap rather
-    /// than a decision taken quietly: a report drawn from a truncated read is a
-    /// report that is wrong without saying so. Issue #56 is where the honest
-    /// answer to a range too large to fold belongs, and this constant is what
-    /// stops the failure being unbounded work in the meantime.
+    /// A range that holds more than this is refused rather than answered from
+    /// the first rows of it, which is what
+    /// <see cref="TooManyPlaysToAnswerException"/> is for. So this number bounds
+    /// the work a request can make the server do, and nothing downstream of it
+    /// ever receives a fold that quietly covered part of what was asked.
     /// </para>
     /// </remarks>
     public const int MostPlaysAnyShapeReads = 250_000;
+
+    /// <summary>
+    /// The longest range any shape here answers over, whatever a caller asks
+    /// for.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the same sentence as the bound above, and it bites
+    /// earlier: a range is refused for its length before a single row is read,
+    /// so an eight-year window costs the server one comparison rather than a
+    /// quarter of a million rows fetched and thrown away.
+    /// <para>
+    /// The number follows from the longest report this plugin offers rather
+    /// than being picked for roundness. That report is a calendar year, and a
+    /// leap year is 366 days, so the cap is the year with a day of slack rather
+    /// than the year exactly.
+    /// </para>
+    /// <para>
+    /// WHAT THE SLACK IS FOR IS NOT SUMMER TIME, and that is worth writing down
+    /// because it is the first thing a reader assumes. A zone that puts its
+    /// clocks forward in the spring puts them back in the autumn, so the two
+    /// cancel inside one calendar year and a local year in such a zone is
+    /// exactly 366 days, which the case beside this measures rather than
+    /// assumes. What does stretch a local year past the calendar count is a zone
+    /// changing its standard offset partway through one, which is a political
+    /// decision rather than a seasonal rule and has happened more than once in
+    /// the last few years. A cap sitting exactly on 366 days would refuse a
+    /// calendar year in such a zone, and the report refused would be the one
+    /// this plugin exists to offer.
+    /// </para>
+    /// </remarks>
+    public static readonly TimeSpan LongestRangeAnyShapeAnswers = TimeSpan.FromDays(367);
 
     private QueryWindow(DateTime fromUtc, DateTime toUtc, int mostPlays)
     {
@@ -80,7 +111,7 @@ public sealed record QueryWindow
     /// <param name="toUtc">The first moment after the window, in UTC.</param>
     /// <param name="mostPlays">How many plays at most to read. Held down to <see cref="MostPlaysAnyShapeReads"/>.</param>
     /// <returns>The window.</returns>
-    /// <exception cref="ArgumentException">A bound is not in UTC, or the window ends before it starts.</exception>
+    /// <exception cref="ArgumentException">A bound is not in UTC, the window ends before it starts, or it is longer than <see cref="LongestRangeAnyShapeAnswers"/>.</exception>
     public static QueryWindow Of(DateTime fromUtc, DateTime toUtc, int mostPlays = MostPlaysAnyShapeReads)
     {
         InUtc(fromUtc, nameof(fromUtc));
@@ -91,6 +122,18 @@ public sealed record QueryWindow
         {
             throw new ArgumentException(
                 "A window ends no earlier than it starts. Reversed bounds read as an empty range rather than as the range that was meant, so a report over them would answer nothing and say it had answered.",
+                nameof(toUtc));
+        }
+
+        var asked = toUtc - fromUtc;
+        if (asked > LongestRangeAnyShapeAnswers)
+        {
+            throw new ArgumentException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "That range is {0} days and the longest this plugin answers over is {1} days. It is refused rather than shortened, because a report over the part of a range that fitted reads exactly like a report over the whole of it.",
+                    asked.TotalDays.ToString("0.##", CultureInfo.InvariantCulture),
+                    LongestRangeAnyShapeAnswers.TotalDays.ToString("0.##", CultureInfo.InvariantCulture)),
                 nameof(toUtc));
         }
 
