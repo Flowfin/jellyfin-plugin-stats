@@ -229,6 +229,7 @@ public class PlayMethodChangeTests
         => new(
             sessions,
             new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
     private static SessionInfo ASession(FakeSessionManager sessions)

@@ -268,6 +268,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
         => new(
             sessions,
             new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
     private static SessionInfo ASession(FakeSessionManager sessions, string playSessionId, string item)

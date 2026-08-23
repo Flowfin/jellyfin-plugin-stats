@@ -42,7 +42,7 @@ public class PlayTrackerTests
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
         var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
-        var listener = new PlaybackEventListener(sessions, tracker, NullLogger<PlaybackEventListener>.Instance);
+        var listener = new PlaybackEventListener(sessions, tracker, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
         await listener.StartAsync(CancellationToken.None);
 
         var session = new PlaySessionBuilder(sessions)
@@ -622,22 +622,39 @@ public class PlayTrackerTests
         Assert.False(transcode.AudioWasDirect);
     }
 
+    /// <summary>
+    /// A session ending writes the row the play had reached and leaves nothing
+    /// open.
+    /// </summary>
+    /// <remarks>
+    /// This case asserted the opposite until issue #221 decided it. What stood
+    /// here said a session that went away wrote nothing rather than a row whose
+    /// end nobody observed, and that reading is answered: the end of such a play
+    /// is the last moment the server heard from its session, which is a moment
+    /// the server did observe and wrote down itself.
+    /// <para>
+    /// The routes that close a play without a stop are driven in
+    /// <c>PlaysNobodyStoppedTests</c>. What this one holds is that the whole
+    /// chain from the server's own event through the listener to a row still
+    /// works, which is what the rest of this file is about.
+    /// </para>
+    /// </remarks>
     [Fact]
-    public void ASessionEndingWritesNoRowYet()
+    public void ASessionEndingWritesTheRowThePlayHadReached()
     {
         var sessions = new FakeSessionManager();
         var rows = Watching(sessions, out var tracker);
         var session = APlay(sessions);
 
         sessions.RaisePlaybackStart(session, Eight);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(12), at: Eight.AddMinutes(12));
         sessions.RaiseSessionEnded(session);
 
-        // A play left open by a session that went away is issue #36, and until
-        // that lands this writes nothing rather than writing a row whose end
-        // nobody observed. The play is still open, which is what that issue
-        // will find.
-        Assert.Empty(rows.Rows);
-        Assert.Equal(1, tracker.OpenPlays);
+        var row = Assert.Single(rows.Rows);
+
+        Assert.Equal(Eight.AddMinutes(12).UtcDateTime, row.EndedUtc);
+        Assert.False(row.ReachedTheEnd);
+        Assert.Equal(0, tracker.OpenPlays);
     }
 
     /// <summary>

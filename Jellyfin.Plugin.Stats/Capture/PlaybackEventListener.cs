@@ -27,11 +27,22 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// reason, so the set is the smallest one the capture milestone asks for and
 /// widening it is a diff.
 /// </para>
+/// <para>
+/// It also finishes what a previous process left running, and it does that
+/// BEFORE the first subscription rather than beside it. The plays on the file at
+/// that instant are exactly the ones no process is tracking, because this one
+/// has not written any yet, and a pass made after the subscriptions were live
+/// would meet a play that is being watched right now. That ordering is the whole
+/// argument, so the two statements are in one method in this order rather than
+/// in two registrations whose order a reader would have to reconstruct. Issue
+/// #221.
+/// </para>
 /// </remarks>
 public sealed class PlaybackEventListener : IHostedService
 {
     private readonly ISessionManager _sessionManager;
     private readonly IPlaybackEventSink _sink;
+    private readonly FinishWhatARestartLeftOpen _leftOpen;
     private readonly ILogger<PlaybackEventListener> _logger;
     private bool _subscribed;
 
@@ -40,14 +51,17 @@ public sealed class PlaybackEventListener : IHostedService
     /// </summary>
     /// <param name="sessionManager">The session manager whose events are read.</param>
     /// <param name="sink">Where events are handed on to.</param>
+    /// <param name="leftOpen">What finishes the plays a previous process left running, before anything is subscribed to.</param>
     /// <param name="logger">The logger.</param>
     public PlaybackEventListener(
         ISessionManager sessionManager,
         IPlaybackEventSink sink,
+        FinishWhatARestartLeftOpen leftOpen,
         ILogger<PlaybackEventListener> logger)
     {
         _sessionManager = sessionManager;
         _sink = sink;
+        _leftOpen = leftOpen;
         _logger = logger;
     }
 
@@ -56,6 +70,9 @@ public sealed class PlaybackEventListener : IHostedService
     /// Subscribing twice would deliver every event twice and count every play
     /// twice, and nothing in the server promises a single start. The flag makes
     /// a second start without a stop do nothing rather than double the numbers.
+    /// It also makes the pass over what a restart left open run once, which
+    /// matters more than the subscriptions do: the second run would meet the
+    /// plays this process had started since the first.
     /// </remarks>
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -63,6 +80,8 @@ public sealed class PlaybackEventListener : IHostedService
         {
             return Task.CompletedTask;
         }
+
+        FinishWhatWasLeftOpen();
 
         _sessionManager.PlaybackStart += OnPlaybackStart;
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
@@ -94,6 +113,36 @@ public sealed class PlaybackEventListener : IHostedService
         _subscribed = false;
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Runs the pass over what a previous process left open, and swallows
+    /// whatever it throws.
+    /// </summary>
+    /// <remarks>
+    /// The pass opens the store, and an open that fails is this plugin's failure
+    /// and nobody else's. Letting it out of here would travel into the host's
+    /// own start, which is the one place issue #31 says a store must never
+    /// reach. The plays stay on the file, a later start tries again, and the
+    /// events below are subscribed to either way.
+    /// <para>
+    /// The exception's type is written and its message is not. A message from a
+    /// file system carries the path the store sits at, and the settings page is
+    /// where an operator is told which failure they have.
+    /// </para>
+    /// </remarks>
+    private void FinishWhatWasLeftOpen()
+    {
+        try
+        {
+            _leftOpen.Run();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                "The plays a previous run left open could not be finished, because the store could not be read: {Failure}. They stay on the file and the next start tries again. Recording was not affected.",
+                ex.GetType().Name);
+        }
     }
 
     private void OnPlaybackStart(object? sender, PlaybackProgressEventArgs args)

@@ -221,7 +221,7 @@ public class PlaybackEventListenerTests
     }
 
     private static PlaybackEventListener ListenerOver(ISessionManager sessions, IPlaybackEventSink sink)
-        => new(sessions, sink, NullLogger<PlaybackEventListener>.Instance);
+        => new(sessions, sink, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
 
     /// <summary>
     /// Runs one play through the fake, start to stop, and ends the session.

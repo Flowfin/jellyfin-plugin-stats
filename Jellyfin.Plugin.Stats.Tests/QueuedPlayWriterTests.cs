@@ -264,6 +264,7 @@ public sealed class QueuedPlayWriterTests
         => new(
             sessions,
             new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
     /// <summary>

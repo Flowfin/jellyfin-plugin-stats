@@ -149,9 +149,23 @@ public sealed class HoldablePlayStore : IPlayStore
         }
     }
 
+    /// <summary>
+    /// Gets or sets what to do at the moment the open plays are read, or null
+    /// for a read that does nothing else.
+    /// </summary>
+    /// <remarks>
+    /// For the one case whose subject is WHEN a read happened rather than what
+    /// it returned: the pass over what a restart left open has to run before
+    /// anything subscribes to the server's events, and this is where a test can
+    /// stand at that instant and look.
+    /// </remarks>
+    public Action? WhenOpenPlaysAreRead { get; set; }
+
     /// <inheritdoc />
     public IEnumerable<OpenPlay> OpenPlays()
     {
+        WhenOpenPlaysAreRead?.Invoke();
+
         lock (_gate)
         {
             return _openPlays.Values.ToArray();
