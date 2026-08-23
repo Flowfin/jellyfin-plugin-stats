@@ -51,7 +51,20 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<QueuedPlayWriter>(),
             () => Plugin.Instance!.Configuration));
 
-        serviceCollection.AddSingleton<IPlaybackEventSink, PlayTracker>();
+        // The tracker is registered under its own type as well as under the
+        // interface, and both resolve the one instance. The sweep that closes
+        // plays nobody stopped works on the plays this tracker is holding, so a
+        // second instance behind the concrete type would be a sweep walking an
+        // empty dictionary while the real plays sat in the other one.
+        serviceCollection.AddSingleton<PlayTracker>();
+        serviceCollection.AddSingleton<IPlaybackEventSink>(provider => provider.GetRequiredService<PlayTracker>());
+
+        // What finishes the plays a previous process left running. It takes the
+        // same store-opening function the writer does and opens the store for
+        // the length of one pass. Nothing is opened here: this is a constructor
+        // call, and the function runs when the listener starts.
+        serviceCollection.AddSingleton(_ => new FinishWhatARestartLeftOpen(OpenTheStore));
+
         serviceCollection.AddHostedService<PlaybackEventListener>();
 
         // What carries the plugin's own state to the settings page. It is a
@@ -139,6 +152,16 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             OpenTheStore,
             RetentionSweep.DefaultBite,
             provider.GetRequiredService<HeldYears>()));
+
+        // The sweep that closes a play whose session stopped reporting without
+        // ending. It is the one consumer of the registered clock whose subject
+        // is not a retention window: what it needs a moment for is deciding how
+        // long a play has heard nothing, and the tracker takes that moment as an
+        // argument rather than reading one.
+        serviceCollection.AddSingleton(provider => new QuietPlaySweep(
+            provider.GetRequiredService<PlayTracker>(),
+            provider.GetRequiredService<TimeProvider>(),
+            QuietPlaySweep.DefaultBound));
 
         // The sweep that catches what the route below cannot: an account
         // deleted while this plugin was not loaded. It takes the user manager

@@ -34,10 +34,27 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// under the key below and a key is a row. Issue #220.
 /// </para>
 /// <para>
-/// A play that never stops stays open here as well as on the file. Closing one
-/// is issue #221, which works in this type, and the reason it is not silently
-/// discarded on session end is that discarding and recording an unfinished play
-/// are different answers and that issue is where the choice is made.
+/// A play that never stops is closed here rather than discarded, which is the
+/// answer issue #221 asked for: an unfinished play is a play that happened, and
+/// dropping it would make a server that was restarted look like a server nobody
+/// watched anything on. Two routes reach it. A session that ends takes its open
+/// plays with it, at the last moment the server heard from that session, and a
+/// play whose session says nothing more is closed by
+/// <see cref="CloseWhatHasGoneQuiet"/> once it has been quiet for longer than
+/// the bound its caller names.
+/// </para>
+/// <para>
+/// Both routes remove the play from this tracker in the same act that hands the
+/// row over, so a stop arriving afterwards finds nothing open and is counted
+/// rather than written. That is what keeps a play interrupted by anything to
+/// exactly one row, which is the property the three pieces of issue #36 share.
+/// </para>
+/// <para>
+/// Neither route reads a clock. The end of a closed play is the last moment the
+/// server heard from its session, which arrived on an event, and the moment the
+/// bound is measured against arrives as an argument. What a row written this way
+/// does not yet say is which of the two routes closed it, and that column is
+/// issue #222 rather than something omitted here.
 /// </para>
 /// </remarks>
 public sealed class PlayTracker : IPlaybackEventSink
@@ -183,11 +200,114 @@ public sealed class PlayTracker : IPlaybackEventSink
 
     /// <inheritdoc />
     /// <remarks>
-    /// Nothing yet. A session ending while a play is open is a play that never
-    /// received a stop, and issue #36 decides what becomes of it.
+    /// A session that ends while a play is open is a play that will never
+    /// receive a stop, so the play is closed at the last moment the server heard
+    /// from that session and handed over as a finished row.
+    /// <para>
+    /// The plays are found by the session they arrived on rather than by the key
+    /// their events are joined on. The two are different identifiers, one
+    /// session can be playing more than one thing where a client queues, and a
+    /// key that stood in for a missing play session identifier is built from a
+    /// device and an item and carries no session at all. Matching on the session
+    /// is what closes every play the ended session held and nothing belonging to
+    /// anybody else.
+    /// </para>
+    /// <para>
+    /// Nothing here claims the item was played through. The server says that on
+    /// the stop, and this is the case where no stop came.
+    /// </para>
     /// </remarks>
     public void SessionEnded(SessionEventArgs args)
     {
+        ArgumentNullException.ThrowIfNull(args);
+
+        Close(play => string.Equals(play.SessionId, args.SessionInfo.Id, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Closes every open play whose session has said nothing for longer than
+    /// the bound, and produces a row for each.
+    /// </summary>
+    /// <remarks>
+    /// What a session that stopped reporting without ending leaves behind: a
+    /// client that lost its network, a device that was switched off, a browser
+    /// tab that was closed hard. Nothing further is coming for those plays, and
+    /// left alone they sit open until the process stops.
+    /// <para>
+    /// The moment arrives as an argument and is never read from a machine clock,
+    /// which is what <c>no-ambient-clock</c> in <c>tools/invariants/rules</c>
+    /// refuses the other way and what lets a test choose a play an hour old
+    /// without waiting an hour. What supplies it on a server is
+    /// <see cref="ScheduledTasks.QuietPlaySweep"/>.
+    /// </para>
+    /// <para>
+    /// The comparison is against the last moment the server heard from the
+    /// session, which is the end of the row the play would produce now. A play
+    /// being watched reports while it runs and while it is paused, so a bound
+    /// shorter than the interval a client checks in at would close plays that
+    /// are still running, which is why the value is a constant somebody has to
+    /// change on purpose rather than a setting.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The moment the bound is measured back from.</param>
+    /// <param name="bound">How long a play may hear nothing before it is closed.</param>
+    /// <returns>How many plays were closed.</returns>
+    public int CloseWhatHasGoneQuiet(DateTimeOffset now, TimeSpan bound)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(bound, TimeSpan.Zero);
+
+        var quietBefore = now.UtcDateTime - bound;
+
+        return Close(play => play.LastHeardFromUtc <= quietBefore);
+    }
+
+    /// <summary>
+    /// Closes every open play the test picks out, and hands each of their rows
+    /// to the sink.
+    /// </summary>
+    /// <remarks>
+    /// The plays are taken out of the dictionary under the lock and the rows go
+    /// to the sink outside it, which is what the stop path does and for the same
+    /// reason: the sink is the slowest thing here, and holding the lock across
+    /// it would make every other session's event wait behind a write.
+    /// <para>
+    /// Taking them out is not a detail of the locking. A play handed over is a
+    /// play that has produced its row, and one left in the dictionary would
+    /// produce a second one the moment a late stop arrived.
+    /// </para>
+    /// </remarks>
+    /// <param name="wanted">Which open plays to close.</param>
+    /// <returns>How many were closed.</returns>
+    private int Close(Func<TrackedPlay, bool> wanted)
+    {
+        List<KeyValuePair<string, PlayRecord>> closed;
+
+        lock (_gate)
+        {
+            var keys = new List<string>();
+            foreach (var (key, play) in _open)
+            {
+                if (wanted(play))
+                {
+                    keys.Add(key);
+                }
+            }
+
+            closed = new List<KeyValuePair<string, PlayRecord>>(keys.Count);
+            foreach (var key in keys)
+            {
+                var play = _open[key];
+                _open.Remove(key);
+                closed.Add(new KeyValuePair<string, PlayRecord>(key, play.Finish(reachedTheEnd: false)));
+            }
+        }
+
+        foreach (var (key, row) in closed)
+        {
+            _sink.Add(row, key);
+        }
+
+        return closed.Count;
     }
 
     /// <summary>
@@ -257,6 +377,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         private readonly string _deviceId;
         private readonly string _deviceName;
         private readonly Data.PlayMethod _playMethodAtStart;
+        private readonly string _sessionId;
 
         private DateTime? _playMethodChangedUtc;
 
@@ -264,6 +385,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         {
             var item = args.Item;
 
+            _sessionId = args.Session.Id;
             _userId = args.Users[0].Id;
             _itemId = item.Id;
             _itemType = item.GetBaseItemKind().ToString();
@@ -278,6 +400,28 @@ public sealed class PlayTracker : IPlaybackEventSink
             _watched = new WatchedTime(new DateTimeOffset(_startedUtc), PositionOf(args));
             _transcode.Observe(args.Session.TranscodingInfo);
         }
+
+        /// <summary>
+        /// Gets the session this play arrived on.
+        /// </summary>
+        /// <remarks>
+        /// Read off the start event and never moved. A play belongs to the
+        /// session it began on, and this is what a session ending is matched
+        /// against; the key the play's events are joined on is a different
+        /// identifier and answers a different question.
+        /// </remarks>
+        public string SessionId => _sessionId;
+
+        /// <summary>
+        /// Gets the last moment the server heard from this play's session.
+        /// </summary>
+        /// <remarks>
+        /// The same moment the row would carry as its end, derived the same way,
+        /// rather than a second field that could fall out of step with it. It is
+        /// what a bound measured against a moment somebody supplies is compared
+        /// with.
+        /// </remarks>
+        public DateTime LastHeardFromUtc => _startedUtc + _watched.WallClock;
 
         /// <summary>
         /// Opens a play from the start event that began it.

@@ -37,7 +37,7 @@ public class WhatTheLogContainsTests
     {
         var sessions = new FakeSessionManager();
         var logger = new RecordingLogger<PlaybackEventListener>();
-        var listener = new PlaybackEventListener(sessions, new FaultingSink(), logger);
+        var listener = new PlaybackEventListener(sessions, new FaultingSink(), NothingWasLeftOpen.Pass(), logger);
 
         await listener.StartAsync(CancellationToken.None);
         RaiseAWholePlay(sessions);
@@ -73,7 +73,7 @@ public class WhatTheLogContainsTests
     {
         var sessions = new FakeSessionManager();
         var logger = new RecordingLogger<PlaybackEventListener>();
-        var listener = new PlaybackEventListener(sessions, new KeepsNothingSink(), logger);
+        var listener = new PlaybackEventListener(sessions, new KeepsNothingSink(), NothingWasLeftOpen.Pass(), logger);
 
         await listener.StartAsync(CancellationToken.None);
         RaiseAWholePlay(sessions);

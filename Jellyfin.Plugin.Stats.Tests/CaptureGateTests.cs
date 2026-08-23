@@ -247,7 +247,7 @@ public sealed class CaptureGateTests
         var gate = new CaptureGate(writer, () => configuration);
         var tracker = new PlayTracker(gate, NullLogger<PlayTracker>.Instance);
         var sessions = new FakeSessionManager();
-        var listener = new PlaybackEventListener(sessions, tracker, NullLogger<PlaybackEventListener>.Instance);
+        var listener = new PlaybackEventListener(sessions, tracker, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
 
         await listener.StartAsync(CancellationToken.None);
 
