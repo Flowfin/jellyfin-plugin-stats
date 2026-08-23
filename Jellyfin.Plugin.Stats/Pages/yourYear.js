@@ -28,6 +28,15 @@
  * are. Two fields are taken off each row of a top list, so an identifier the fold
  * carries for its own grouping does not reach the picture.
  *
+ * The years a reader may move to are drawn from the list the store answered with
+ * and from nothing else. The shape somebody reaches for instead runs from the
+ * oldest row to the year the server is in, and it offers years the account has
+ * nothing in, each of which opens empty and reads as a year they watched nothing.
+ * A year the list does not carry is absent for one of two reasons and those are
+ * different facts, so the selector says which. Inside what retention still keeps,
+ * a missing year is a year with nothing recorded. Before the day it keeps from,
+ * no year can be offered whatever was recorded in one. Issue #67.
+ *
  * No document, no window, no network and no clock, the same as the drawing
  * module. docs/headless-tests.md.
  */
@@ -55,7 +64,7 @@ const HEADLINES = [
  * stated above the figures, or says which of the other three situations the view
  * is in.
  *
- * @param {{state: string, reason?: string, year?: number, zone?: string, anythingRecorded?: boolean, plays?: number|null, watchedMinutes?: number|null, distinctItems?: number|null, finished?: number|null, abandoned?: number|null, topItems?: ReadonlyArray<{name: string|null, plays: number|null}>, coverage?: {wholeYear: boolean, firstDayCovered: string|null, lastDayCovered: string, daysCovered: number}}} answer The year, as the server folded it, or the state it is in instead.
+ * @param {{state: string, reason?: string, year?: number, zone?: string, years?: {held: ReadonlyArray<number>, keptFrom: string|null}, anythingRecorded?: boolean, plays?: number|null, watchedMinutes?: number|null, distinctItems?: number|null, finished?: number|null, abandoned?: number|null, topItems?: ReadonlyArray<{name: string|null, plays: number|null}>, coverage?: {wholeYear: boolean, firstDayCovered: string|null, lastDayCovered: string, daysCovered: number}}} answer The year, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function yourYear(answer) {
@@ -71,10 +80,12 @@ export function yourYear(answer) {
 
     const year = yearOf(answer);
     const zone = zoneOf(answer);
+    const years = yearsOf(answer, year);
 
     return (
         '<section class="stats-view stats-view-year">' +
         `<h2 class="stats-view-year-title">${escapeText(`Your ${year}`)}</h2>` +
+        selector(years, year) +
         `<p class="stats-view-year-window">${escapeText(windowCovered(answer, year, zone))}</p>` +
         (answer.anythingRecorded === true
             ? headlines(answer) + topItems(answer)
@@ -127,6 +138,99 @@ function windowCovered(answer, year, zone) {
         `${from} to ${coverage.lastDayCovered} only, which is ${days} days of ${year}, in ` +
         `${zone}. The rest of the year is not in the store any more, so the figures below ` +
         'are over those days and are not scaled up to a year.'
+    );
+}
+
+/**
+ * The years this account has plays in, most recent first, and what the absent
+ * ones mean.
+ *
+ * Only the years handed in are offered. Filling the run from the earliest to the
+ * latest would offer a year the store has nothing of this account in, and a year
+ * offered like that opens empty and reads as a year they watched nothing.
+ *
+ * @param {{held: ReadonlyArray<number>, keptFrom: string|null}} years The years, and the day retention keeps from.
+ * @param {number} open Which year is being shown.
+ * @returns {string} The control.
+ */
+function selector(years, open) {
+    const offered = [...years.held].sort((a, b) => b - a);
+    const gaps = missingYears(offered);
+
+    return (
+        '<nav class="stats-view-year-selector">' +
+        '<ul class="stats-view-year-choices">' +
+        offered
+            .map(
+                (year) =>
+                    `<li><button type="button" class="stats-view-year-choice" data-year="${escapeText(year)}"` +
+                    `${year === open ? ' aria-current="true"' : ''}>${escapeText(year)}</button></li>`,
+            )
+            .join('') +
+        '</ul>' +
+        `<p class="stats-view-year-kept">${escapeText(keptSentence(years.keptFrom))}</p>` +
+        (gaps.length === 0
+            ? ''
+            : `<p class="stats-view-year-gaps">${escapeText(gapSentence(gaps))}</p>`) +
+        '</nav>'
+    );
+}
+
+/**
+ * The years between the first and the last that carry nothing.
+ *
+ * Every one of these is at or after the year retention keeps from, because a
+ * year older than that has no rows left to put it in the list at all. So a gap
+ * found here is a year with nothing recorded rather than a year that was swept,
+ * and the two sentences below can say so without either of them guessing.
+ *
+ * @param {ReadonlyArray<number>} offered The years with plays, most recent first.
+ * @returns {Array<number>} The years in between with none, most recent first.
+ */
+function missingYears(offered) {
+    const gaps = [];
+
+    for (let year = offered[0] - 1; year > offered[offered.length - 1]; year -= 1) {
+        if (!offered.includes(year)) {
+            gaps.push(year);
+        }
+    }
+
+    return gaps;
+}
+
+/**
+ * What the day retention keeps from means for a year that is not offered.
+ *
+ * It never says a swept year held anything. Whether an account watched something
+ * in a year whose rows are gone is not a question anything here can answer, and
+ * a sentence that answered it would be inventing the history it is apologising
+ * for. What it says instead is why no earlier year can be offered.
+ *
+ * @param {string|null} keptFrom The earliest day retention still keeps, or null where nothing is removed by age.
+ * @returns {string} The sentence.
+ */
+function keptSentence(keptFrom) {
+    return keptFrom === null
+        ? 'Nothing here is removed by age, so a year that is not offered is a year with ' +
+              'nothing of yours recorded in it.'
+        : `Plays from before ${keptFrom} are not kept, so no earlier year can be offered ` +
+              'here, whatever was recorded in one.';
+}
+
+/**
+ * What a year inside the offered run that carries nothing means.
+ *
+ * @param {ReadonlyArray<number>} gaps The years with none, most recent first.
+ * @returns {string} The sentence.
+ */
+function gapSentence(gaps) {
+    const listed = [...gaps].reverse().join(', ');
+
+    return (
+        `${listed} ${gaps.length === 1 ? 'is' : 'are'} inside what is kept and ` +
+        `${gaps.length === 1 ? 'has' : 'have'} nothing of yours recorded, so ` +
+        `${gaps.length === 1 ? 'it is' : 'they are'} not offered.`
     );
 }
 
@@ -251,4 +355,59 @@ function zoneOf(answer) {
     }
 
     return zone.trim();
+}
+
+/**
+ * The years the store answered with, or a refusal.
+ *
+ * A wrap-up drawn without them is a page telling somebody this is the only year
+ * of theirs there is, which is a statement about their history made by a page
+ * that was never handed the answer to it.
+ *
+ * The year being shown has to be one of them. An answer where it is not is two
+ * readings that disagree, and drawing it would put a year the store says holds
+ * nothing of this account under a page of that account's figures.
+ *
+ * @param {object} answer The year.
+ * @param {number} open Which year is being shown.
+ * @returns {{held: ReadonlyArray<number>, keptFrom: string|null}} The years.
+ */
+function yearsOf(answer, open) {
+    const years = answer.years;
+
+    if (years === null || typeof years !== 'object') {
+        throw new Error(
+            'This view is not drawn without the years the store holds for this account. A ' +
+                'wrap-up with no way to reach the others tells a reader this is the only year ' +
+                'of theirs there is, which is a claim about their history.',
+        );
+    }
+
+    const held = years.held;
+
+    if (!Array.isArray(held) || held.length === 0 || !held.every(Number.isInteger)) {
+        throw new Error(
+            'The years this account has plays in are read as a list of whole years, and this ' +
+                'answer carries none. A selector that fell back to a run of years would offer ' +
+                'years the store holds nothing of theirs in.',
+        );
+    }
+
+    if (!held.includes(open)) {
+        throw new Error(
+            'The year being drawn is not among the years the store holds for this account, so ' +
+                'the two halves of this answer disagree. Drawing it would head a page of ' +
+                'figures with a year the store says holds nothing of theirs.',
+        );
+    }
+
+    if (years.keptFrom !== null && typeof years.keptFrom !== 'string') {
+        throw new Error(
+            'This view is not drawn without being told the day retention keeps from, or null ' +
+                'where nothing is removed by age. Reading an absent one as null would turn a ' +
+                'fact nobody supplied into an assurance that nothing has been swept.',
+        );
+    }
+
+    return { held, keptFrom: years.keptFrom };
 }
