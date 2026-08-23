@@ -138,6 +138,40 @@ public interface IPlayStore : IDisposable
     IReadOnlyList<PlayRecord> MostRecentPlays(int limit);
 
     /// <summary>
+    /// Reads the plays that started inside a window, oldest first, up to a
+    /// limit.
+    /// </summary>
+    /// <remarks>
+    /// The read every aggregate report is answered from, and the one read here
+    /// that carries both a range and a bound. A report asks a question about a
+    /// period, so answering it by walking the whole file and discarding most of
+    /// it would be a read whose cost grows with how long the server has been
+    /// recording rather than with the period asked about.
+    /// <para>
+    /// The window is half open: a play starting exactly at
+    /// <paramref name="fromUtc"/> is in it and one starting exactly at
+    /// <paramref name="toUtc"/> is not. Two windows laid end to end therefore
+    /// read each play once, which a closed window would not, and a caller asking
+    /// for a calendar month names the first instant of the next one rather than
+    /// a tick before it. Both bounds are refused unless they say they are in
+    /// UTC, for the reason the deletions carry.
+    /// </para>
+    /// <para>
+    /// It returns a list rather than a walk, unlike the reads above it, and the
+    /// bound is what makes that safe: the caller has said how much it will hold
+    /// before the statement runs. An answer that reached the limit is not marked
+    /// as having reached it, which is a gap rather than something decided
+    /// quietly, and issue #56 is where an honest answer to a range too large to
+    /// fold belongs.
+    /// </para>
+    /// </remarks>
+    /// <param name="fromUtc">The first moment in the window, in UTC.</param>
+    /// <param name="toUtc">The first moment after the window, in UTC.</param>
+    /// <param name="limit">How many rows at most. The store never returns more than this.</param>
+    /// <returns>The plays, oldest first, and empty where there are none.</returns>
+    IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit);
+
+    /// <summary>
     /// Walks every row in the store, oldest written first.
     /// </summary>
     /// <remarks>
