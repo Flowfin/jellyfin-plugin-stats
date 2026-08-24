@@ -399,6 +399,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
             DeviceName = "A browser",
             PlayMethodAtStart = PlayMethod.DirectPlay,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

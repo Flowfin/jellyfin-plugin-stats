@@ -246,6 +246,13 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     /// is about is a file that outlived a process. The open row is written
     /// through one store and read back through another opened over the same
     /// folder, which is what a restart is.
+    /// <para>
+    /// One field is not as it stood and the comparison says which. The open row
+    /// said nothing about what closed it, because nothing had; the finished row
+    /// says a restart did. Everything the previous process knew about the play
+    /// is carried across untouched, and what is added is the one thing that
+    /// process could not have known.
+    /// </para>
     /// </remarks>
     [Fact]
     public void APlayLeftRunningByAPreviousProcessIsFinishedAsItStood()
@@ -263,7 +270,8 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
 
         var row = Assert.Single(after.AllPlays());
 
-        Assert.Equal(left.SoFar, row);
+        Assert.Equal(left.SoFar with { ClosedBy = PlayClosedBy.ARestart }, row);
+        Assert.Equal(PlayClosedBy.NotSaid, left.SoFar.ClosedBy);
         Assert.Empty(after.OpenPlays());
     }
 
@@ -563,6 +571,10 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
                 DeviceName = "A browser",
                 PlayMethodAtStart = PlayMethod.DirectPlay,
                 PlayMethodChangedUtc = null,
+
+                // A running row has not been closed, so nothing has ended it
+                // and the row says so. This is what the tracker writes for one.
+                ClosedBy = PlayClosedBy.NotSaid,
                 Transcode = new TranscodeSummary
                 {
                     VideoCodec = null,

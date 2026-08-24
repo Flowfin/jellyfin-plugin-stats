@@ -87,7 +87,16 @@ public sealed class FinishWhatARestartLeftOpen
 
         foreach (var play in left)
         {
-            store.AddAndForgetOpenPlay(play.SoFar, play.PlayKey);
+            // The row is what the previous process last wrote, with one thing
+            // added that it could not have known: that this is what ended it.
+            // The row said nothing about how it was closed while it was open,
+            // and a row finished here that went on saying nothing would be
+            // counted by a report as a play whose route was never recorded,
+            // which is the answer for a row from an older build rather than for
+            // this one. Issue #222.
+            store.AddAndForgetOpenPlay(
+                play.SoFar with { ClosedBy = PlayClosedBy.ARestart },
+                play.PlayKey);
         }
 
         return left.Count;

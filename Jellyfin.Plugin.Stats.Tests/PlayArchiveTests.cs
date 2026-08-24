@@ -339,6 +339,10 @@ public sealed class PlayArchiveTests : IDisposable
         // Nothing was watching for the change when that row was recorded, so
         // empty is the honest answer rather than a moment worked out later.
         Assert.Null(read.PlayMethodChangedUtc);
+
+        // Nor was anything recording which route ended it, and the same answer
+        // holds for the same reason. Issue #222.
+        Assert.Equal(PlayClosedBy.NotSaid, read.ClosedBy);
     }
 
     /// <summary>
@@ -422,7 +426,16 @@ public sealed class PlayArchiveTests : IDisposable
                 "\"SchemaVersion\":3",
                 StringComparison.Ordinal)
             .Replace("\"PlayMethodAtStart\":", "\"PlayMethod\":", StringComparison.Ordinal)
-            .Replace(",\"PlayMethodChangedUtc\":null", string.Empty, StringComparison.Ordinal);
+            .Replace(",\"PlayMethodChangedUtc\":null", string.Empty, StringComparison.Ordinal)
+
+            // A row written under schema three carried no route either. The
+            // column arrived at version six, so a fixture keeping it would be a
+            // line no build ever wrote and the step that fills it in would
+            // never be reached from here. Issue #222.
+            .Replace(
+                ",\"ClosedBy\":" + ((int)PlayClosedBy.AStopEvent).ToString(CultureInfo.InvariantCulture),
+                string.Empty,
+                StringComparison.Ordinal);
     }
 
     private static string Header(int schemaVersion)
@@ -538,6 +551,7 @@ public sealed class PlayArchiveTests : IDisposable
             DeviceName = "A browser",
             PlayMethodAtStart = PlayMethod.Transcode,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

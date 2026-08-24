@@ -310,6 +310,7 @@ public class DimensionBreakdownTests
             DeviceName = deviceName,
             PlayMethodAtStart = method,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

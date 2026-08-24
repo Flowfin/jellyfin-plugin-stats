@@ -281,6 +281,7 @@ public class PlayMethodChangeTests
             DeviceName = "A browser",
             PlayMethodAtStart = StoredPlayMethod.DirectPlay,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

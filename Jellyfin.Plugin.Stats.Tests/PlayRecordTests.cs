@@ -23,6 +23,7 @@ public class PlayRecordTests
         var expected = new[]
         {
             "ClientName",
+            "ClosedBy",
             "DeviceId",
             "DeviceName",
             "EndedUtc",
@@ -102,6 +103,7 @@ public class PlayRecordTests
             DeviceName = "A device",
             PlayMethodAtStart = PlayMethod.DirectPlay,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

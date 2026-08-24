@@ -52,9 +52,10 @@ namespace Jellyfin.Plugin.Stats.Capture;
 /// <para>
 /// Neither route reads a clock. The end of a closed play is the last moment the
 /// server heard from its session, which arrived on an event, and the moment the
-/// bound is measured against arrives as an argument. What a row written this way
-/// does not yet say is which of the two routes closed it, and that column is
-/// issue #222 rather than something omitted here.
+/// bound is measured against arrives as an argument. A row written this way says
+/// which route closed it, and the three routes here are three of the four
+/// <see cref="PlayClosedBy"/> holds; the fourth is written by whatever finishes
+/// a play a previous process left running.
 /// </para>
 /// </remarks>
 public sealed class PlayTracker : IPlaybackEventSink
@@ -187,7 +188,7 @@ public sealed class PlayTracker : IPlaybackEventSink
 
             _open.Remove(key);
             play.Observe(args);
-            row = play.Finish(args.PlayedToCompletion);
+            row = play.Finish(args.PlayedToCompletion, PlayClosedBy.AStopEvent);
         }
 
         // The key travels with the row, so the finished row arriving and the
@@ -221,7 +222,9 @@ public sealed class PlayTracker : IPlaybackEventSink
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        Close(play => string.Equals(play.SessionId, args.SessionInfo.Id, StringComparison.Ordinal));
+        Close(
+            play => string.Equals(play.SessionId, args.SessionInfo.Id, StringComparison.Ordinal),
+            PlayClosedBy.TheSessionEnding);
     }
 
     /// <summary>
@@ -258,7 +261,7 @@ public sealed class PlayTracker : IPlaybackEventSink
 
         var quietBefore = now.UtcDateTime - bound;
 
-        return Close(play => play.LastHeardFromUtc <= quietBefore);
+        return Close(play => play.LastHeardFromUtc <= quietBefore, PlayClosedBy.GoingQuiet);
     }
 
     /// <summary>
@@ -277,8 +280,9 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </para>
     /// </remarks>
     /// <param name="wanted">Which open plays to close.</param>
+    /// <param name="closedBy">What is closing them, recorded on every row this produces.</param>
     /// <returns>How many were closed.</returns>
-    private int Close(Func<TrackedPlay, bool> wanted)
+    private int Close(Func<TrackedPlay, bool> wanted, PlayClosedBy closedBy)
     {
         List<KeyValuePair<string, PlayRecord>> closed;
 
@@ -298,7 +302,7 @@ public sealed class PlayTracker : IPlaybackEventSink
             {
                 var play = _open[key];
                 _open.Remove(key);
-                closed.Add(new KeyValuePair<string, PlayRecord>(key, play.Finish(reachedTheEnd: false)));
+                closed.Add(new KeyValuePair<string, PlayRecord>(key, play.Finish(reachedTheEnd: false, closedBy)));
             }
         }
 
@@ -357,7 +361,7 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// <param name="play">The play so far.</param>
     /// <returns>The open row.</returns>
     private static OpenPlay SoFar(string key, TrackedPlay play)
-        => new() { PlayKey = key, SoFar = play.Finish(reachedTheEnd: false) };
+        => new() { PlayKey = key, SoFar = play.Finish(reachedTheEnd: false, PlayClosedBy.NotSaid) };
 
     /// <summary>
     /// One play that has started and not yet stopped.
@@ -450,8 +454,9 @@ public sealed class PlayTracker : IPlaybackEventSink
         /// Closes the play and produces its row.
         /// </summary>
         /// <param name="reachedTheEnd">Whether the server said the item was played to completion.</param>
+        /// <param name="closedBy">Which route is closing the play, or <see cref="PlayClosedBy.NotSaid"/> where none is: the running row this also produces is a snapshot rather than an ending.</param>
         /// <returns>The row.</returns>
-        public PlayRecord Finish(bool reachedTheEnd)
+        public PlayRecord Finish(bool reachedTheEnd, PlayClosedBy closedBy)
         {
             return new PlayRecord
             {
@@ -479,7 +484,8 @@ public sealed class PlayTracker : IPlaybackEventSink
                 DeviceName = _deviceName,
                 PlayMethodAtStart = _playMethodAtStart,
                 PlayMethodChangedUtc = _playMethodChangedUtc,
-                Transcode = _transcode.Finish()
+                Transcode = _transcode.Finish(),
+                ClosedBy = closedBy
             };
         }
 

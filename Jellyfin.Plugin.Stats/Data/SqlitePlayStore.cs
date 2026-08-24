@@ -41,13 +41,13 @@ public sealed class SqlitePlayStore : IPlayStore
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
               ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
               TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-              TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+              TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           ) VALUES (
               $schemaVersion, $userId, $itemId, $itemType, $parentId, $itemName, $itemRuntimeTicks,
               $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, $reachedTheEnd,
               $clientName, $deviceId, $deviceName, $playMethodAtStart, $playMethodChangedUtcTicks,
               $transcodeVideoCodec, $transcodeAudioCodec, $transcodeVideoWasDirect, $transcodeAudioWasDirect,
-              $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
+              $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons, $closedBy
           )";
 
     // The open table's write. INSERT OR REPLACE rather than an upsert clause
@@ -65,14 +65,14 @@ public sealed class SqlitePlayStore : IPlayStore
               StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
               ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
               TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-              TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+              TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           ) VALUES (
               $playKey,
               $schemaVersion, $userId, $itemId, $itemType, $parentId, $itemName, $itemRuntimeTicks,
               $startedUtcTicks, $endedUtcTicks, $watchedDurationTicks, $reachedTheEnd,
               $clientName, $deviceId, $deviceName, $playMethodAtStart, $playMethodChangedUtcTicks,
               $transcodeVideoCodec, $transcodeAudioCodec, $transcodeVideoWasDirect, $transcodeAudioWasDirect,
-              $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons
+              $transcodePeakBitrate, $transcodeTypicalBitrate, $transcodeHardwareAcceleration, $transcodeReasons, $closedBy
           )";
 
     // The key is read last so the ordinals in front of it are the finished
@@ -83,7 +83,7 @@ public sealed class SqlitePlayStore : IPlayStore
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons,
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy,
                  PlayKey
           FROM open_plays
           ORDER BY PlayKey";
@@ -115,7 +115,7 @@ public sealed class SqlitePlayStore : IPlayStore
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           FROM plays
           ORDER BY StartedUtcTicks DESC, Id DESC
           LIMIT $limit";
@@ -137,7 +137,7 @@ public sealed class SqlitePlayStore : IPlayStore
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           FROM plays
           WHERE StartedUtcTicks >= $from AND StartedUtcTicks < $to
           ORDER BY StartedUtcTicks, Id
@@ -158,7 +158,7 @@ public sealed class SqlitePlayStore : IPlayStore
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           FROM plays
           ORDER BY Id";
 
@@ -168,7 +168,7 @@ public sealed class SqlitePlayStore : IPlayStore
                  StartedUtcTicks, EndedUtcTicks, WatchedDurationTicks, ReachedTheEnd,
                  ClientName, DeviceId, DeviceName, PlayMethodAtStart, PlayMethodChangedUtcTicks,
                  TranscodeVideoCodec, TranscodeAudioCodec, TranscodeVideoWasDirect, TranscodeAudioWasDirect,
-                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons
+                 TranscodePeakBitrate, TranscodeTypicalBitrate, TranscodeHardwareAcceleration, TranscodeReasons, ClosedBy
           FROM plays
           WHERE UserId = $userId
           ORDER BY Id";
@@ -466,7 +466,7 @@ public sealed class SqlitePlayStore : IPlayStore
             yield return new OpenPlay
             {
                 SoFar = ReadPlay(reader),
-                PlayKey = reader.GetString(24)
+                PlayKey = reader.GetString(25)
             };
         }
     }
@@ -869,6 +869,7 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$transcodeTypicalBitrate", Number(play.Transcode.TypicalBitrate));
         command.Parameters.AddWithValue("$transcodeHardwareAcceleration", Text(play.Transcode.HardwareAcceleration));
         command.Parameters.AddWithValue("$transcodeReasons", JoinReasons(play.Transcode.Reasons));
+        command.Parameters.AddWithValue("$closedBy", (int)play.ClosedBy);
     }
 
     /// <summary>
@@ -907,7 +908,14 @@ public sealed class SqlitePlayStore : IPlayStore
                 TypicalBitrate = IntOrNull(reader, 21),
                 HardwareAcceleration = TextOrNull(reader, 22),
                 Reasons = Reasons(reader.GetString(23))
-            }
+            },
+
+            // Null and the not-said value are one answer here, and they arrive
+            // from two different places. A row written before the column
+            // existed is null; a row written since carries a number, and zero
+            // is the number for a route nothing recorded. Reading them as the
+            // same thing is what issue #222's second condition asks for.
+            ClosedBy = reader.IsDBNull(24) ? PlayClosedBy.NotSaid : (PlayClosedBy)reader.GetInt32(24)
         };
     }
 

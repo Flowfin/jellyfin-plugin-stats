@@ -219,6 +219,7 @@ public sealed class StoreFromALaterBuildTests : IDisposable
             DeviceName = "A browser",
             PlayMethodAtStart = PlayMethod.Transcode,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

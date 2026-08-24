@@ -363,6 +363,7 @@ public class DailyUsageTests
             DeviceName = "A browser",
             PlayMethodAtStart = method,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = "h264",

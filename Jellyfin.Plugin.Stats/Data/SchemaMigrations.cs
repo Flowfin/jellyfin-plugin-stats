@@ -123,6 +123,27 @@ public static class SchemaMigrations
     private const string RecordWhenARunningPlaysMethodChanged =
         "ALTER TABLE open_plays ADD COLUMN PlayMethodChangedUtcTicks INTEGER NULL";
 
+    // What issue #222 asks for, on both tables. A play the server sent a stop
+    // for and a play something gave up waiting for were the same row, so a
+    // report could say how many plays it had read and not how many of them
+    // ended cleanly.
+    //
+    // Null on every row that is already there, and null reads back as the row
+    // not saying rather than as a clean ending. That is the honest answer:
+    // nothing was recording a route when those rows were written, and a column
+    // defaulted to the clean value would turn a gap in the record into a claim
+    // about what happened.
+    //
+    // The open table gets it as well, because one function reads a row out of
+    // either table and a column on one of them is a column on both. A running
+    // play has not been closed, so what it carries there is the not-said value
+    // until it is.
+    private const string RecordWhatClosedAPlay =
+        "ALTER TABLE plays ADD COLUMN ClosedBy INTEGER NULL";
+
+    private const string RecordWhatWillCloseARunningPlay =
+        "ALTER TABLE open_plays ADD COLUMN ClosedBy INTEGER NULL";
+
     // What one account has said about being named in the views this plugin
     // draws. One row per account and the account is the key, because the
     // question has one answer at a time and what a reader asks is what that
@@ -182,6 +203,15 @@ public static class SchemaMigrations
     /// table reads nothing and moves nothing, so a store from any earlier build
     /// arrives with every row it had.
     /// </para>
+    /// <para>
+    /// The sixth records which route ended a play, on both tables. It is an
+    /// addition and not a rebuild, so no row is read, written or discarded, and
+    /// every row already on the file is null there, which reads back as the row
+    /// not saying. That is issue #222's second condition and it is what the
+    /// column being nullable buys: a default of the clean value would have
+    /// turned every row a previous build wrote into a claim that the server sent
+    /// a stop for it.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
     [
@@ -221,6 +251,15 @@ public static class SchemaMigrations
         {
             Version = 5,
             Statements = [CreateTheConsentsTable]
+        },
+        new SchemaMigration
+        {
+            Version = 6,
+            Statements =
+            [
+                RecordWhatClosedAPlay,
+                RecordWhatWillCloseARunningPlay
+            ]
         }
     ];
 

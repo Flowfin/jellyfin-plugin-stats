@@ -53,6 +53,7 @@ These are the columns of `plays`, which is the table every report is built on.
 | `TranscodeTypicalBitrate`       | The bitrate the play spent most of its samples at, in bits per second, and empty where none was reported.  |
 | `TranscodeHardwareAcceleration` | The hardware acceleration the server reported, and empty where it reported none.                           |
 | `TranscodeReasons`              | Every transcode reason observed over the play, without repeats, as the server reported them at the time.   |
+| `ClosedBy`                      | Which route ended the play: a stop from the server, the session ending, the session going quiet, or a later start-up finishing what was left running. Empty where the row does not say, which is every row written before this column existed. |
 
 ## One row per play that is still running
 
@@ -67,6 +68,7 @@ play has not answered them yet.
 | `EndedUtcTicks` | The last moment the server heard from the session, which moves forward as the play runs. It is not a claim that the play ended. |
 | `ReachedTheEnd` | Always false here. Nothing has said the item was played through, and the server only says so on the stop.                 |
 | `PlayMethodChangedUtcTicks` | The same field as above, filled in as soon as the server reports a different method rather than only at the stop.        |
+| `ClosedBy`      | Always the not-said value here. The play has not been closed, so no route has ended it, and the value it will carry is decided when one does. |
 
 Every other column means what it means in the table above. A row here is not a
 play that happened: it is what the server had said about a play up to the last
@@ -76,8 +78,13 @@ A row is left behind here when the server stops while something is playing. It
 holds the same account and the same item name a finished row does, so every
 removal this plugin has reaches it: deleting a user, the sweep for accounts the
 server no longer has, a person deleting their own history, and the retention
-window all take the running rows along with the finished ones. Nothing yet
-turns a leftover row into a finished play, which is issue #221.
+window all take the running rows along with the finished ones.
+
+A leftover row does become a finished play. The next start-up finishes every row
+this table still holds, before anything subscribes to the server's events, and
+the finished row records that a restart is what ended it. The row is what the
+previous process last wrote, so its end is the last moment that server heard from
+the session and nothing after that moment is invented.
 
 ### Two fields about two moments
 
@@ -97,6 +104,25 @@ server never reported another method, and the start value then describes the
 whole play. It records the first such moment rather than the last, because what
 a reader needs is whether the start value still described the play and from when
 it did not.
+
+### What ended the play, and why a report says so
+
+`ClosedBy` is the other field a figure cannot be read without. Only one of its
+routes is the server saying the play is over. On the other three nothing said
+so: the session ended, or it went quiet for longer than the plugin waits, or the
+server stopped and a later start-up finished what was left running.
+
+The difference is in the numbers rather than in the wording. A play the server
+sent a stop for has a watched duration that is what was watched. On the other
+three it is what had been watched by the last moment the server heard from the
+session, which is a floor and not a total. So a report that adds watched time
+over a range says how many of the plays it read ended cleanly beside it, and a
+reader can tell how much of the figure is a floor.
+
+Empty means the row does not say. That is every row written before this column
+existed, and it is counted on its own rather than as either kind, because
+counting an absence as a clean ending would claim something the row does not
+say. That figure falls as those rows age out of the retention window.
 
 A sample the server gave no delivery method for leaves it empty, the same way a
 sample it gave no transcoding state for leaves the summary alone: the server

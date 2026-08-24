@@ -214,6 +214,28 @@ public static class PlayArchive
             written[nameof(PlayRecord.PlayMethodChangedUtc)] = null;
         }
 
+        if (version < 6)
+        {
+            // Issue #222 added which route ended the play. A row written before
+            // it does not say, and that is the value rather than a guess: the
+            // route was not recorded when the row was written, so nothing about
+            // this row can tell a clean ending from one something gave up
+            // waiting for.
+            //
+            // IT FILLS AN ABSENCE AND NEVER OVERWRITES AN ANSWER, which the
+            // step above does not do and is a defect of its own rather than a
+            // style this one is copying. A row the capture writes today says it
+            // is at version one, because the number it stamps is the one the row
+            // shape was decided at rather than the store's, so a row carrying a
+            // real answer arrives here reading as older than the column it
+            // carries. Under a bare assignment that answer would be replaced by
+            // this one on the way in. Issue #222 carries the reading.
+            if (!written.ContainsKey(nameof(PlayRecord.ClosedBy)))
+            {
+                written[nameof(PlayRecord.ClosedBy)] = (int)PlayClosedBy.NotSaid;
+            }
+        }
+
         return written;
     }
 
