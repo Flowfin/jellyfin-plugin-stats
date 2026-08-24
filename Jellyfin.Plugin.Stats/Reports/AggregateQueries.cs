@@ -52,6 +52,17 @@ namespace Jellyfin.Plugin.Stats.Reports;
 /// what the file holds now rather than from what it held when the process
 /// started.
 /// </para>
+/// <para>
+/// WHAT A RANGE TOO LARGE TO ANSWER GETS IS A REFUSAL AND NEVER A SHORT ANSWER.
+/// Two caps sit in front of every shape, both of them the plugin's and neither
+/// of them the caller's: the length of the range, refused by
+/// <see cref="QueryWindow"/> before a row is read, and the number of plays the
+/// range holds, refused by <see cref="TooManyPlaysToAnswerException"/> once the
+/// read shows there are more than the bound allows. A shape that folded what
+/// fitted would hand back a report that is wrong by whatever it did not read,
+/// with nothing on it saying so, and every reader downstream would take it for
+/// a complete one. Issue #56.
+/// </para>
 /// </remarks>
 public sealed class AggregateQueries
 {
@@ -93,6 +104,7 @@ public sealed class AggregateQueries
     /// <param name="window">The range and the bound.</param>
     /// <returns>The totals, which name nobody.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public ServerTotals Total(QueryWindow window)
     {
         var plays = Read(window);
@@ -127,6 +139,7 @@ public sealed class AggregateQueries
     /// <param name="zone">The zone the days are read in.</param>
     /// <returns>The rows, the figures they add up to, and the zone.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public DailyUsage Series(QueryWindow window, TimeZoneInfo zone)
         => DailyUsage.Over(Read(window), zone);
 
@@ -143,6 +156,7 @@ public sealed class AggregateQueries
     /// <param name="zone">The zone the hours are read in.</param>
     /// <returns>Every hour of the week, and the zone they were read in.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public HourAndWeekdayGrid Distribution(QueryWindow window, TimeZoneInfo zone)
         => HourAndWeekdayGrid.Over(Read(window), zone, window.FromUtc, window.ToUtc);
 
@@ -173,6 +187,7 @@ public sealed class AggregateQueries
     /// <param name="dimension">What to group by, from a closed set the user is not in.</param>
     /// <returns>The rows and what they add up to, or null where the breakdown is withheld.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public DimensionBreakdown? Breakdown(QueryWindow window, PlayDimension dimension)
     {
         var plays = Read(window);
@@ -210,6 +225,7 @@ public sealed class AggregateQueries
     /// <param name="window">The range and the bound.</param>
     /// <returns>The reasons, how many plays were folded, and how many of them recorded one.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public TranscodeReasonBreakdown ReasonBreakdown(QueryWindow window)
         => TranscodeReasonBreakdown.Over(Read(window));
 
@@ -233,6 +249,7 @@ public sealed class AggregateQueries
     /// <param name="howMany">How many rows at most.</param>
     /// <returns>The rows, longest watched first, and empty where the range holds no plays.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public IReadOnlyList<TitleRow> Top(QueryWindow window, int howMany)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(howMany);
@@ -339,16 +356,34 @@ public sealed class AggregateQueries
     /// range reach the file once rather than once per shape. A failure to open
     /// arrives as the type the endpoints translate into an outage, which is what
     /// keeps a broken file from reaching a caller as an empty report.
+    /// <para>
+    /// IT ASKS FOR ONE ROW MORE THAN IT WILL USE, AND THAT ROW IS THE WHOLE
+    /// POINT. A read stopping exactly at the bound comes back with a full
+    /// answer whether the range held exactly that many plays or ten times as
+    /// many, and those two are a complete report and a wrong one. The extra row
+    /// is what tells them apart, so the second is refused here instead of being
+    /// folded and handed on. That is issue #56's first condition, and the price
+    /// is one row fetched and discarded on a range that sits exactly on the
+    /// bound.
+    /// </para>
     /// </remarks>
     /// <param name="window">The range and the bound.</param>
     /// <returns>The plays, oldest first.</returns>
+    /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     private IReadOnlyList<PlayRecord> Read(QueryWindow window)
     {
         ArgumentNullException.ThrowIfNull(window);
 
-        return ReadFromTheStore.Answering(
+        var plays = ReadFromTheStore.Answering(
             _openStore,
-            store => store.PlaysBetween(window.FromUtc, window.ToUtc, window.MostPlays));
+            store => store.PlaysBetween(window.FromUtc, window.ToUtc, window.MostPlays + 1));
+
+        if (plays.Count > window.MostPlays)
+        {
+            throw new TooManyPlaysToAnswerException(window.MostPlays);
+        }
+
+        return plays;
     }
 
     /// <summary>
