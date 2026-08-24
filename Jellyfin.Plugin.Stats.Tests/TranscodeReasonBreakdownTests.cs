@@ -248,6 +248,7 @@ public class TranscodeReasonBreakdownTests
         DeviceName = "A browser",
         PlayMethodAtStart = reasons.Length == 0 ? PlayMethod.DirectPlay : PlayMethod.Transcode,
         PlayMethodChangedUtc = null,
+        ClosedBy = PlayClosedBy.AStopEvent,
         Transcode = new TranscodeSummary
         {
             VideoCodec = "h264",

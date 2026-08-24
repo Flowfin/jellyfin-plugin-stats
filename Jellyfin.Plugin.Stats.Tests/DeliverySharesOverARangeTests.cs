@@ -240,6 +240,7 @@ public sealed class DeliverySharesOverARangeTests : IDisposable
             DeviceName = "A browser",
             PlayMethodAtStart = method,
             PlayMethodChangedUtc = null,
+            ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,

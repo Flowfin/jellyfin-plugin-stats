@@ -142,4 +142,22 @@ public sealed record PlayRecord
     /// Gets what the transcoding state of the session came to over the play.
     /// </summary>
     public required TranscodeSummary Transcode { get; init; }
+
+    /// <summary>
+    /// Gets which route ended the play.
+    /// </summary>
+    /// <remarks>
+    /// A play the server sent a stop for and a play something gave up waiting
+    /// for were the same row until this, so a report could say how much it had
+    /// read and not how much of it ended cleanly. The difference matters to
+    /// whoever reads the figures: a row closed on silence has an end that is the
+    /// last moment the server heard from the session, and the watching between
+    /// that moment and whenever the person actually stopped is not in it.
+    /// <para>
+    /// <see cref="PlayClosedBy.NotSaid"/> where nothing recorded a route, which
+    /// is every row written before this column existed and every row in the
+    /// table of plays that are still running. Issue #222.
+    /// </para>
+    /// </remarks>
+    public required PlayClosedBy ClosedBy { get; init; }
 }

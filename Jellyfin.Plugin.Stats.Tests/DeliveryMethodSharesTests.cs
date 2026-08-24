@@ -186,6 +186,7 @@ public class DeliveryMethodSharesTests
         DeviceName = "A browser",
         PlayMethodAtStart = method,
         PlayMethodChangedUtc = null,
+        ClosedBy = PlayClosedBy.AStopEvent,
         Transcode = new TranscodeSummary
         {
             VideoCodec = "h264",

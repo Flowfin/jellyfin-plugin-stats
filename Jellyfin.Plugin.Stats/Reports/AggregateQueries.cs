@@ -115,7 +115,11 @@ public sealed class AggregateQueries
             watched += play.WatchedDuration;
         }
 
-        return new ServerTotals(plays.Count, watched, DeliveryMethodShares.Over(plays));
+        return new ServerTotals(
+            plays.Count,
+            watched,
+            DeliveryMethodShares.Over(plays),
+            HowPlaysEnded.Over(plays));
     }
 
     /// <summary>
