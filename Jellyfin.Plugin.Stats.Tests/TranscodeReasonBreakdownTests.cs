@@ -1,7 +1,9 @@
 // What a reason row counts, and the one thing it must never be read as.
 //
 // A reason row is a count of plays that recorded that reason, and the time
-// those plays were watched for. It is not a share of anything, because one play
+// those plays were watched for, and the rows are ordered by the second of the
+// two. Beside them is what the server re-encoded with, which is a partition and
+// is a separate list for exactly that reason. It is not a share of anything, because one play
 // carries several reasons and the rows therefore add up to more than the plays
 // and the minutes they came from. The failure these
 // are written against is the opposite of the one the delivery figures guard:
@@ -80,6 +82,16 @@ public class TranscodeReasonBreakdownTests
             Assert.Equal(
                 TimeSpan.FromTicks(plays.Sum(play => play.WatchedDuration.Ticks)).TotalMinutes,
                 breakdown.WatchedMinutes);
+
+            // The acceleration rows are a partition and the reason rows are
+            // not, which is the property that separates the two lists. A fold
+            // that put a play under two accelerations, or dropped one, breaks
+            // this and leaves the reason rows untouched.
+            Assert.Equal((long)length, breakdown.Acceleration.Sum(row => row.Plays));
+            Assert.Equal(
+                breakdown.WatchedMinutes,
+                breakdown.Acceleration.Sum(row => row.WatchedMinutes),
+                8);
             Assert.Equal(
                 TimeSpan.FromTicks(plays
                     .Where(play => play.Transcode.Reasons.Count > 0)
@@ -113,11 +125,13 @@ public class TranscodeReasonBreakdownTests
                 var later = breakdown.Reasons[i];
 
                 Assert.True(
-                    earlier.Plays > later.Plays
-                    || (earlier.Plays == later.Plays
-                        && string.CompareOrdinal(earlier.Reason, later.Reason) < 0),
-                    "Rows are ordered by plays and then by the server's own name, and "
-                    + earlier.Reason + " came before " + later.Reason + ".");
+                    earlier.WatchedMinutes > later.WatchedMinutes
+                    || (earlier.WatchedMinutes == later.WatchedMinutes
+                        && (earlier.Plays > later.Plays
+                            || (earlier.Plays == later.Plays
+                                && string.CompareOrdinal(earlier.Reason, later.Reason) < 0))),
+                    "Rows are ordered by watched time, then by plays, then by the server's own "
+                    + "name, and " + earlier.Reason + " came before " + later.Reason + ".");
             }
         }
     }
@@ -225,8 +239,9 @@ public class TranscodeReasonBreakdownTests
     /// The same plays in a different order are the same answer. A query returns
     /// rows in whatever order its plan produced, and a breakdown whose order
     /// followed that would draw a chart whose bars move when an index changes.
-    /// The two reasons here are tied on two plays each, so the tie is settled
-    /// by the server's own name rather than by which arrived first.
+    /// Every play here is the same length, so watched time and plays rank the
+    /// rows the same way and the two reasons level on both are settled by the
+    /// server's own name rather than by which arrived first.
     /// </summary>
     [Fact]
     public void TheOrderDoesNotFollowTheOrderThePlaysArrivedIn()
@@ -250,6 +265,86 @@ public class TranscodeReasonBreakdownTests
         Assert.Equal(
             new long[] { 3, 2, 1 },
             forwards.Reasons.Select(row => row.Plays));
+    }
+
+    /// <summary>
+    /// The order is the watched time and not the play count, which is issue
+    /// #60's description. Four hundred one-minute plays under one reason and
+    /// four two-hour plays under another: the count says the first is a hundred
+    /// times the problem, the watched time says the second is the larger one,
+    /// and only the second is a server spending its evening re-encoding. Both
+    /// counts are still carried, because the two readings disagree and that is
+    /// the part worth seeing.
+    /// </summary>
+    [Fact]
+    public void ARareReasonThatCostHoursOutranksACommonOneThatCostMinutes()
+    {
+        var plays = new List<PlayRecord>();
+        for (var i = 0; i < 400; i++)
+        {
+            plays.Add(APlayWatchedFor(TimeSpan.FromMinutes(1), "ContainerNotSupported"));
+        }
+
+        for (var i = 0; i < 4; i++)
+        {
+            plays.Add(APlayWatchedFor(TimeSpan.FromHours(2), "VideoCodecNotSupported"));
+        }
+
+        var breakdown = TranscodeReasonBreakdown.Over(plays);
+
+        Assert.Equal(
+            new[] { "VideoCodecNotSupported", "ContainerNotSupported" },
+            breakdown.Reasons.Select(row => row.Reason));
+        Assert.Equal(new long[] { 4, 400 }, breakdown.Reasons.Select(row => row.Plays));
+        Assert.Equal(new double[] { 480, 400 }, breakdown.Reasons.Select(row => row.WatchedMinutes));
+    }
+
+    /// <summary>
+    /// What the server re-encoded with, as a partition of the plays folded. The
+    /// second half of issue #60's description asks for it beside the reasons,
+    /// and it is a separate list because a play carries one acceleration and
+    /// every reason the server gave, so one of the two lists adds up to the
+    /// plays and the other does not.
+    /// </summary>
+    [Fact]
+    public void TheAccelerationRowsAddUpToThePlaysAndTheReasonRowsDoNot()
+    {
+        var breakdown = TranscodeReasonBreakdown.Over(new[]
+        {
+            APlayAcceleratedBy("qsv", TimeSpan.FromMinutes(60), "ContainerNotSupported", "VideoCodecNotSupported"),
+            APlayAcceleratedBy("qsv", TimeSpan.FromMinutes(30), "ContainerNotSupported"),
+            APlayAcceleratedBy("vaapi", TimeSpan.FromMinutes(20), "ContainerNotSupported")
+        });
+
+        Assert.Equal(
+            new[] { "qsv", "vaapi" },
+            breakdown.Acceleration.Select(row => row.Type));
+        Assert.Equal(new long[] { 2, 1 }, breakdown.Acceleration.Select(row => row.Plays));
+        Assert.Equal(new double[] { 90, 20 }, breakdown.Acceleration.Select(row => row.WatchedMinutes));
+
+        Assert.Equal(3, breakdown.Acceleration.Sum(row => row.Plays));
+        Assert.Equal(110, breakdown.Acceleration.Sum(row => row.WatchedMinutes));
+        Assert.Equal(4, breakdown.Reasons.Sum(row => row.Plays));
+    }
+
+    /// <summary>
+    /// A play the server reported no acceleration for is a row of its own and
+    /// it is last. Naming that group software would be a claim the row cannot
+    /// carry: this fold reads the summary rather than the delivery method, so a
+    /// play that was passed through untouched and a play re-encoded on the
+    /// processor arrive here as the same absence, which is issue #158.
+    /// </summary>
+    [Fact]
+    public void ThePlaysWithNoReportedAccelerationAreTheirOwnRowAndComeLast()
+    {
+        var breakdown = TranscodeReasonBreakdown.Over(new[]
+        {
+            APlayAcceleratedBy(null, TimeSpan.FromHours(9), "ContainerNotSupported"),
+            APlayAcceleratedBy("qsv", TimeSpan.FromMinutes(1), "ContainerNotSupported")
+        });
+
+        Assert.Equal(new[] { "qsv", null }, breakdown.Acceleration.Select(row => row.Type));
+        Assert.Equal(2, breakdown.Acceleration.Sum(row => row.Plays));
     }
 
     /// <summary>
@@ -309,6 +404,7 @@ public class TranscodeReasonBreakdownTests
         var breakdown = TranscodeReasonBreakdown.Over(Array.Empty<PlayRecord>());
 
         Assert.Empty(breakdown.Reasons);
+        Assert.Empty(breakdown.Acceleration);
         Assert.Equal(0, breakdown.Plays);
         Assert.Equal(0, breakdown.PlaysWithAtLeastOneReason);
         Assert.Equal(0, breakdown.WatchedMinutes);
@@ -324,7 +420,13 @@ public class TranscodeReasonBreakdownTests
     private static PlayRecord APlayReporting(params string[] reasons)
         => APlayWatchedFor(TimeSpan.FromMinutes(38), reasons);
 
-    private static PlayRecord APlayWatchedFor(TimeSpan watched, params string[] reasons) => new()
+    private static PlayRecord APlayWatchedFor(TimeSpan watched, params string[] reasons)
+        => APlayAcceleratedBy(null, watched, reasons);
+
+    private static PlayRecord APlayAcceleratedBy(
+        string? acceleration,
+        TimeSpan watched,
+        params string[] reasons) => new()
     {
         SchemaVersion = 1,
         UserId = Guid.Parse("6f9619ff-8b86-d011-b42d-00c04fc964ff"),
@@ -351,7 +453,7 @@ public class TranscodeReasonBreakdownTests
             AudioWasDirect = reasons.Length == 0,
             PeakBitrate = null,
             TypicalBitrate = null,
-            HardwareAcceleration = null,
+            HardwareAcceleration = acceleration,
             Reasons = reasons
         }
     };

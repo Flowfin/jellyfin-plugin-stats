@@ -17,6 +17,11 @@
  * #242: the time under a reason is the whole of every play carrying it, so the
  * column totals more than the range holds and the page says so.
  *
+ * The description's two remaining halves are here too: the bars are the watched
+ * time the fold ordered the rows by, and what the server re-encoded with is
+ * listed under them rather than drawn as a second set of bars, because that one
+ * is a partition and the reasons are not.
+ *
  * The third, that the view names no user, is asserted the way the client and
  * device view asserts its own: a row is handed fields the view has no business
  * with and the markup is checked for them. The fold's row type has nowhere to
@@ -70,10 +75,70 @@ test('a reason is drawn under the name the server gave it, unchanged', () => {
     /* The names are not tidied anywhere in this plugin, and the page is the last
      * place they could be. An administrator meets these words in the server's
      * own log, and a prettier spelling here is one they cannot look up. */
-    const drawn = whyTheServerTranscodes(ready([row('VideoCodecNotSupported', 4)]));
+    const drawn = whyTheServerTranscodes(ready([row('VideoCodecNotSupported', 4, 75)]));
 
-    assert.match(drawn, /<title>VideoCodecNotSupported: 4<\/title>/);
+    assert.match(drawn, /<title>VideoCodecNotSupported: 75<\/title>/);
     assert.match(drawn, />VideoCodecNotSupported<\/text>/);
+});
+
+test('the bar is the watched time and the play count is beside it', () => {
+    /* Issue #60 asks for the rows ordered by watched time. A row ordered by one
+     * figure and drawn at the length of another is a picture that contradicts
+     * its own order, so the bar is that same figure; the count is still there,
+     * because the two readings disagree and that is the part worth seeing. */
+    const drawn = whyTheServerTranscodes(
+        ready([row('ContainerNotSupported', 400, 400), row('VideoCodecNotSupported', 4, 480)]),
+    );
+
+    assert.match(drawn, /<title>ContainerNotSupported: 400<\/title>/);
+    assert.match(drawn, /<title>VideoCodecNotSupported: 480<\/title>/);
+    assert.match(drawn, /400 plays\. 400 minutes watched/);
+    assert.match(drawn, /4 plays\. 480 minutes watched/);
+});
+
+test('a row with no watched time is drawn as an absent bar and never as nought', () => {
+    /* The drawing module tells an absent reading from a nought one, and a bar of
+     * nought under a reason the answer carried no time for is the reading this
+     * view has no right to make. Issue #64. */
+    const drawn = whyTheServerTranscodes(ready([{ reason: 'ContainerNotSupported', plays: 3 }]));
+
+    assert.doesNotMatch(drawn, /<title>ContainerNotSupported: 0<\/title>/);
+});
+
+test('what the server re-encoded with is listed under the bars, and says it adds up', () => {
+    /* The second half of issue #60's description. It is a list and not a second
+     * set of bars because it is a partition and the reasons are not, and two
+     * pictures of one range invite the addition the caption refuses. */
+    const drawn = whyTheServerTranscodes({
+        ...ready([row('ContainerNotSupported', 3, 110)]),
+        acceleration: [
+            { type: 'qsv', plays: 2, watchedMinutes: 90 },
+            { type: null, plays: 1, watchedMinutes: 20 },
+        ],
+    });
+
+    assert.match(drawn, /<dt class="stats-view-acceleration-name">qsv<\/dt>/);
+    assert.match(drawn, /2 plays, 90 minutes watched\./);
+    assert.match(drawn, /<dt class="stats-view-acceleration-name">No acceleration reported<\/dt>/);
+    assert.match(drawn, /cannot tell the two apart/);
+    assert.match(drawn, /unlike the bars above these rows do add up to the plays in this range/);
+});
+
+test('an answer carrying no acceleration list draws none rather than an empty one', () => {
+    const drawn = whyTheServerTranscodes(ready([row('ContainerNotSupported', 3, 110)]));
+
+    assert.doesNotMatch(drawn, /stats-view-accelerations-list/);
+    assert.doesNotMatch(drawn, /No acceleration reported/);
+});
+
+test('an acceleration name carrying markup is drawn as text', () => {
+    const drawn = whyTheServerTranscodes({
+        ...ready([row('ContainerNotSupported', 1, 10)]),
+        acceleration: [{ type: '<script>alert(1)</script>', plays: 1, watchedMinutes: 10 }],
+    });
+
+    assert.doesNotMatch(drawn, /<script>/);
+    assert.match(drawn, /&lt;script&gt;/);
 });
 
 test('each drawn reason carries its sentence beside it', () => {
@@ -92,9 +157,9 @@ test('a reason this build has no sentence for is counted and said to be unexplai
      * reports names this build never saw. Dropping the row would take plays out
      * of the picture the whole view is about, and writing a sentence for it
      * would put a guess in the column an administrator acts on. */
-    const drawn = whyTheServerTranscodes(ready([row('SomethingALaterServerReports', 5)]));
+    const drawn = whyTheServerTranscodes(ready([row('SomethingALaterServerReports', 5, 55)]));
 
-    assert.match(drawn, /<title>SomethingALaterServerReports: 5<\/title>/);
+    assert.match(drawn, /<title>SomethingALaterServerReports: 55<\/title>/);
     assert.match(drawn, /<dt class="stats-view-reason-name">SomethingALaterServerReports<\/dt>/);
     assert.match(drawn, /This build has no sentence for this reason/);
 });

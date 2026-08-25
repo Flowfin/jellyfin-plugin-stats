@@ -24,9 +24,19 @@
  * comes from, and inventing a sentence would put a guess in the column a reader
  * acts on.
  *
- * The rows are drawn in the order they arrive. The fold sorts them by the plays
- * under each and settles ties on the server's own spelling, so the order is
- * decided once, where the rows are made, rather than twice.
+ * The rows are drawn in the order they arrive. The fold sorts them by the
+ * watched time under each, then by the plays, then on the server's own
+ * spelling, so the order is decided once, where the rows are made, rather than
+ * twice. The bars are that same watched time, because a row ordered by one
+ * figure and drawn at the length of another is a picture that contradicts its
+ * own order; the play count stays beside the row, where the two readings can be
+ * compared instead of one standing in for the other.
+ *
+ * What the server re-encoded with is drawn under the bars and not as bars. It
+ * is a partition — a play carries one acceleration and every reason the server
+ * gave — so putting it in the same picture as the reasons would invite exactly
+ * the addition the caption spends a sentence refusing. It is listed with its
+ * own sentence saying that these rows do add up.
  *
  * The bars do not add up to the plays and the caption says so before a reader
  * works it out. A play carries every reason the server gave for it, so the same
@@ -137,7 +147,7 @@ const REASONS = {
  * for each beneath the picture, or says which of the other three situations the
  * view is in.
  *
- * @param {{state: string, reason?: string, plays?: number, playsWithAReason?: number, watchedMinutes?: number, rows?: ReadonlyArray<{reason: string, plays: number, watchedMinutes?: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
+ * @param {{state: string, reason?: string, plays?: number, playsWithAReason?: number, watchedMinutes?: number, rows?: ReadonlyArray<{reason: string, plays: number, watchedMinutes?: number}>, acceleration?: ReadonlyArray<{type: string|null, plays: number, watchedMinutes?: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function whyTheServerTranscodes(answer) {
@@ -163,15 +173,22 @@ export function whyTheServerTranscodes(answer) {
     return (
         '<figure class="stats-view stats-view-reasons">' +
         barBreakdown(
-            rows.map((row) => ({ label: row.name, value: row.plays })),
+            rows.map((row) => ({
+                label: row.name,
+                /* Null and never nought where the answer carries no time. A bar
+                 * of nought and a bar nobody has a figure for are drawn
+                 * differently by the drawing module, which is issue #64. */
+                value: row.watchedMinutes === null ? null : rounded(row.watchedMinutes),
+            })),
             {
                 title: TITLE,
                 description:
-                    'One bar per reason the server gave, most plays first, under the names the ' +
-                    'server writes in its own log.',
+                    'One bar per reason the server gave, most watched time first, under the ' +
+                    'names the server writes in its own log.',
             },
         ) +
         glossary(rows) +
+        accelerations(answer) +
         '<figcaption class="stats-view-note">' +
         escapeText(caption(answer, rows)) +
         '</figcaption>' +
@@ -254,7 +271,21 @@ function timeCaption(answer) {
  * @returns {string} The figure as text.
  */
 function minutes(value) {
-    return String(Math.round(value * 10) / 10);
+    return String(rounded(value));
+}
+
+/**
+ * The same rounding as a number, for the drawing rather than for the text.
+ *
+ * The bar and the sentence beside it are rounded once and in one place, so a
+ * reader comparing the two never meets a bar drawn at one figure and labelled
+ * with another.
+ *
+ * @param {number} value The figure the fold handed over.
+ * @returns {number} The figure, to a tenth of a minute.
+ */
+function rounded(value) {
+    return Math.round(value * 10) / 10;
 }
 
 /**
@@ -297,13 +328,72 @@ function glossary(rows) {
  * @returns {string} The sentence.
  */
 function watchedUnder(row) {
+    const plays = typeof row.plays === 'number' ? `${row.plays} plays. ` : '';
+
     if (row.watchedMinutes === null) {
-        return 'Watched time not recorded for this reason.';
+        return `${plays}Watched time not recorded for this reason.`;
     }
 
     return (
-        `${minutes(row.watchedMinutes)} minutes watched, which is the whole of every play ` +
-        'under this reason and no share of one.'
+        `${plays}${minutes(row.watchedMinutes)} minutes watched, which is the whole of every ` +
+        'play under this reason and no share of one.'
+    );
+}
+
+/**
+ * What the server re-encoded these plays with, under the bars.
+ *
+ * Drawn as a list and not as bars, because it is a partition and the reasons
+ * are not. Two pictures of the same range, one whose rows add up and one whose
+ * rows do not, invite the reader to add both, and the one that must not be
+ * added is the one this whole view is about.
+ *
+ * An answer carrying no acceleration list draws nothing here rather than an
+ * empty one. A range that was re-encoded on hardware nobody recorded and an
+ * answer from a build that does not carry the figure are different facts, and
+ * an empty list said for both is the one a reader would act on. Issue #64.
+ *
+ * @param {{acceleration?: ReadonlyArray<{type: string|null, plays: number, watchedMinutes?: number}>}} answer The breakdown.
+ * @returns {string} The list, or nothing.
+ */
+function accelerations(answer) {
+    const rows = Array.isArray(answer.acceleration) ? answer.acceleration : [];
+
+    if (rows.length === 0) {
+        return '';
+    }
+
+    const entries = rows
+        .map((row) => {
+            const named = typeof row.type === 'string' && row.type !== '';
+            const name = named ? row.type : 'No acceleration reported';
+            const watched =
+                typeof row.watchedMinutes === 'number'
+                    ? `${minutes(row.watchedMinutes)} minutes watched`
+                    : 'watched time not recorded';
+            const said = named
+                ? `${row.plays} plays, ${watched}.`
+                : `${row.plays} plays, ${watched}. This group holds a play the server passed ` +
+                  'through untouched as well as one it re-encoded without hardware, and these ' +
+                  'figures cannot tell the two apart.';
+
+            return (
+                `<dt class="stats-view-acceleration-name">${escapeText(name)}</dt>` +
+                `<dd class="stats-view-acceleration-figures">${escapeText(said)}</dd>`
+            );
+        })
+        .join('');
+
+    return (
+        '<dl class="stats-view-accelerations-list">' +
+        entries +
+        '</dl>' +
+        '<p class="stats-view-accelerations-note">' +
+        escapeText(
+            'A play carries one acceleration, so unlike the bars above these rows do add up ' +
+                'to the plays in this range.',
+        ) +
+        '</p>'
     );
 }
 
