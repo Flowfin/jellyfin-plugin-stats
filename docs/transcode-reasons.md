@@ -59,7 +59,7 @@ play with three reasons on it puts ninety minutes under each of the three, so
 the column totals two hundred and seventy over a range that holds ninety.
 
     git grep -n "watched\[reason\] = watchedSoFar + ticks;" -- Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs
-    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:156:                watched[reason] = watchedSoFar + ticks;
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:225:                watched[reason] = watchedSoFar + ticks;
 
 Decided on issue #60 on 2026-08-24 and built under #242. The alternative was
 dividing the play's time between its reasons, and it was refused for the reason
@@ -74,10 +74,39 @@ document's opening sentence applied to a second column. The fold therefore
 carries the period as its own figure rather than leaving it to be summed:
 
     git grep -n "public double WatchedMinutes\b" -- Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs
-    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:97:    public double WatchedMinutes { get; }
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:153:    public double WatchedMinutes { get; }
 
 and the view that draws the rows says the same thing in a sentence a dashboard
 reader meets, rather than pointing at this file.
+
+## What the rows are ordered by, and what does add up
+
+The rows are ordered by the watched time under each and not by the plays. Four
+hundred one-minute plays under one reason and four two-hour plays under another
+are a hundred to one on a count and the other way round on the time, and only
+the second is a server spending its evening re-encoding. Both figures are
+carried, because the two readings disagree and the disagreement is the part
+worth seeing; what the ordering settles is which of them decides the height of a
+bar.
+
+Beside the reasons is what the server re-encoded with, and that one IS a
+partition. A play carries every reason the server gave and exactly one hardware
+acceleration, so those rows add up to the plays they came from and to the
+minutes:
+
+    git grep -n "public IReadOnlyList<TranscodeAccelerationCount> Acceleration" -- Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:133:    public IReadOnlyList<TranscodeAccelerationCount> Acceleration { get; }
+
+It is a separate list rather than a column on a reason row for exactly that
+reason. Crossing the two produces a figure that is neither: the plays under one
+reason are not divided between accelerations without the invention the watched
+time refuses two paragraphs above.
+
+The row for plays the server reported no acceleration for is last and is not
+called software. It holds a play the server passed through untouched as well as
+one it re-encoded on the processor, because this fold reads the summary and not
+the delivery method, and issue #158 is where those two accounts of one row
+disagreeing lives.
 
 Reasons are taken as the server reported them and are never worked out from the
 codecs afterwards. A reason the plugin inferred would be a guess presented in
@@ -94,7 +123,7 @@ and counts the plays under each, so the rows add up to more:
 
     git grep -n "public static DeliveryMethodShares Over\|public static TranscodeReasonBreakdown Over" -- Jellyfin.Plugin.Stats/Aggregation/
     Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
-    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:118:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:174:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
 
 Both take a sequence and not a range, because choosing the range is a query and
 there is none. They are the arithmetic under a report rather than reports, and
@@ -150,4 +179,8 @@ ninety. Beside it: a play is counted once under a reason however often the
 stored row repeats it, a play that recorded nothing is in the play count and
 under no row, a play watched for no time is still a play under its reasons, and
 two spellings of one name are two rows, because a fold that tidied them would be
-inferring an equivalence nobody reported.
+inferring an equivalence nobody reported. The ordering and the partition above
+are held there as well: a rare reason that cost hours outranks a common one that
+cost minutes, the acceleration rows add up to the plays while the reason rows do
+not, and the plays with no reported acceleration are their own row and come
+last.
