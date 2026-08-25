@@ -1,8 +1,9 @@
 // What a reason row counts, and the one thing it must never be read as.
 //
-// A reason row is a count of plays that recorded that reason. It is not a
-// share of anything, because one play carries several reasons and the rows
-// therefore add up to more than the plays they came from. The failure these
+// A reason row is a count of plays that recorded that reason, and the time
+// those plays were watched for. It is not a share of anything, because one play
+// carries several reasons and the rows therefore add up to more than the plays
+// and the minutes they came from. The failure these
 // are written against is the opposite of the one the delivery figures guard:
 // there a dropped play makes the answer too small, here a repeated reason on
 // one row makes a single long film look like several plays. Every row is built
@@ -58,7 +59,12 @@ public class TranscodeReasonBreakdownTests
                     }
                 }
 
-                plays.Add(APlayReporting(reasons.ToArray()));
+                // Varied per play, so a fold that used one play's watched time
+                // for another, or that counted plays where it meant minutes,
+                // comes out with the wrong sum rather than the same one.
+                plays.Add(APlayWatchedFor(
+                    TimeSpan.FromSeconds(generator.Next(0, 7_200)),
+                    reasons.ToArray()));
             }
 
             var breakdown = TranscodeReasonBreakdown.Over(plays);
@@ -71,12 +77,34 @@ public class TranscodeReasonBreakdownTests
                 breakdown.Reasons.Select(row => row.Reason).Distinct(StringComparer.Ordinal).Count(),
                 breakdown.Reasons.Count);
 
+            Assert.Equal(
+                TimeSpan.FromTicks(plays.Sum(play => play.WatchedDuration.Ticks)).TotalMinutes,
+                breakdown.WatchedMinutes);
+            Assert.Equal(
+                TimeSpan.FromTicks(plays
+                    .Where(play => play.Transcode.Reasons.Count > 0)
+                    .Sum(play => play.WatchedDuration.Ticks)).TotalMinutes,
+                breakdown.WatchedMinutesWithAtLeastOneReason);
+
             foreach (var row in breakdown.Reasons)
             {
                 Assert.Equal(
                     plays.Count(play => play.Transcode.Reasons.Contains(row.Reason, StringComparer.Ordinal)),
                     row.Plays);
                 Assert.InRange(row.Plays, 1, breakdown.PlaysWithAtLeastOneReason);
+
+                // Counted the other way round as well: every play carrying this
+                // reason contributes the whole of its watched time, so a fold
+                // that apportioned or that lost a play disagrees here.
+                Assert.Equal(
+                    TimeSpan.FromTicks(plays
+                        .Where(play => play.Transcode.Reasons.Contains(row.Reason, StringComparer.Ordinal))
+                        .Sum(play => play.WatchedDuration.Ticks)).TotalMinutes,
+                    row.WatchedMinutes);
+                Assert.InRange(
+                    row.WatchedMinutes,
+                    0,
+                    breakdown.WatchedMinutesWithAtLeastOneReason);
             }
 
             for (var i = 1; i < breakdown.Reasons.Count; i++)
@@ -117,6 +145,59 @@ public class TranscodeReasonBreakdownTests
     }
 
     /// <summary>
+    /// One play carrying four reasons puts the whole of its watched time under
+    /// each of the four. This is the decision of 2026-08-24 on issue #242 as
+    /// arithmetic: every minute on a row is a minute somebody watched while
+    /// that condition held, and a quarter of a play apportioned four ways is a
+    /// figure nobody watched and nothing can be checked against. The cost is
+    /// the sum, which is four times the period here and is the reason the view
+    /// carries a sentence about it.
+    /// </summary>
+    [Fact]
+    public void OnePlaysWatchedTimeIsCountedInFullUnderEveryReasonItCarries()
+    {
+        var breakdown = TranscodeReasonBreakdown.Over(new[]
+        {
+            APlayWatchedFor(
+                TimeSpan.FromMinutes(90),
+                "ContainerNotSupported",
+                "VideoCodecNotSupported",
+                "AudioCodecNotSupported",
+                "SubtitleCodecNotSupported")
+        });
+
+        Assert.Equal(4, breakdown.Reasons.Count);
+        Assert.All(breakdown.Reasons, row => Assert.Equal(90, row.WatchedMinutes));
+
+        // The period is ninety minutes and the rows total three hundred and
+        // sixty. Both statements are true at once, which is what the page has
+        // to say out loud rather than leave a reader to reconcile.
+        Assert.Equal(90, breakdown.WatchedMinutes);
+        Assert.Equal(90, breakdown.WatchedMinutesWithAtLeastOneReason);
+        Assert.Equal(360, breakdown.Reasons.Sum(row => row.WatchedMinutes));
+    }
+
+    /// <summary>
+    /// A play watched for no time is a row rather than an absence. The server
+    /// gave its reasons and the play is one of the plays, so dropping it would
+    /// make the play count and the row disagree for a reason that has nothing
+    /// to do with what was watched.
+    /// </summary>
+    [Fact]
+    public void APlayWatchedForNoTimeStillCountsAsAPlayUnderItsReasons()
+    {
+        var breakdown = TranscodeReasonBreakdown.Over(new[]
+        {
+            APlayWatchedFor(TimeSpan.Zero, "ContainerNotSupported")
+        });
+
+        var row = Assert.Single(breakdown.Reasons);
+        Assert.Equal(1, row.Plays);
+        Assert.Equal(0, row.WatchedMinutes);
+        Assert.Equal(1, breakdown.PlaysWithAtLeastOneReason);
+    }
+
+    /// <summary>
     /// A stored row repeating a reason is counted once. The capture fold drops
     /// the repeat when it collects the reasons, so a row this build wrote never
     /// looks like this; a row another build wrote is still read by this one,
@@ -134,8 +215,10 @@ public class TranscodeReasonBreakdownTests
         var row = Assert.Single(breakdown.Reasons);
         Assert.Equal("VideoCodecNotSupported", row.Reason);
         Assert.Equal(1, row.Plays);
+        Assert.Equal(38, row.WatchedMinutes);
         Assert.Equal(1, breakdown.Plays);
         Assert.Equal(1, breakdown.PlaysWithAtLeastOneReason);
+        Assert.Equal(38, breakdown.WatchedMinutesWithAtLeastOneReason);
     }
 
     /// <summary>
@@ -190,6 +273,12 @@ public class TranscodeReasonBreakdownTests
         Assert.Equal(1, row.Plays);
         Assert.Equal(2, breakdown.Plays);
         Assert.Equal(1, breakdown.PlaysWithAtLeastOneReason);
+
+        // The play with no reason is in the period and under no row, so the two
+        // totals differ by exactly it. A fold that left it out of the period
+        // would make the rows look like a division of the range after all.
+        Assert.Equal(76, breakdown.WatchedMinutes);
+        Assert.Equal(38, breakdown.WatchedMinutesWithAtLeastOneReason);
     }
 
     /// <summary>
@@ -222,6 +311,8 @@ public class TranscodeReasonBreakdownTests
         Assert.Empty(breakdown.Reasons);
         Assert.Equal(0, breakdown.Plays);
         Assert.Equal(0, breakdown.PlaysWithAtLeastOneReason);
+        Assert.Equal(0, breakdown.WatchedMinutes);
+        Assert.Equal(0, breakdown.WatchedMinutesWithAtLeastOneReason);
     }
 
     [Fact]
@@ -230,7 +321,10 @@ public class TranscodeReasonBreakdownTests
         Assert.Throws<ArgumentNullException>(() => TranscodeReasonBreakdown.Over(null!));
     }
 
-    private static PlayRecord APlayReporting(params string[] reasons) => new()
+    private static PlayRecord APlayReporting(params string[] reasons)
+        => APlayWatchedFor(TimeSpan.FromMinutes(38), reasons);
+
+    private static PlayRecord APlayWatchedFor(TimeSpan watched, params string[] reasons) => new()
     {
         SchemaVersion = 1,
         UserId = Guid.Parse("6f9619ff-8b86-d011-b42d-00c04fc964ff"),
@@ -241,7 +335,7 @@ public class TranscodeReasonBreakdownTests
         ItemRuntime = TimeSpan.FromMinutes(42),
         StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
         EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
-        WatchedDuration = TimeSpan.FromMinutes(38),
+        WatchedDuration = watched,
         ReachedTheEnd = true,
         ClientName = "Jellyfin Web",
         DeviceId = "device-1",
