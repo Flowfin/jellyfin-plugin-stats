@@ -50,6 +50,35 @@ hundred times is four hundred plays that hit it, not four hundred progress
 reports on one long film. What it is not is a partition, because the same four
 hundred plays are also counted under every other reason they carried.
 
+## The watched time under a reason does the same thing
+
+The row carries how long the play was actually watched for, and a breakdown by
+reason answers that question the same way it answers the play count: the whole
+of a play's watched time goes under every reason it carries. A ninety-minute
+play with three reasons on it puts ninety minutes under each of the three, so
+the column totals two hundred and seventy over a range that holds ninety.
+
+    git grep -n "watched\[reason\] = watchedSoFar + ticks;" -- Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:156:                watched[reason] = watchedSoFar + ticks;
+
+Decided on issue #60 on 2026-08-24 and built under #242. The alternative was
+dividing the play's time between its reasons, and it was refused for the reason
+an inferred reason is refused two paragraphs below: thirty minutes under the
+container is a length of time nobody watched. The server did not spend a third
+of that play on the container and the rest on the codecs; it re-encoded one play
+under all three conditions at once, and every figure the division produced would
+be arithmetic on top of an observation rather than the observation.
+
+What it costs is that the times are not a partition either, which is this
+document's opening sentence applied to a second column. The fold therefore
+carries the period as its own figure rather than leaving it to be summed:
+
+    git grep -n "public double WatchedMinutes\b" -- Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:97:    public double WatchedMinutes { get; }
+
+and the view that draws the rows says the same thing in a sentence a dashboard
+reader meets, rather than pointing at this file.
+
 Reasons are taken as the server reported them and are never worked out from the
 codecs afterwards. A reason the plugin inferred would be a guess presented in
 the same column as an observation, and an administrator acting on the chart
@@ -65,7 +94,7 @@ and counts the plays under each, so the rows add up to more:
 
     git grep -n "public static DeliveryMethodShares Over\|public static TranscodeReasonBreakdown Over" -- Jellyfin.Plugin.Stats/Aggregation/
     Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
-    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:85:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
+    Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:118:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
 
 Both take a sequence and not a range, because choosing the range is a query and
 there is none. They are the arithmetic under a report rather than reports, and
@@ -114,8 +143,11 @@ than dropped.
 really about is the sentence at the top of this file. A play that recorded
 several reasons is counted under each of them, so three plays carrying two
 reasons each produce rows totalling six against a play count of three, which is
-this document's point as an assertion rather than as prose. Beside it: a play is
-counted once under a reason however often the stored row repeats it, a play that
-recorded nothing is in the play count and under no row, and two spellings of one
-name are two rows, because a fold that tidied them would be inferring an
-equivalence nobody reported.
+this document's point as an assertion rather than as prose. The watched time is
+held there too, by a case handing the fold one ninety-minute play with four
+reasons on it and asserting ninety under each of the four against a period of
+ninety. Beside it: a play is counted once under a reason however often the
+stored row repeats it, a play that recorded nothing is in the play count and
+under no row, a play watched for no time is still a play under its reasons, and
+two spellings of one name are two rows, because a fold that tidied them would be
+inferring an equivalence nobody reported.

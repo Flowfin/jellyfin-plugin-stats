@@ -34,6 +34,16 @@
  * docs/transcode-reasons.md exists, and this view carries it rather than
  * pointing at a document a dashboard reader cannot open.
  *
+ * The watched time beside each reason is the whole of the time the plays under
+ * it were watched for, counted in full and never divided between the reasons
+ * one play carries. So the minutes here can total more than the range holds,
+ * for exactly the same arithmetic as the bars, and the caption says that in a
+ * sentence rather than leaving a reader to discover it by adding the column up.
+ * A divided figure would read as a share of the range and would be a length of
+ * time nobody watched: the server did not spend a third of a play on the
+ * container and two thirds on the codecs, it re-encoded one play under all
+ * three conditions at once. Issue #242.
+ *
  * It names nobody. Two fields are taken off each row, the reason and the plays
  * under it, and no third is looked at. The fold it reads has no user in its row
  * shape either, so this is a property of the code rather than of the rows it
@@ -127,7 +137,7 @@ const REASONS = {
  * for each beneath the picture, or says which of the other three situations the
  * view is in.
  *
- * @param {{state: string, reason?: string, plays?: number, playsWithAReason?: number, rows?: ReadonlyArray<{reason: string, plays: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
+ * @param {{state: string, reason?: string, plays?: number, playsWithAReason?: number, watchedMinutes?: number, rows?: ReadonlyArray<{reason: string, plays: number, watchedMinutes?: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function whyTheServerTranscodes(answer) {
@@ -141,12 +151,13 @@ export function whyTheServerTranscodes(answer) {
         );
     }
 
-    /* Two fields and no third. Whatever else a row arrives carrying does not
+    /* Three fields and no fourth. Whatever else a row arrives carrying does not
      * reach the drawing, which is what makes "this view names no user" a
      * statement about the code rather than about the data it was tested with. */
     const rows = (answer.rows ?? []).map((row) => ({
         name: typeof row.reason === 'string' ? row.reason : '',
         plays: row.plays,
+        watchedMinutes: typeof row.watchedMinutes === 'number' ? row.watchedMinutes : null,
     }));
 
     return (
@@ -177,7 +188,7 @@ export function whyTheServerTranscodes(answer) {
  * statements, and a view that added the bars up and called that a total would
  * make them one again and print the number this caption exists to warn about.
  *
- * @param {{plays?: number, playsWithAReason?: number}} answer The breakdown.
+ * @param {{plays?: number, playsWithAReason?: number, watchedMinutes?: number}} answer The breakdown.
  * @param {ReadonlyArray<{name: string}>} rows The rows being drawn.
  * @returns {string} The sentence.
  */
@@ -195,8 +206,55 @@ function caption(answer, rows) {
         `${counted} A play carries every reason the server gave for it and a server usually ` +
         'gives more than one, so the same play is counted under each of its reasons and the ' +
         'bars add up to more than the plays they came from. That is the right answer here and ' +
-        'not a miscount: these rows are not a division of the plays.'
+        'not a miscount: these rows are not a division of the plays. ' +
+        timeCaption(answer)
     );
+}
+
+/**
+ * The same warning for the watched time, which is the other figure on this view
+ * a reader can add up.
+ *
+ * The period is the one the fold counted rather than a sum over the rows, for
+ * the reason the play counts give: a sum over the rows is the number this
+ * sentence exists to warn about, and printing it as the period would state the
+ * misreading as fact.
+ *
+ * @param {{watchedMinutes?: number}} answer The breakdown.
+ * @returns {string} The sentence.
+ */
+function timeCaption(answer) {
+    const period = typeof answer.watchedMinutes === 'number' ? answer.watchedMinutes : null;
+
+    const held =
+        period === null
+            ? 'the time this range holds'
+            : `the ${minutes(period)} minutes this range holds`;
+
+    return (
+        'The watched time under each reason is counted the same way. A play carrying three ' +
+        'reasons puts the whole of its watched time under all three rather than a third of ' +
+        `it under each, so these times can total more than ${held}. Nothing here is divided ` +
+        'between the reasons of one play, because a divided figure is a length of time ' +
+        'nobody watched.'
+    );
+}
+
+/**
+ * A figure in minutes, as text.
+ *
+ * Rounded to a tenth of a minute rather than printed as the fold handed it
+ * over. The fold sums exact ticks and divides once at the end, so a range of
+ * ordinary plays arrives here with a tail of digits that says nothing a reader
+ * of a dashboard wants. Nothing reads a figure back off this page, so the
+ * rounding is the last thing that happens to the number rather than something
+ * a later step has to undo.
+ *
+ * @param {number} value The figure the fold handed over.
+ * @returns {string} The figure as text.
+ */
+function minutes(value) {
+    return String(Math.round(value * 10) / 10);
 }
 
 /**
@@ -219,11 +277,34 @@ function glossary(rows) {
         .map(
             (row) =>
                 `<dt class="stats-view-reason-name">${escapeText(row.name)}</dt>` +
+                `<dd class="stats-view-reason-watched">${escapeText(watchedUnder(row))}</dd>` +
                 `<dd class="stats-view-reason-sentence">${escapeText(sentenceFor(row.name))}</dd>`,
         )
         .join('');
 
     return `<dl class="stats-view-reasons-list">${entries}</dl>`;
+}
+
+/**
+ * How much of the plays under one reason was watched.
+ *
+ * A row the answer carries no figure for says so rather than saying nought. A
+ * reason that held for plays nobody watched a minute of and a reason whose
+ * watched time the answer never carried are different facts, and a nought said
+ * for both is the one a reader would act on. Issue #64.
+ *
+ * @param {{plays: number, watchedMinutes: number|null}} row The row being drawn.
+ * @returns {string} The sentence.
+ */
+function watchedUnder(row) {
+    if (row.watchedMinutes === null) {
+        return 'Watched time not recorded for this reason.';
+    }
+
+    return (
+        `${minutes(row.watchedMinutes)} minutes watched, which is the whole of every play ` +
+        'under this reason and no share of one.'
+    );
 }
 
 /**
