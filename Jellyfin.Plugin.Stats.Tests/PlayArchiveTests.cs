@@ -13,13 +13,25 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.Stats.Capture;
 using Jellyfin.Plugin.Stats.Data;
+using Jellyfin.Plugin.Stats.Tests.Fakes;
+using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Session;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using ServerPlayMethod = MediaBrowser.Model.Session.PlayMethod;
+using StoredPlayMethod = Jellyfin.Plugin.Stats.Data.PlayMethod;
 
 namespace Jellyfin.Plugin.Stats.Tests;
 
 public sealed class PlayArchiveTests : IDisposable
 {
+    private static readonly DateTimeOffset Eight = new(2026, 1, 2, 20, 0, 0, TimeSpan.Zero);
+
     private static readonly Guid Alice = Guid.Parse("6f9619ff-8b86-d011-b42d-00c04fc964ff");
     private static readonly Guid Bob = Guid.Parse("a1a2a3a4-b1b2-c1c2-d1d2-e1e2e3e4e5e6");
 
@@ -322,10 +334,81 @@ public sealed class PlayArchiveTests : IDisposable
     }
 
     /// <summary>
+    /// The first condition of issue #239. A row the capture wrote, carried
+    /// through a real export and a real import, comes back with the moment its
+    /// delivery method changed still on it.
+    /// </summary>
+    /// <remarks>
+    /// The row comes off the capture rather than out of a builder here, and
+    /// that is the point rather than thoroughness. What made this a defect is
+    /// the number the capture stamps: it is the version the row shape was
+    /// decided at rather than the store's, so a row written this morning
+    /// arrives at the import reading as older than a column it is carrying, and
+    /// the step meant for rows that never had that column ran over one that
+    /// did. A row built here with a version typed into it would assert the same
+    /// thing about a number nothing produces.
+    /// <para>
+    /// Both ends of the trip are a SQLite file, which is what the rest of this
+    /// file does and what the condition asks for: the bug is on the way in, and
+    /// a round trip through anything less than the real import would not meet
+    /// the step that caused it.
+    /// </para>
+    /// </remarks>
+    /// <returns>The running test.</returns>
+    [Fact]
+    public async Task ARowTheCaptureWroteKeepsItsChangeMomentThroughARoundTrip()
+    {
+        var sessions = new FakeSessionManager();
+        var captured = new RecordingPlaySink();
+        var listener = ListenerOver(sessions, captured);
+        await listener.StartAsync(CancellationToken.None);
+
+        var session = ASessionThatStartsDirect(sessions);
+
+        sessions.RaisePlaybackStart(session, Eight);
+        ReEncodingFrom(session);
+        sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(2), at: Eight.AddMinutes(2));
+        sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(30), at: Eight.AddMinutes(30));
+
+        await listener.StopAsync(CancellationToken.None);
+
+        var written = Assert.Single(captured.Rows);
+
+        // Asserted on the way out, not assumed. A capture that had stopped
+        // recording the moment would otherwise make the round trip below pass
+        // by leaving it nothing to lose.
+        Assert.Equal(Eight.AddMinutes(2).UtcDateTime, written.PlayMethodChangedUtc);
+
+        // And the row understates its own shape, which is the other half of the
+        // defect and the reason the step it is about runs over this row at all.
+        // Read off the row rather than written here, so a capture that starts
+        // stamping the store's number turns this into a row the step skips and
+        // the case goes on asserting the thing that matters.
+        Assert.True(
+            written.SchemaVersion < 4,
+            "the capture no longer writes a row the delivery-method step runs over, so this case no longer reaches it.");
+
+        var read = Assert.Single(ImportIntoAFreshStore(Export([written]), out var added));
+
+        Assert.Equal(1, added);
+        Assert.Equal(written.PlayMethodChangedUtc, read.PlayMethodChangedUtc);
+
+        // The rest of the row survived too, so what is asserted above is one
+        // field kept rather than a round trip that happened to keep one field.
+        AssertSameRow(written, read);
+    }
+
+    /// <summary>
     /// A row written before the delivery method was named for the moment it is
     /// about is moved forward and read. Issue #158 is the first schema that
     /// changed the row, and until it there was nothing for the step list to do.
     /// </summary>
+    /// <remarks>
+    /// The second condition of issue #239 is the null in the middle of this
+    /// case. A row that genuinely predates the column still comes back empty,
+    /// so the repair for the case above closes nothing by filling in a moment
+    /// nobody recorded.
+    /// </remarks>
     [Fact]
     public void ARowFromTheSchemaBeforeTheRenameIsMovedForwardAndRead()
     {
@@ -438,6 +521,42 @@ public sealed class PlayArchiveTests : IDisposable
                 StringComparison.Ordinal);
     }
 
+    private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
+        => new(
+            sessions,
+            new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            NothingWasLeftOpen.Pass(),
+            NullLogger<PlaybackEventListener>.Instance);
+
+    private static SessionInfo ASessionThatStartsDirect(FakeSessionManager sessions)
+        => new PlaySessionBuilder(sessions)
+            .ForUser(FakeUserManager.NewUser("viewer"))
+            .Playing(PlaySessionBuilder.Video("A Film", TimeSpan.FromMinutes(90)))
+            .From("Jellyfin Web", "A browser")
+            .Via(ServerPlayMethod.DirectPlay)
+            .Identified("session-1", "play-1")
+            .Build();
+
+    /// <summary>
+    /// Puts the session into the state the server leaves it in once it has
+    /// started re-encoding, which is what gives the row a moment its delivery
+    /// method changed.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    private static void ReEncodingFrom(SessionInfo session)
+    {
+        session.PlayState.PlayMethod = ServerPlayMethod.Transcode;
+        session.TranscodingInfo = new TranscodingInfo
+        {
+            VideoCodec = "h264",
+            AudioCodec = "aac",
+            Container = "ts",
+            TranscodeReasons = TranscodeReason.VideoCodecNotSupported,
+            IsVideoDirect = false,
+            IsAudioDirect = true
+        };
+    }
+
     private static string Header(int schemaVersion)
     {
         return string.Format(
@@ -511,6 +630,27 @@ public sealed class PlayArchiveTests : IDisposable
         return store.AllPlays().ToList();
     }
 
+    /// <summary>
+    /// Keeps the rows the capture produced, so a case can take one and send it
+    /// through the archive.
+    /// </summary>
+    private sealed class RecordingPlaySink : IPlaySink
+    {
+        private readonly List<PlayRecord> _rows = new();
+
+        public IReadOnlyList<PlayRecord> Rows => _rows;
+
+        public void Add(PlayRecord play, string playKey) => _rows.Add(play);
+
+        public void NoteOpen(OpenPlay play)
+        {
+        }
+
+        public void ForgetOpen(string playKey)
+        {
+        }
+    }
+
     private static PlayRecord NothingOptional()
     {
         return APlay() with
@@ -549,7 +689,7 @@ public sealed class PlayArchiveTests : IDisposable
             ClientName = "Jellyfin Web",
             DeviceId = "device-1",
             DeviceName = "A browser",
-            PlayMethodAtStart = PlayMethod.Transcode,
+            PlayMethodAtStart = StoredPlayMethod.Transcode,
             PlayMethodChangedUtc = null,
             ClosedBy = PlayClosedBy.AStopEvent,
             Transcode = new TranscodeSummary

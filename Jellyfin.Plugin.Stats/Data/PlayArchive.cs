@@ -195,6 +195,34 @@ public static class PlayArchive
     /// <summary>
     /// Moves one row forward through every step it has not had.
     /// </summary>
+    /// <remarks>
+    /// WHAT A ROW'S STATED VERSION MEANS IS NARROWER THAN IT LOOKS, AND EVERY
+    /// STEP HERE HAS TO BE WRITTEN FOR THE NARROW READING. A row does not say
+    /// which columns it carries. It says the number the capture stamped on it,
+    /// and that number is the version the row SHAPE was decided at rather than
+    /// the store's:
+    /// <code>
+    /// git grep -n 'RowSchemaVersion = ' -- Jellyfin.Plugin.Stats/Capture/PlayTracker.cs
+    /// </code>
+    /// It has not moved since, so a row the capture wrote this morning arrives
+    /// here saying it is at version one while carrying every column added
+    /// since. Issue #28 is where that number is meant to become the store's and
+    /// issue #239 is where it cost a value.
+    /// <para>
+    /// SO A STEP FILLS AN ABSENCE AND NEVER ASSIGNS. "This row says it is older
+    /// than the column" is not the same statement as "this row does not carry
+    /// the column", and a step that acts on the first destroys what the second
+    /// would have kept. Ask what is on the row, which is a fact, rather than
+    /// what its number implies, which is not.
+    /// </para>
+    /// <para>
+    /// The version still decides WHETHER a step runs, and that stays right in
+    /// the direction that matters: a row genuinely predating a column is always
+    /// under the number, so no step it needs is skipped. What the number cannot
+    /// do is the other direction, which is why nothing here reads it as
+    /// evidence that a column is missing.
+    /// </para>
+    /// </remarks>
     /// <param name="written">The row as it was written.</param>
     /// <param name="version">The version it was written under.</param>
     /// <returns>The row in the shape this build reads.</returns>
@@ -211,7 +239,17 @@ public static class PlayArchive
                 written[nameof(PlayRecord.PlayMethodAtStart)] = method;
             }
 
-            written[nameof(PlayRecord.PlayMethodChangedUtc)] = null;
+            // Filled in only where the row does not carry it. This assigned
+            // until issue #239, and a row the capture wrote arrives here
+            // reading as three versions older than a column it is carrying, so
+            // the assignment threw the moment away on every import. What was
+            // lost is the whole of what issue #158 landed: the row came back
+            // saying the start value described the whole play, which is the
+            // confusion that issue exists to end.
+            if (!written.ContainsKey(nameof(PlayRecord.PlayMethodChangedUtc)))
+            {
+                written[nameof(PlayRecord.PlayMethodChangedUtc)] = null;
+            }
         }
 
         if (version < 6)
@@ -222,14 +260,14 @@ public static class PlayArchive
             // this row can tell a clean ending from one something gave up
             // waiting for.
             //
-            // IT FILLS AN ABSENCE AND NEVER OVERWRITES AN ANSWER, which the
-            // step above does not do and is a defect of its own rather than a
-            // style this one is copying. A row the capture writes today says it
-            // is at version one, because the number it stamps is the one the row
-            // shape was decided at rather than the store's, so a row carrying a
-            // real answer arrives here reading as older than the column it
-            // carries. Under a bare assignment that answer would be replaced by
-            // this one on the way in. Issue #222 carries the reading.
+            // IT FILLS AN ABSENCE AND NEVER OVERWRITES AN ANSWER. A row the
+            // capture writes today says it is at version one, because the
+            // number it stamps is the one the row shape was decided at rather
+            // than the store's, so a row carrying a real answer arrives here
+            // reading as older than the column it carries. Under a bare
+            // assignment that answer would be replaced by this one on the way
+            // in. Issue #222 carries the reading, and the step above assigned
+            // for exactly that reason until issue #239.
             if (!written.ContainsKey(nameof(PlayRecord.ClosedBy)))
             {
                 written[nameof(PlayRecord.ClosedBy)] = (int)PlayClosedBy.NotSaid;
