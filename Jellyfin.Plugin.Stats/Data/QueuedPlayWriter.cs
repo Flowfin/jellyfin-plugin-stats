@@ -62,6 +62,12 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// because that is the point at which the writer thread has stopped and joined.
 /// Reading one while a play is in flight reads a number that is moving.
 /// </para>
+/// <para>
+/// <see cref="WaitUntilNothingIsWaiting"/> is the other moment at which they
+/// hold still, and unlike <see cref="Dispose"/> it leaves the writer running.
+/// It answers for what was queued before it was called and for nothing queued
+/// after, which is the whole of what a caller may read out of it.
+/// </para>
 /// </remarks>
 public sealed class QueuedPlayWriter : IPlaySink, IDisposable
 {
@@ -92,6 +98,14 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
     private readonly object _gate = new();
     private readonly object _reportGate = new();
     private readonly Thread _writer;
+
+    // Set exactly while the queue is empty and the writer is between rows, so
+    // a caller that queued something and then waits on this is waiting for
+    // that row to have reached the store. Both sides are taken under _gate:
+    // the producer resets it inside the same held lock that adds the row, and
+    // the writer takes the lock to ask whether the queue emptied, so there is
+    // no window in which a row is queued and this still says nothing waits.
+    private readonly ManualResetEventSlim _nothingIsWaiting = new(true);
 
     private bool _stopped;
     private int _accepted;
@@ -226,6 +240,38 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
     public void ForgetOpen(string playKey)
         => Queue(new Pending(Finished: null, PlayKey: null, OpenPlayKey: playKey));
 
+    /// <summary>
+    /// Waits until nothing this took responsibility for is still waiting to be
+    /// done to the store, and says whether that happened inside the wait.
+    /// </summary>
+    /// <remarks>
+    /// This is the fact <see cref="Dispose"/> already establishes, offered
+    /// without stopping the writer. Everything queued before the call returns
+    /// true has reached the store or has been counted as failing to; what is
+    /// queued after the call is nothing this answers for, so a caller queues
+    /// first and asks second.
+    /// <para>
+    /// The bound is on how long one queued row may take to reach the file. It
+    /// is not a bound on how many times anything is looked at, because nothing
+    /// here looks: the writer sets the signal as it finishes a row, so a caller
+    /// that wakes has been told rather than having found out. A reader polling
+    /// the file for the same answer opens a second connection to it every few
+    /// milliseconds, which is contention with the write it is waiting for, and
+    /// issue #241 is where that was measured.
+    /// </para>
+    /// <para>
+    /// A writer thread that has stopped without emptying the queue leaves this
+    /// waiting until the bound runs out, deliberately. Reporting a queue nobody
+    /// will drain as drained would turn a plugin that has stopped writing into
+    /// a caller that believes its row landed, and a test built on that would
+    /// pass over exactly the failure it exists for.
+    /// </para>
+    /// </remarks>
+    /// <param name="howLongToWait">How long to wait before giving up.</param>
+    /// <returns>True where the queue emptied inside the wait.</returns>
+    public bool WaitUntilNothingIsWaiting(TimeSpan howLongToWait)
+        => _nothingIsWaiting.Wait(howLongToWait);
+
     /// <inheritdoc />
     /// <remarks>
     /// Every row already accepted is written before this returns. Accepting a
@@ -257,6 +303,7 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
 
         _writer.Join();
         _pending.Dispose();
+        _nothingIsWaiting.Dispose();
     }
 
     /// <summary>
@@ -284,35 +331,47 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
         {
             foreach (var pending in _pending.GetConsumingEnumerable())
             {
-                if (store is null)
+                // A row is finished with when this iteration ends, however it
+                // ended. The store that would not open and the row the store
+                // refused are both done being waited for: they will not be
+                // retried, so a caller held until they succeeded would be held
+                // for ever.
+                try
                 {
+                    if (store is null)
+                    {
+                        try
+                        {
+                            store = _openStore();
+                            _whyTheStoreCouldNotBeOpened = null;
+                        }
+                        catch (Exception ex)
+                        {
+                            _failed++;
+                            _whyTheStoreCouldNotBeOpened = ex.GetType().FullName!;
+                            ReportOnce(ex.GetType().FullName!, ex);
+                            continue;
+                        }
+                    }
+
                     try
                     {
-                        store = _openStore();
-                        _whyTheStoreCouldNotBeOpened = null;
+                        Write(store, pending);
+
+                        if (pending.PlayKey is not null)
+                        {
+                            _written++;
+                        }
                     }
                     catch (Exception ex)
                     {
                         _failed++;
-                        _whyTheStoreCouldNotBeOpened = ex.GetType().FullName!;
                         ReportOnce(ex.GetType().FullName!, ex);
-                        continue;
                     }
                 }
-
-                try
+                finally
                 {
-                    Write(store, pending);
-
-                    if (pending.PlayKey is not null)
-                    {
-                        _written++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _failed++;
-                    ReportOnce(ex.GetType().FullName!, ex);
+                    SayWhetherAnythingIsStillWaiting();
                 }
             }
         }
@@ -350,6 +409,27 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
     }
 
     /// <summary>
+    /// Says nothing is waiting, where the queue has come to be empty.
+    /// </summary>
+    /// <remarks>
+    /// Taken under the same lock a producer holds while it adds a row, so the
+    /// question and the addition cannot interleave. Asked after a row is
+    /// finished with rather than after it is taken off the queue: between those
+    /// two moments the queue is already empty and the row has not reached the
+    /// file, which is the one reading that would be wrong.
+    /// </remarks>
+    private void SayWhetherAnythingIsStillWaiting()
+    {
+        lock (_gate)
+        {
+            if (_pending.Count == 0)
+            {
+                _nothingIsWaiting.Set();
+            }
+        }
+    }
+
+    /// <summary>
     /// Puts one thing on the queue, or counts it as turned away.
     /// </summary>
     /// <remarks>
@@ -377,6 +457,7 @@ public sealed class QueuedPlayWriter : IPlaySink, IDisposable
             }
 
             _accepted++;
+            _nothingIsWaiting.Reset();
         }
     }
 

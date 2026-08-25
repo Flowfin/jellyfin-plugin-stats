@@ -32,6 +32,14 @@ public sealed class QueuedPlayWriterTests
 {
     private static readonly TimeSpan LongEnoughToBeAFailure = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How long a wait that must not succeed is given. Short on purpose: the
+    /// case holds the store itself, so no length of wait could make the thing
+    /// being waited for true, and every millisecond spent here is a millisecond
+    /// the suite spends proving nothing.
+    /// </summary>
+    private static readonly TimeSpan ShortBecauseItCannotBecomeTrue = TimeSpan.FromMilliseconds(50);
+
     [Fact]
     public async Task AHeldWriterDoesNotHoldThePlaybackEvent()
     {
@@ -255,6 +263,65 @@ public sealed class QueuedPlayWriterTests
         // reason to create a database file, and a file that appears without a
         // row in it is a file an administrator has to ask about.
         Assert.False(opened, "the store was opened before a play was finished.");
+    }
+
+    /// <summary>
+    /// What the writer offers a caller that has queued a row and wants to know
+    /// it has landed, in both directions: a queue that still holds something is
+    /// reported as still holding it, and one that has emptied is reported once
+    /// the last row is finished with.
+    /// </summary>
+    /// <remarks>
+    /// The case stands between two writes rather than in front of one, and that
+    /// is what makes it bite. The interesting moment is the one at which the
+    /// first row is finished with and the second is not, because a writer that
+    /// said the queue had emptied off the row it had just done would say it
+    /// there and be wrong. Standing in front of the first write cannot see that
+    /// moment: nothing has finished yet, so a broken writer and a working one
+    /// both say no. Issue #241, where a case that asked the file instead of
+    /// asking the writer failed on runs where nothing had changed.
+    /// </remarks>
+    [Fact]
+    public void NothingIsWaitingIsSaidWhenTheQueueEmptiesAndNotBetweenTwoRows()
+    {
+        var store = new HoldablePlayStore();
+        store.HoldEachWriteSeparately();
+
+        using var writer = WriterOver(store, bound: 64);
+
+        writer.Add(APlay(), "first");
+
+        Assert.True(
+            store.WaitForAWriteToArrive(LongEnoughToBeAFailure),
+            "the writer never reached the store with the first row.");
+
+        // Queued while the first row is held inside the store, so the queue is
+        // not empty at the moment the first row is finished with.
+        writer.Add(APlay(), "second");
+
+        store.LetOneWriteThrough();
+
+        // The second row arriving is the first one having been finished with,
+        // because one thread does them in order. So this is the case standing
+        // exactly where it meant to stand.
+        Assert.True(
+            store.WaitForAWriteToArrive(LongEnoughToBeAFailure),
+            "the writer never reached the store with the second row.");
+
+        Assert.False(
+            writer.WaitUntilNothingIsWaiting(ShortBecauseItCannotBecomeTrue),
+            "the writer said nothing was waiting while the second row had not been written.");
+
+        store.LetOneWriteThrough();
+
+        Assert.True(
+            writer.WaitUntilNothingIsWaiting(LongEnoughToBeAFailure),
+            "the writer never said the queue had emptied.");
+
+        // Read before Dispose, so what these two say is the queue having
+        // emptied rather than the shutdown that drains it.
+        Assert.Equal(2, store.Rows.Count);
+        Assert.Equal(2, writer.Written);
     }
 
     private static QueuedPlayWriter WriterOver(IPlayStore store, int bound = QueuedPlayWriter.DefaultBound)

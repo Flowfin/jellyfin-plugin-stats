@@ -25,6 +25,16 @@ public sealed class HoldablePlayStore : IPlayStore
     private readonly object _gate = new();
     private readonly ManualResetEventSlim _release = new(initialState: true);
 
+    // One permit per write that may finish, and one count per write that has
+    // arrived. Together they let a case stand BETWEEN two writes rather than
+    // only in front of the first: Hold and Release are one gate for all of
+    // them, so a case using those can never see the moment one row is finished
+    // with and the next is not. Issue #241.
+    private readonly SemaphoreSlim _oneAtATime = new(0);
+    private readonly SemaphoreSlim _arrivals = new(0);
+
+    private bool _eachWriteWaitsForItsOwnPermit;
+
     /// <summary>
     /// How long a held write waits before it gives up and lets the suite
     /// finish.
@@ -80,6 +90,31 @@ public sealed class HoldablePlayStore : IPlayStore
     public void Hold() => _release.Reset();
 
     /// <summary>
+    /// Makes every write from now on wait for a permit of its own, one write
+    /// per <see cref="LetOneWriteThrough"/>.
+    /// </summary>
+    /// <remarks>
+    /// The other hold is one gate in front of all of them, which is the right
+    /// shape for a case asking whether the caller waits. A case asking what is
+    /// true after the first write and before the second needs to be able to
+    /// stop between two of them, and that needs a permit each.
+    /// </remarks>
+    public void HoldEachWriteSeparately() => _eachWriteWaitsForItsOwnPermit = true;
+
+    /// <summary>
+    /// Lets one waiting write finish, leaving the next one waiting.
+    /// </summary>
+    public void LetOneWriteThrough() => _oneAtATime.Release();
+
+    /// <summary>
+    /// Waits until one more write has arrived in this store than the last time
+    /// this was answered.
+    /// </summary>
+    /// <param name="howLong">How long to wait before giving up.</param>
+    /// <returns>True where a write arrived inside the wait.</returns>
+    public bool WaitForAWriteToArrive(TimeSpan howLong) => _arrivals.Wait(howLong);
+
+    /// <summary>
     /// Lets a held write, and every write after it, run.
     /// </summary>
     public void Release() => _release.Set();
@@ -95,7 +130,16 @@ public sealed class HoldablePlayStore : IPlayStore
     public void Add(PlayRecord play)
     {
         Entered.Set();
-        _release.Wait(NoTestHoldsAWriteThisLong);
+        _arrivals.Release();
+
+        if (_eachWriteWaitsForItsOwnPermit)
+        {
+            _oneAtATime.Wait(NoTestHoldsAWriteThisLong);
+        }
+        else
+        {
+            _release.Wait(NoTestHoldsAWriteThisLong);
+        }
 
         if (Throwing is not null)
         {
