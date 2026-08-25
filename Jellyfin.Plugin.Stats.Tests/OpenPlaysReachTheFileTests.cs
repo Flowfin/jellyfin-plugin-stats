@@ -32,14 +32,23 @@ namespace Jellyfin.Plugin.Stats.Tests;
 public sealed class OpenPlaysReachTheFileTests : IDisposable
 {
     /// <summary>
-    /// How many times a wait looks before it gives up, and how long it sleeps
-    /// between two looks. Thirty seconds in total, which is long enough that a
+    /// How long a case waits for the writer to empty its queue before it gives
+    /// up. Thirty seconds of the runner's own time, which is long enough that a
     /// slow runner is not a failure and short enough that a path which stopped
     /// writing running plays is reported rather than waited on.
     /// </summary>
-    private const int Attempts = 3000;
-
-    private const int BetweenAttempts = 10;
+    /// <remarks>
+    /// A bound on how long one queued row may take to reach the file, and on
+    /// nothing else. It was a count of looks until issue #241: three thousand
+    /// of them, ten milliseconds apart, each one opening this test's reader on
+    /// the same file the writer was trying to write. That made the wait cost
+    /// grow with the load on the disk instead of holding still, and it made the
+    /// waiting itself part of what the write was queued behind, so the case
+    /// failed on runs where nothing had changed. Nothing looks now: the writer
+    /// says when it has finished, and this is only how long a case is willing
+    /// to be told nothing.
+    /// </remarks>
+    private static readonly TimeSpan HowLongToWaitForTheWriter = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// When the server first hears from a session here. Every moment in a row
@@ -84,8 +93,9 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
         var session = ASession(sessions, "play-1", "A Film");
         sessions.RaisePlaybackStart(session, Midday);
+        Settle(writer);
 
-        var running = Assert.Single(WaitForOpenPlays(1));
+        var running = Assert.Single(OpenPlays());
 
         Assert.Equal("play-1", running.PlayKey);
         Assert.Equal("A Film", running.SoFar.ItemName);
@@ -119,17 +129,16 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
         var session = ASession(sessions, "play-1", "A Film");
         sessions.RaisePlaybackStart(session, Midday);
+        Settle(writer);
 
-        var atTheStart = Assert.Single(WaitForOpenPlays(1));
+        var atTheStart = Assert.Single(OpenPlays());
 
         sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(20), at: Midday.AddMinutes(20));
-
-        WaitFor(
-            () => OpenPlays().Count == 1 && OpenPlays()[0].SoFar.WatchedDuration > atTheStart.SoFar.WatchedDuration,
-            "the running row never moved after a progress report.");
+        Settle(writer);
 
         var later = Assert.Single(OpenPlays());
 
+        Assert.True(later.SoFar.WatchedDuration > atTheStart.SoFar.WatchedDuration);
         Assert.True(later.SoFar.EndedUtc > atTheStart.SoFar.EndedUtc);
         Assert.Equal("play-1", later.PlayKey);
 
@@ -152,15 +161,23 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
         var session = ASession(sessions, "play-1", "A Film");
         sessions.RaisePlaybackStart(session, Midday);
-        WaitForOpenPlays(1);
+
+        // Settled here as well as at the end, so the running row is on the file
+        // before the stop is raised. Without it a run where the start had not
+        // been written yet would end with one finished row and no running one
+        // for a reason this case is not about.
+        Settle(writer);
+        Assert.Single(OpenPlays());
 
         sessions.RaisePlaybackProgress(session, TimeSpan.FromMinutes(20), at: Midday.AddMinutes(20));
         sessions.RaisePlaybackStopped(session, TimeSpan.FromMinutes(40), at: Midday.AddMinutes(40));
-
-        WaitFor(() => FinishedPlays().Count == 1, "the finished row never reached the file.");
-        WaitFor(() => !OpenPlays().Any(), "the running row was left on the file after the play stopped.");
+        Settle(writer);
 
         var finished = Assert.Single(FinishedPlays());
+
+        // The running row is gone, which is the half that makes this one row
+        // and not two, and it is asserted rather than taken from the line above.
+        Assert.Empty(OpenPlays());
 
         Assert.Equal("A Film", finished.ItemName);
         Assert.True(finished.WatchedDuration > TimeSpan.Zero);
@@ -201,7 +218,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
 
         sessions.RaisePlaybackProgress(quiet, TimeSpan.FromSeconds(10), at: Midday.AddSeconds(10));
 
-        WaitFor(() => OpenPlays().Count() == 2, "the two running plays are not both on the file.");
+        Settle(writer);
 
         var running = OpenPlays().ToDictionary(play => play.PlayKey, StringComparer.Ordinal);
 
@@ -214,8 +231,10 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
         sessions.RaisePlaybackStopped(noisy, TimeSpan.FromSeconds(2000), at: Midday.AddSeconds(2000));
         sessions.RaisePlaybackStopped(quiet, TimeSpan.FromSeconds(20), at: Midday.AddSeconds(20));
 
-        WaitFor(() => FinishedPlays().Count == 2, "the two finished rows never reached the file.");
-        WaitFor(() => !OpenPlays().Any(), "a running row was left behind after both plays stopped.");
+        Settle(writer);
+
+        Assert.Equal(2, FinishedPlays().Count);
+        Assert.Empty(OpenPlays());
 
         await listener.StopAsync(CancellationToken.None);
     }
@@ -241,7 +260,8 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
             await listener.StartAsync(CancellationToken.None);
 
             sessions.RaisePlaybackStart(ASession(sessions, "play-1", "A Film"), Midday);
-            WaitForOpenPlays(1);
+            Settle(writer);
+            Assert.Single(OpenPlays());
 
             await listener.StopAsync(CancellationToken.None);
         }
@@ -298,36 +318,28 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
     /// <returns>What the file holds.</returns>
     private IReadOnlyList<PlayRecord> FinishedPlays() => _reader.AllPlays().ToArray();
 
-    private IReadOnlyList<OpenPlay> WaitForOpenPlays(int howMany)
-    {
-        WaitFor(() => OpenPlays().Count == howMany, "the file never came to hold " + howMany + " running play(s).");
-
-        return OpenPlays();
-    }
-
     /// <summary>
-    /// Waits for something the writer's own thread makes true.
+    /// Waits until everything raised so far has reached the file, and fails the
+    /// case where it never does.
     /// </summary>
     /// <remarks>
-    /// Counted attempts rather than a deadline read off a clock, because a test
-    /// that reads the machine clock is what <c>no-ambient-clock</c> is against
-    /// and a count answers the same question. The ceiling is a failure however
-    /// slow the runner is: what is being waited for is a write already queued.
+    /// The events above are raised on this thread and the tracker hands the row
+    /// to the writer before the raise returns, so by the time this is called
+    /// the work is queued and waiting for the queue to empty is waiting for
+    /// exactly that work. Nothing is read off the file until this has returned,
+    /// which is what takes the reader out of the writer's way.
+    /// <para>
+    /// No clock is read. The wait is a bound handed to a signal the writer
+    /// sets, which is the same kind of thing the sleep this replaced was and is
+    /// outside what <c>no-ambient-clock</c> is about; what that rule refuses is
+    /// a moment or a zone taken from the machine instead of from an argument,
+    /// and no moment in these cases comes from anywhere but
+    /// <see cref="Midday"/>.
+    /// </para>
     /// </remarks>
-    /// <param name="until">What is being waited for.</param>
-    /// <param name="whatWentWrong">What to say where it never became true.</param>
-    private static void WaitFor(Func<bool> until, string whatWentWrong)
-    {
-        for (var attempt = 0; attempt < Attempts; attempt++)
-        {
-            if (until())
-            {
-                return;
-            }
-
-            Thread.Sleep(BetweenAttempts);
-        }
-
-        Assert.True(false, whatWentWrong);
-    }
+    /// <param name="writer">The writer the events were handed to.</param>
+    private static void Settle(QueuedPlayWriter writer)
+        => Assert.True(
+            writer.WaitUntilNothingIsWaiting(HowLongToWaitForTheWriter),
+            "the writer still had queued work after " + HowLongToWaitForTheWriter + ", so nothing it was handed reached the file.");
 }
