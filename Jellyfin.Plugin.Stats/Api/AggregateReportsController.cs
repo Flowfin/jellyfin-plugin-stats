@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Mime;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Aggregation;
+using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Reports;
 using MediaBrowser.Controller.Net;
@@ -66,19 +67,26 @@ public sealed class AggregateReportsController : ControllerBase
 
     private readonly AggregateQueries _reports;
     private readonly IAuthorizationContext _callers;
+    private readonly Func<PluginConfiguration> _configuration;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AggregateReportsController"/> class.
     /// </summary>
     /// <param name="reports">The one route a report has to the plays.</param>
     /// <param name="callers">What the server says about who made a request.</param>
-    public AggregateReportsController(AggregateQueries reports, IAuthorizationContext callers)
+    /// <param name="configuration">The current settings, read at the moment one is needed rather than held, which is where the zone a day is read in comes from.</param>
+    public AggregateReportsController(
+        AggregateQueries reports,
+        IAuthorizationContext callers,
+        Func<PluginConfiguration> configuration)
     {
         ArgumentNullException.ThrowIfNull(reports);
         ArgumentNullException.ThrowIfNull(callers);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         _reports = reports;
         _callers = callers;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -263,6 +271,81 @@ public sealed class AggregateReportsController : ControllerBase
             var folded = _reports.Breakdown(window, groupRowsBy);
 
             return Ok(folded is null ? BreakdownReport.NotShown : BreakdownReport.Of(folded));
+        }
+        catch (TooManyPlaysToAnswerException)
+        {
+            return BadRequest();
+        }
+        catch (StoreCouldNotBeOpenedException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>
+    /// Reads how much the server was used over a range, one row per day.
+    /// </summary>
+    /// <remarks>
+    /// A day and several figures rather than a day and a number, because the
+    /// view this answers draws plays, watched time and the delivery split in one
+    /// picture and its own condition is that the page renders from one request.
+    /// An action answering with one figure per day would make that view three
+    /// requests. Issue #57.
+    /// <para>
+    /// THE ZONE IS THIS SERVER'S AND NEVER THE CALLER'S. A calendar day has a
+    /// local midnight at each end, so which day a play falls on is not a fact
+    /// about the play. The closest prior art is told the offset by the browser
+    /// on every request, which is the offset in force where the caller is
+    /// sitting now applied to rows recorded months earlier, so every day either
+    /// side of a summer transition is shifted by an hour. Here the zone is named
+    /// once in the settings and read while the request is served, and the answer
+    /// carries the zone it was read in so a page states what it was given rather
+    /// than quoting a setting. <c>no-time-offset-from-the-request</c> refuses the
+    /// other shape.
+    /// </para>
+    /// <para>
+    /// Nothing here is withheld, and that is the layer's decision rather than an
+    /// omission at this route. A row is a day, and a day is not a member anybody
+    /// uses, so the rule that folds a member too few accounts stand behind has
+    /// nothing to bite on. What that rule protects against is a row that is one
+    /// person under another name, and a Tuesday is not one.
+    /// </para>
+    /// </remarks>
+    /// <param name="from">The first moment of the range.</param>
+    /// <param name="to">The first moment after the range.</param>
+    /// <returns>One row per day the range covers, and the zone the days were read in.</returns>
+    /// <response code="200">The days, with the zone they were read in.</response>
+    /// <response code="400">The range is absent, unreadable or longer than this plugin answers over.</response>
+    /// <response code="401">The request carried no authenticated caller.</response>
+    /// <response code="403">The caller is not an administrator.</response>
+    /// <response code="503">The plugin could not open its store, so it has no answer rather than an empty one.</response>
+    [HttpGet("Usage")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<DailyUsage>> GetDailyUsage(
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to)
+    {
+        var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
+
+        if (!CallerIdentity.IsAnAdministrator(caller))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (!ARangeThisPluginAnswersOver(from, to, out var window))
+        {
+            return BadRequest();
+        }
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+
+        try
+        {
+            return Ok(_reports.Series(window, zone));
         }
         catch (TooManyPlaysToAnswerException)
         {
