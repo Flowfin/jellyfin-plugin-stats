@@ -191,6 +191,7 @@ public sealed class YearsWithPlaysTests : IDisposable
             ParentId = null,
             ItemName = "An episode",
             ItemRuntime = null,
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc.AddMinutes(30),
             WatchedDuration = TimeSpan.FromMinutes(30),

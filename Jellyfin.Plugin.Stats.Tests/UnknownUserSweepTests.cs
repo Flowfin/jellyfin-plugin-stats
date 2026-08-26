@@ -412,6 +412,7 @@ public sealed class UnknownUserSweepTests : IDisposable
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(38),

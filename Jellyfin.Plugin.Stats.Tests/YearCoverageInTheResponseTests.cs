@@ -277,6 +277,7 @@ public sealed class YearCoverageInTheResponseTests : IDisposable
             ParentId = null,
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc.AddMinutes(41),
             WatchedDuration = TimeSpan.FromMinutes(38),

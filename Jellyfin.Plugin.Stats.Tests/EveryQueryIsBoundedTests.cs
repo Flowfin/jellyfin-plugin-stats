@@ -210,6 +210,7 @@ public sealed class EveryQueryIsBoundedTests : IDisposable
             ParentId = null,
             ItemName = "A Film",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc.AddMinutes(30),
             WatchedDuration = TimeSpan.FromMinutes(30),

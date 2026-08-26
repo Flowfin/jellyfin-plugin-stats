@@ -68,7 +68,7 @@ public sealed class HowAPlayWasClosedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
 
         var stopped = ASession(sessions, "session-1", "play-1");
         tracker.PlaybackStarted(StartOf(sessions, stopped, Eight));
@@ -102,7 +102,7 @@ public sealed class HowAPlayWasClosedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
 
         var session = ASession(sessions, "session-1", "play-1");
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -180,9 +180,9 @@ public sealed class HowAPlayWasClosedTests : IDisposable
     [Fact]
     public void TheColumnArrivesAsAnAppendedStepAndAnOlderStoreStillReads()
     {
-        Assert.Equal(6, SchemaMigrations.Latest);
+        Assert.Equal(7, SchemaMigrations.Latest);
         Assert.Equal(
-            new[] { 1, 2, 3, 4, 5, 6 },
+            new[] { 1, 2, 3, 4, 5, 6, 7 },
             SchemaMigrations.All.Select(step => step.Version));
 
         Directory.CreateDirectory(_root);
@@ -409,6 +409,7 @@ public sealed class HowAPlayWasClosedTests : IDisposable
             ParentId = null,
             ItemName = "A Film",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc.AddMinutes(30),
             WatchedDuration = TimeSpan.FromMinutes(30),

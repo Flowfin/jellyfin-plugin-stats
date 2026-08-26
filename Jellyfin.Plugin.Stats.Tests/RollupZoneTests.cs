@@ -181,6 +181,7 @@ public class RollupZoneTests
         ParentId = null,
         ItemName = "A film",
         ItemRuntime = TimeSpan.FromMinutes(100),
+        ChannelName = null,
         StartedUtc = startedUtc,
         EndedUtc = startedUtc.AddMinutes(100),
         WatchedDuration = TimeSpan.FromMinutes(100),

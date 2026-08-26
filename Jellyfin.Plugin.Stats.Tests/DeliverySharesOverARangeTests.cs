@@ -231,6 +231,7 @@ public sealed class DeliverySharesOverARangeTests : IDisposable
             ParentId = null,
             ItemName = "A Film",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc + length,
             WatchedDuration = length,

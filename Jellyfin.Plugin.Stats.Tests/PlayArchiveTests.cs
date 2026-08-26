@@ -524,7 +524,7 @@ public sealed class PlayArchiveTests : IDisposable
     private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
         => new(
             sessions,
-            new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            new PlayTracker(sink, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance),
             NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
@@ -657,6 +657,7 @@ public sealed class PlayArchiveTests : IDisposable
         {
             ParentId = null,
             ItemRuntime = null,
+            ChannelName = null,
             Transcode = new TranscodeSummary
             {
                 VideoCodec = null,
@@ -682,6 +683,7 @@ public sealed class PlayArchiveTests : IDisposable
             ParentId = Guid.Parse("99999999-8888-7777-6666-555555555555"),
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(38),

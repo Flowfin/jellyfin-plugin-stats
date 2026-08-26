@@ -41,7 +41,7 @@ public class PlayTrackerTests
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var listener = new PlaybackEventListener(sessions, tracker, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
         await listener.StartAsync(CancellationToken.None);
 
@@ -664,7 +664,7 @@ public class PlayTrackerTests
     private static RecordingPlaySink Watching(FakeSessionManager sessions, out PlayTracker tracker)
     {
         var rows = new RecordingPlaySink();
-        var built = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var built = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
 
         sessions.PlaybackStart += (_, e) => built.PlaybackStarted(e);
         sessions.PlaybackProgress += (_, e) => built.PlaybackProgressed(e);

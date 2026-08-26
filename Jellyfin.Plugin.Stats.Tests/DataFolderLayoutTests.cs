@@ -130,7 +130,7 @@ public sealed class DataFolderLayoutTests : IDisposable
             NullLogger<QueuedPlayWriter>.Instance);
 
         var gate = new CaptureGate(writer, () => new PluginConfiguration());
-        var tracker = new PlayTracker(gate, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(gate, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var sessions = new FakeSessionManager();
         var listener = new PlaybackEventListener(sessions, tracker, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
 

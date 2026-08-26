@@ -486,6 +486,7 @@ public class YearInReviewTests
             ParentId = parentId,
             ItemName = itemName,
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = startedUtc ?? Noon,
             EndedUtc = (startedUtc ?? Noon).AddMinutes(41),
             WatchedDuration = watched ?? TimeSpan.FromMinutes(38),

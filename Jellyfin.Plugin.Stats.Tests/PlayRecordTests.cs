@@ -22,6 +22,7 @@ public class PlayRecordTests
     {
         var expected = new[]
         {
+            "ChannelName",
             "ClientName",
             "ClosedBy",
             "DeviceId",
@@ -94,6 +95,7 @@ public class PlayRecordTests
             ParentId = Guid.Parse("11112222-3333-4444-5555-666677778888"),
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = new DateTime(2026, 1, 2, 20, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(2026, 1, 2, 20, 45, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(41),

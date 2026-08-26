@@ -354,6 +354,7 @@ public class DailyUsageTests
             ParentId = null,
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = startedUtc ?? Noon,
             EndedUtc = endedUtc ?? (startedUtc ?? Noon).AddMinutes(41),
             WatchedDuration = watched ?? TimeSpan.FromMinutes(38),

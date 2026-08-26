@@ -228,7 +228,7 @@ public class PlayMethodChangeTests
     private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
         => new(
             sessions,
-            new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            new PlayTracker(sink, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance),
             NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
@@ -272,6 +272,7 @@ public class PlayMethodChangeTests
             ParentId = null,
             ItemName = "A Film",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = Eight.UtcDateTime,
             EndedUtc = Eight.AddMinutes(30).UtcDateTime,
             WatchedDuration = TimeSpan.FromMinutes(30),
