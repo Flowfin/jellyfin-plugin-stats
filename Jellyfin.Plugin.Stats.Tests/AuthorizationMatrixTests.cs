@@ -44,7 +44,16 @@ public class AuthorizationMatrixTests
     /// GET    /Stats/Users/{userId}/Consent        | somebody else's| 401       | 403              | 403                       | 403
     /// PUT    /Stats/Users/{userId}/Consent        | their own      | 401       | 200              | 200                       | 200
     /// PUT    /Stats/Users/{userId}/Consent        | somebody else's| 401       | 403              | 403                       | 403
+    /// GET    /Stats/Reports/Top                     | nobody's       | 401       | 403              | 403                       | 200
+    /// GET    /Stats/Reports/Breakdown               | nobody's       | 401       | 403              | 403                       | 200
+    /// GET    /Stats/Reports/Usage                   | nobody's       | 401       | 403              | 403                       | 200
     /// </code>
+    /// The last three rows are the ones whose answer is not about a person, and
+    /// they are the only rows so far with a 200 in the administrator cell
+    /// alone. Who may ask for an aggregate view was decided on issue #55
+    /// on 2026-08-24 and the answer is an administrator only, on least
+    /// privilege; the two ordinary cells are that decision and not a rule about
+    /// whose rows are whose, which is why the row asks for nobody's.
     /// The two consent rows about somebody else's answer are the first
     /// condition of issue #42. An administrator cannot set a person's consent
     /// for them and cannot read what they said, and a consent an administrator
@@ -155,7 +164,34 @@ public class AuthorizationMatrixTests
             Someone: 403,
             SomeoneElse: 403,
             Administrator: 403,
-            Body: Agreeing)
+            Body: Agreeing),
+        new Row(
+            Action: "AggregateReportsController.GetTopTitles",
+            Method: "GET",
+            Path: "/Stats/Reports/Top?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z",
+            RowsAskedFor: WhoseRows.NobodysInParticular,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 200),
+        new Row(
+            Action: "AggregateReportsController.GetBreakdown",
+            Method: "GET",
+            Path: "/Stats/Reports/Breakdown?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z",
+            RowsAskedFor: WhoseRows.NobodysInParticular,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 200),
+        new Row(
+            Action: "AggregateReportsController.GetDailyUsage",
+            Method: "GET",
+            Path: "/Stats/Reports/Usage?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z",
+            RowsAskedFor: WhoseRows.NobodysInParticular,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 200)
     ];
 
     /// <summary>
@@ -167,7 +203,17 @@ public class AuthorizationMatrixTests
         TheCallersOwn,
 
         /// <summary>An account that is not the one making the request.</summary>
-        SomebodyElses
+        SomebodyElses,
+
+        /// <summary>
+        /// No account at all, because the answer is about the server.
+        /// </summary>
+        /// <remarks>
+        /// An aggregate names nobody, so a row about one has no account to put
+        /// in its path and the two ordinary cells cannot be read as a statement
+        /// about whose rows are whose. What such a row says is who may ask.
+        /// </remarks>
+        NobodysInParticular
     }
 
     /// <summary>
@@ -310,6 +356,11 @@ public class AuthorizationMatrixTests
             // otherwise.
             var named = RowsAskedFor == WhoseRows.TheCallersOwn ? caller.UserId : SomebodyInParticular;
 
+            // A path naming nobody carries no placeholder, so the account above
+            // reaches nothing. It is still computed rather than branched around,
+            // because a row that named an account in its path and declared
+            // itself about nobody would be a row lying about its own subject,
+            // and the format below is what would put the account there.
             return string.Format(CultureInfo.InvariantCulture, Path, named.ToString("D", CultureInfo.InvariantCulture));
         }
 
