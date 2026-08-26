@@ -392,6 +392,50 @@ public sealed class SqlitePlayStore : IPlayStore
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// One transaction over the whole sequence, which is what the interface's
+    /// own remark says this is for. Written a row at a time each row is its own
+    /// transaction and its own flush, and what that costs was measured rather
+    /// than assumed, under issue #56, where the two writes are timed against
+    /// each other. What the difference buys is a store large enough to measure
+    /// a report over, which at the rate of one flush per row nobody can build.
+    /// <para>
+    /// The command is built once and its parameters are replaced per row, for
+    /// the same reason the transaction is one: preparing the same statement a
+    /// thousand times is a thousand parses of one string.
+    /// </para>
+    /// <para>
+    /// A failure anywhere leaves none of them, and the interface says so. That
+    /// is the difference between this and the loop, and it is why the archive
+    /// import - which is written to keep the rows before a bad line - does not
+    /// call it.
+    /// </para>
+    /// </remarks>
+    public void AddMany(IEnumerable<PlayRecord> plays)
+    {
+        ArgumentNullException.ThrowIfNull(plays);
+
+        using var transaction = _connection.BeginTransaction();
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = InsertPlay;
+
+            foreach (var play in plays)
+            {
+                ArgumentNullException.ThrowIfNull(play);
+
+                command.Parameters.Clear();
+                BindThePlay(command, play);
+                command.ExecuteNonQuery();
+            }
+        }
+
+        transaction.Commit();
+    }
+
+    /// <inheritdoc />
     public void NoteOpenPlay(OpenPlay play)
     {
         ArgumentNullException.ThrowIfNull(play);
