@@ -213,11 +213,12 @@ public sealed class AggregateQueryTests : IDisposable
         Assert.Equal(2, total.Plays);
         Assert.Equal(TimeSpan.FromMinutes(250), total.Watched);
 
-        // The top list is the one shape that still answers here, and it is
-        // answered because an item is not an account. What it says is that two
-        // films were watched, which is true of the server and of neither person
-        // in particular.
-        Assert.Equal(2, queries.Top(window, 10).Count);
+        // THIS COMMENT SAID THE TOP LIST WAS THE ONE SHAPE THAT STILL ANSWERED
+        // HERE, BECAUSE AN ITEM IS NOT AN ACCOUNT. It is withheld too. Two
+        // films, one account behind each, is one row per person under the name
+        // of what they watched, and the subtraction this case is about works on
+        // that list exactly as it works on a breakdown. Issue #52.
+        Assert.Null(queries.Top(window, 10));
     }
 
     /// <summary>
@@ -430,14 +431,20 @@ public sealed class AggregateQueryTests : IDisposable
     [Fact]
     public void TheTopListIsOrderedByWatchedTimeAndNotByPlayCount()
     {
+        // Both accounts watch both films, because a list every row of which
+        // stands on one account is withheld whole and there would be nothing to
+        // order. The figures still separate the two films: the first is many
+        // short plays, the second is one long one.
         Store(
             APlay(Alice, AFilm, March, "Jellyfin Web", watched: TimeSpan.FromMinutes(2)),
             APlay(Alice, AFilm, March.AddHours(1), "Jellyfin Web", watched: TimeSpan.FromMinutes(2)),
-            APlay(Alice, AFilm, March.AddHours(2), "Jellyfin Web", watched: TimeSpan.FromMinutes(2)),
-            APlay(Bob, AnotherFilm, March.AddHours(3), "Jellyfin Web", watched: TimeSpan.FromMinutes(90)));
+            APlay(Bob, AFilm, March.AddHours(2), "Jellyfin Web", watched: TimeSpan.FromMinutes(2)),
+            APlay(Alice, AnotherFilm, March.AddHours(3), "Jellyfin Web", watched: TimeSpan.FromMinutes(45)),
+            APlay(Bob, AnotherFilm, March.AddHours(5), "Jellyfin Web", watched: TimeSpan.FromMinutes(45)));
 
         var top = new AggregateQueries(OpenTheStore).Top(AWeekFrom(March), 10);
 
+        Assert.NotNull(top);
         Assert.Equal(AnotherFilm, top[0].Key);
         Assert.Equal(TimeSpan.FromMinutes(90), top[0].Watched);
         Assert.Equal(AFilm, top[1].Key);
@@ -452,9 +459,14 @@ public sealed class AggregateQueryTests : IDisposable
     {
         Store(
             APlay(Alice, AFilm, March, "Jellyfin Web"),
-            APlay(Bob, AnotherFilm, March.AddHours(1), "Jellyfin Web"));
+            APlay(Bob, AFilm, March.AddHours(1), "Jellyfin Web"),
+            APlay(Alice, AnotherFilm, March.AddHours(2), "Jellyfin Web"),
+            APlay(Bob, AnotherFilm, March.AddHours(3), "Jellyfin Web"));
 
-        Assert.Single(new AggregateQueries(OpenTheStore).Top(AWeekFrom(March), 1));
+        var top = new AggregateQueries(OpenTheStore).Top(AWeekFrom(March), 1);
+
+        Assert.NotNull(top);
+        Assert.Single(top);
     }
 
     /// <summary>
@@ -507,7 +519,9 @@ public sealed class AggregateQueryTests : IDisposable
             "reasons" => string.Join(
                 "; ",
                 queries.ReasonBreakdown(window).Reasons.Select(row => row.ToString())),
-            "top" => string.Join("; ", queries.Top(window, 10).Select(row => row.ToString())),
+            "top" => queries.Top(window, 10) is { } top
+                ? string.Join("; ", top.Select(row => row.ToString()))
+                : "withheld",
             _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "That is not one of the shapes this layer offers.")
         };
     }

@@ -234,55 +234,108 @@ public sealed class AggregateQueries
         => TranscodeReasonBreakdown.Over(Read(window));
 
     /// <summary>
-    /// The fifth shape: the items watched most, longest first.
+    /// The fifth shape: what was watched most over a range, grouped as the
+    /// caller asks and ordered by whichever of the two figures they asked for.
     /// </summary>
     /// <remarks>
-    /// An item is not an account, so this shape carries no privacy rule of its
-    /// own beyond naming no account, which it does not. What a top list can
-    /// still say about one person is said by the range being narrow enough, and
-    /// a range is the caller's to choose here as it is everywhere else in this
-    /// layer.
+    /// THIS PARAGRAPH SAID A TOP LIST CARRIED NO PRIVACY RULE OF ITS OWN,
+    /// BECAUSE AN ITEM IS NOT AN ACCOUNT. It is the wrong half of the question,
+    /// and issue #52 opens by naming it: a top list is where an aggregate view
+    /// most easily stops being aggregate, because on a server with three people
+    /// the most-watched item is usually a statement about one of them. What is
+    /// published is not who watched, it is that somebody did, and on a small
+    /// enough server those are the same sentence.
     /// <para>
-    /// Ordered by watched time and not by play count, and the two disagree
-    /// often enough to matter: a series somebody left running is many plays and
-    /// little watching. Ties break on the item's identifier, so the order is
-    /// fixed rather than whichever one the fold happened to produce.
+    /// So the same rule the breakdown carries applies here, and it is the rule
+    /// decided for the whole plugin on issue #41 rather than one invented for
+    /// this shape: the list is answered only where every row it would return
+    /// stands on at least <see cref="FewestAccountsBehindARow"/> distinct
+    /// accounts, and is withheld whole otherwise. Reporting the group size
+    /// beside the row was the option that was refused, for the reason a row
+    /// reading "1 person" beside a published total names that person by
+    /// arithmetic.
+    /// </para>
+    /// <para>
+    /// WITHHELD IS NOT EMPTY, the same way it is not for a breakdown. A range
+    /// with nothing in it and a range whose list may not be shown are different
+    /// facts, and null is the second of them.
+    /// </para>
+    /// <para>
+    /// Ties break on the row's identifier whichever figure was ordered on, so a
+    /// list does not move between two readings of one range. Every row carries
+    /// both figures either way; what the order decides is which rows survive
+    /// the cut.
     /// </para>
     /// </remarks>
     /// <param name="window">The range and the bound.</param>
     /// <param name="howMany">How many rows at most.</param>
-    /// <returns>The rows, longest watched first, and empty where the range holds no plays.</returns>
+    /// <param name="grouping">Whether a row is an item or the series an episode belongs to.</param>
+    /// <param name="order">Which figure decides the order and therefore the cut.</param>
+    /// <returns>The rows, and null where the list is withheld.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
     /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
-    public IReadOnlyList<TitleRow> Top(QueryWindow window, int howMany)
+    /// <exception cref="ArgumentOutOfRangeException">The bound is not a positive number, or the grouping or the order is not one this build knows.</exception>
+    public IReadOnlyList<TitleRow>? Top(
+        QueryWindow window,
+        int howMany,
+        TopListGrouping grouping = TopListGrouping.Item,
+        TopListOrder order = TopListOrder.WatchedTime)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(howMany);
 
-        var tallies = new Dictionary<Guid, Tally>();
+        // Both are read before a row is, so a value this build has no name for
+        // is refused whatever the range holds. Reading them where they are used
+        // would make the refusal depend on the rows: a grouping nobody knows
+        // would pass over an empty range, and an order nobody knows would pass
+        // over a single row, because a sort of one element never asks its
+        // comparison anything. A guard that fires on some ranges and not others
+        // is not a guard.
+        var keyOf = KeyReaderFor(grouping);
+        var comparison = ComparisonFor(order);
 
-        foreach (var play in Read(window))
+        var plays = Read(window);
+
+        var tallies = new Dictionary<Guid, Tally>();
+        var accounts = new Dictionary<Guid, HashSet<Guid>>();
+
+        foreach (var play in plays)
         {
-            if (!tallies.TryGetValue(play.ItemId, out var tally))
+            if (keyOf(play) is not Guid key)
             {
-                tally = new Tally(play.ItemName);
-                tallies[play.ItemId] = tally;
+                continue;
+            }
+
+            if (!tallies.TryGetValue(key, out var tally))
+            {
+                tally = new Tally(NameOf(play, grouping));
+                tallies[key] = tally;
+                accounts[key] = [];
             }
 
             tally.Add(play.WatchedDuration);
+            accounts[key].Add(play.UserId);
+        }
+
+        // Every row, and not only the ones that would have survived the cut. A
+        // row standing on one account is recoverable from the rows beside it
+        // and the total whether or not it is shown, which is why the breakdown
+        // withholds the whole answer rather than dropping the thin row, and it
+        // is why the count is taken before anything is cut here.
+        foreach (var behind in accounts.Values)
+        {
+            if (behind.Count < FewestAccountsBehindARow)
+            {
+                return null;
+            }
         }
 
         var rows = new List<TitleRow>(tallies.Count);
-        foreach (var (itemId, tally) in tallies)
+        foreach (var (key, tally) in tallies)
         {
-            rows.Add(new TitleRow(itemId, tally.Name, tally.Plays, tally.Watched));
+            rows.Add(new TitleRow(key, tally.Name, tally.Plays, tally.Watched));
         }
 
-        rows.Sort(static (left, right) =>
-        {
-            var byWatched = right.Watched.CompareTo(left.Watched);
-
-            return byWatched != 0 ? byWatched : left.Key.CompareTo(right.Key);
-        });
+        rows.Sort(comparison);
 
         return rows.Count <= howMany ? rows : rows.GetRange(0, howMany);
     }
@@ -353,6 +406,79 @@ public sealed class AggregateQueries
     }
 
     /// <summary>
+    /// How a play's key is read for one grouping, and null from it where the
+    /// play counts under nothing.
+    /// </summary>
+    /// <remarks>
+    /// A play with no parent falls out of a series list rather than becoming a
+    /// row of its own. A film counted as a series of one is a sentence nobody
+    /// asked for, and an empty identifier standing for "no series" would be one
+    /// row every film in the range piled into.
+    /// </remarks>
+    /// <param name="grouping">What a row is.</param>
+    /// <returns>How to read a play's key.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The grouping is not one this build knows.</exception>
+    private static Func<PlayRecord, Guid?> KeyReaderFor(TopListGrouping grouping)
+    {
+        return grouping switch
+        {
+            TopListGrouping.Item => static play => play.ItemId,
+            TopListGrouping.Series => static play => play.ParentId,
+            _ => throw new ArgumentOutOfRangeException(nameof(grouping), grouping, "This build has no grouping of that name.")
+        };
+    }
+
+    /// <summary>
+    /// What to call a row, and null where nothing on the row names it.
+    /// </summary>
+    /// <remarks>
+    /// A play keeps the name the item had at the time and no name for its
+    /// parent, so a series is counted and cannot be labelled. It is left absent
+    /// rather than filled with the name of one of the episodes under it, which
+    /// would read as a series called after whichever episode was folded first.
+    /// That is the half of issue #52 a stored series label is still owed for.
+    /// </remarks>
+    /// <param name="play">The play.</param>
+    /// <param name="grouping">What a row is.</param>
+    /// <returns>The name, or null.</returns>
+    private static string? NameOf(PlayRecord play, TopListGrouping grouping)
+        => grouping == TopListGrouping.Item ? play.ItemName : null;
+
+    /// <summary>
+    /// How two rows sort for one order: most of the chosen figure first, ties
+    /// broken on the identifier.
+    /// </summary>
+    /// <remarks>
+    /// The tie is never left to the dictionary. Two rows with the same figure
+    /// in an unstable order are a list that changes between two readings of one
+    /// range, and on a list that is then cut it is a row appearing and
+    /// disappearing for no reason a reader can see.
+    /// </remarks>
+    /// <param name="order">Which figure decides.</param>
+    /// <returns>The comparison.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The order is not one this build knows.</exception>
+    private static Comparison<TitleRow> ComparisonFor(TopListOrder order)
+    {
+        return order switch
+        {
+            TopListOrder.WatchedTime => static (left, right) => Then(right.Watched.CompareTo(left.Watched), left, right),
+            TopListOrder.Plays => static (left, right) => Then(right.Plays.CompareTo(left.Plays), left, right),
+            _ => throw new ArgumentOutOfRangeException(nameof(order), order, "This build has no order of that name.")
+        };
+    }
+
+    /// <summary>
+    /// The figure's own comparison where it separates two rows, and the
+    /// identifier where it does not.
+    /// </summary>
+    /// <param name="byFigure">What the chosen figure said.</param>
+    /// <param name="left">One row.</param>
+    /// <param name="right">The other.</param>
+    /// <returns>The comparison.</returns>
+    private static int Then(int byFigure, TitleRow left, TitleRow right)
+        => byFigure != 0 ? byFigure : left.Key.CompareTo(right.Key);
+
+    /// <summary>
     /// Opens the store, reads the window, and closes it again.
     /// </summary>
     /// <remarks>
@@ -395,20 +521,21 @@ public sealed class AggregateQueries
     /// </summary>
     private sealed class Tally
     {
-        public Tally(string name)
+        public Tally(string? name)
         {
             Name = name;
         }
 
         /// <summary>
-        /// Gets the name the first play of this item carried.
+        /// Gets the name the first play under this key carried, and null where
+        /// no play carried one.
         /// </summary>
         /// <remarks>
         /// The first and not the last, so an item renamed between two plays
         /// comes back under one of the two names rather than under whichever the
         /// fold saw last. Which of them is arbitrary; that it is stable is not.
         /// </remarks>
-        public string Name { get; }
+        public string? Name { get; }
 
         public long Plays { get; private set; }
 
