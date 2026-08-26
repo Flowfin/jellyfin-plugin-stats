@@ -192,4 +192,46 @@ public sealed class PlaySessionBuilder
             RunTimeTicks = runtime.Ticks
         };
     }
+
+    /// <summary>
+    /// A live television programme, on a channel, with no runtime.
+    /// </summary>
+    /// <remarks>
+    /// The programme carries the channel's identifier and no name for it, which
+    /// is what the server hands a plugin: the name beside it is filled in for
+    /// one source and live television is not that source. What the channel is
+    /// called is declared on a <see cref="FakeChannelNames"/> instead.
+    /// </remarks>
+    /// <param name="name">The programme's name.</param>
+    /// <param name="channelId">The channel it is on.</param>
+    /// <param name="id">The item id. A new one is made when this is omitted.</param>
+    /// <returns>The item.</returns>
+    public static BaseItem LiveProgramme(string name, Guid channelId, Guid? id = null)
+    {
+        return new MediaBrowser.Controller.LiveTv.LiveTvProgram
+        {
+            Id = id ?? Guid.NewGuid(),
+            Name = name,
+            ChannelId = channelId
+        };
+    }
+
+    /// <summary>
+    /// A live television channel, played as itself.
+    /// </summary>
+    /// <remarks>
+    /// A channel carries no identifier of its own to resolve, so what a row
+    /// records for it is the name it is already holding.
+    /// </remarks>
+    /// <param name="name">The channel's name.</param>
+    /// <param name="id">The item id. A new one is made when this is omitted.</param>
+    /// <returns>The item.</returns>
+    public static BaseItem LiveChannel(string name, Guid? id = null)
+    {
+        return new MediaBrowser.Controller.LiveTv.LiveTvChannel
+        {
+            Id = id ?? Guid.NewGuid(),
+            Name = name
+        };
+    }
 }

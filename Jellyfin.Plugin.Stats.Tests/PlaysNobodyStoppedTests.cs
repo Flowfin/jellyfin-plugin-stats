@@ -70,7 +70,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -102,7 +102,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
 
         var leaving = ASession(sessions, "session-1", "play-1");
         var staying = ASession(sessions, "session-2", "play-2", device: "device-2");
@@ -139,7 +139,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -167,7 +167,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -198,7 +198,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -225,7 +225,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         tracker.PlaybackStarted(StartOf(sessions, session, Eight));
@@ -342,7 +342,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var session = ASession(sessions, "session-1", "play-1");
 
         var subscribedAlready = true;
@@ -383,7 +383,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
     {
         var sessions = new FakeSessionManager();
         var rows = new RecordingPlaySink();
-        var tracker = new PlayTracker(rows, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(rows, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
 
         var listener = new PlaybackEventListener(
             sessions,
@@ -562,6 +562,7 @@ public sealed class PlaysNobodyStoppedTests : IDisposable
                 ParentId = null,
                 ItemName = "An item",
                 ItemRuntime = TimeSpan.FromMinutes(90),
+                ChannelName = null,
                 StartedUtc = startedUtc,
                 EndedUtc = startedUtc + watched,
                 WatchedDuration = watched,

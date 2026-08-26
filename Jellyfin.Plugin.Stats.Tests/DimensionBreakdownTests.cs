@@ -301,6 +301,7 @@ public class DimensionBreakdownTests
             ParentId = null,
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = startedUtc ?? Noon,
             EndedUtc = (startedUtc ?? Noon).AddMinutes(41),
             WatchedDuration = TimeSpan.FromMinutes(38),

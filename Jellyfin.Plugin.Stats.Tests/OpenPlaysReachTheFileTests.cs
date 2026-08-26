@@ -287,7 +287,7 @@ public sealed class OpenPlaysReachTheFileTests : IDisposable
     private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
         => new(
             sessions,
-            new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            new PlayTracker(sink, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance),
             NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 

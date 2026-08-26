@@ -57,6 +57,29 @@ public sealed record PlayRecord
     public required TimeSpan? ItemRuntime { get; init; }
 
     /// <summary>
+    /// Gets the channel a live television play was on, and null for a play that
+    /// was not live television.
+    /// </summary>
+    /// <remarks>
+    /// The channel's name and not its identifier, resolved through the library
+    /// at the moment the play is recorded. A live channel is renamed and taken
+    /// off the air, and the rows a yearly report is about are exactly the old
+    /// ones, so an identifier stored on its own becomes unnameable with time
+    /// while a durable label does not. That departs on purpose from the line
+    /// issue #54 draws, where the library answers only whether a caller may see
+    /// an item and never supplies a label: a library item persists and a channel
+    /// does not.
+    /// <para>
+    /// Null where the library no longer holds the channel the play names, and
+    /// null for every item that is not live television, which is the answer
+    /// <see cref="ItemRuntime"/> already gives for a length such an item has
+    /// none of. A report reads it as the row not naming a channel rather than as
+    /// a channel called nothing. Issue #40.
+    /// </para>
+    /// </remarks>
+    public required string? ChannelName { get; init; }
+
+    /// <summary>
     /// Gets the moment the play started, in UTC.
     /// </summary>
     public required DateTime StartedUtc { get; init; }

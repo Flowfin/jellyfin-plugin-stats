@@ -567,6 +567,7 @@ public sealed class AggregateQueryTests : IDisposable
             ParentId = null,
             ItemName = itemId == AFilm ? "A Film" : "Another Film",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc + length,
             WatchedDuration = length,

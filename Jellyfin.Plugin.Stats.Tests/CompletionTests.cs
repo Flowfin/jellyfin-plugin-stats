@@ -283,6 +283,7 @@ public class CompletionTests
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = runtime,
+            ChannelName = null,
             StartedUtc = Noon,
             EndedUtc = Noon.AddMinutes(41),
             WatchedDuration = watched,

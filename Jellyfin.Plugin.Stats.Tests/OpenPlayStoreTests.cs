@@ -304,6 +304,7 @@ public sealed class OpenPlayStoreTests : IDisposable
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = March,
             EndedUtc = March.AddMinutes(41),
             WatchedDuration = TimeSpan.FromMinutes(38),

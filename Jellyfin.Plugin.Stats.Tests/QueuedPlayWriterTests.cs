@@ -330,7 +330,7 @@ public sealed class QueuedPlayWriterTests
     private static PlaybackEventListener ListenerOver(FakeSessionManager sessions, IPlaySink sink)
         => new(
             sessions,
-            new PlayTracker(sink, NullLogger<PlayTracker>.Instance),
+            new PlayTracker(sink, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance),
             NothingWasLeftOpen.Pass(),
             NullLogger<PlaybackEventListener>.Instance);
 
@@ -364,6 +364,7 @@ public sealed class QueuedPlayWriterTests
             ParentId = null,
             ItemName = "An episode",
             ItemRuntime = TimeSpan.FromMinutes(42),
+            ChannelName = null,
             StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(38),

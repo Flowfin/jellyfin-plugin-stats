@@ -510,6 +510,7 @@ public sealed class HeldYearsTests : IDisposable
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = new DateTime(Finished, 6, 1, 9, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(Finished, 6, 1, 9, 41, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(38),

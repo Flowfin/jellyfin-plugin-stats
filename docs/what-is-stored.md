@@ -54,6 +54,7 @@ These are the columns of `plays`, which is the table every report is built on.
 | `TranscodeHardwareAcceleration` | The hardware acceleration the server reported, and empty where it reported none.                           |
 | `TranscodeReasons`              | Every transcode reason observed over the play, without repeats, as the server reported them at the time.   |
 | `ClosedBy`                      | Which route ended the play: a stop from the server, the session ending, the session going quiet, or a later start-up finishing what was left running. Empty where the row does not say, which is every row written before this column existed. |
+| `ChannelName`                   | The channel a live television play was on, as the library called it at the moment the play was recorded. Empty for every play that was not live television, for a channel the library no longer held, and for every row written before this column existed. It is the name rather than the identifier, because a live channel is renamed and taken off the air while the rows a report is about stay where they are. |
 
 ## One row per play that is still running
 
@@ -69,6 +70,7 @@ play has not answered them yet.
 | `ReachedTheEnd` | Always false here. Nothing has said the item was played through, and the server only says so on the stop.                 |
 | `PlayMethodChangedUtcTicks` | The same field as above, filled in as soon as the server reports a different method rather than only at the stop.        |
 | `ClosedBy`      | Always the not-said value here. The play has not been closed, so no route has ended it, and the value it will carry is decided when one does. |
+| `ChannelName`   | The same field as above. It is filled in on the start event, so a running live television play names its channel from the first row it writes. |
 
 Every other column means what it means in the table above. A row here is not a
 play that happened: it is what the server had said about a play up to the last

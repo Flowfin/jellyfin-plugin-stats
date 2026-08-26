@@ -52,6 +52,14 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<QueuedPlayWriter>(),
             () => Plugin.Instance!.Configuration));
 
+        // What a live television play's channel is called. The one thing this
+        // plugin asks the library for on the write path, and it is asked once
+        // per play rather than once per report, because a channel is renamed
+        // and taken off the air while the rows a yearly report is about stay
+        // where they are. Issue #40.
+        serviceCollection.AddSingleton<IChannelNames>(provider => new LibraryChannelNames(
+            channelId => provider.GetRequiredService<ILibraryManager>().GetItemById(channelId)));
+
         // The tracker is registered under its own type as well as under the
         // interface, and both resolve the one instance. The sweep that closes
         // plays nobody stopped works on the plays this tracker is holding, so a
