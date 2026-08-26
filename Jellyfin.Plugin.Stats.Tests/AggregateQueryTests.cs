@@ -135,32 +135,97 @@ public sealed class AggregateQueryTests : IDisposable
         Assert.NotNull(breakdown);
         Assert.Equal(4, breakdown.Plays);
         Assert.Equal("Jellyfin Web", Assert.Single(breakdown.Rows).Key);
+
+        // Nothing folded, so there is no group to say so with. A breakdown that
+        // withheld nothing and one that folded an empty group are different
+        // statements, and answering the first with the second tells a reader
+        // something was kept from them when nothing was.
+        Assert.Null(breakdown.Combined);
     }
 
     /// <summary>
-    /// A breakdown with a row standing on one account is withheld whole, and the
-    /// total beside it is still answered.
+    /// A member one account alone used is not a row, and the plays under it are
+    /// not dropped either: they fold into the group with no name.
     /// </summary>
     /// <remarks>
-    /// Whole and not row by row. Suppressing the thin row alone leaves the total
-    /// beside the rows that remain, and the account that was suppressed is what
-    /// the difference between them comes to, so the arithmetic moves rather than
-    /// stopping. That reading is issue #41's and this is it as a case.
+    /// The shape issue #41 decided on 2026-08-24, and the case that shows what
+    /// it bought. Five clients, three of them used by two accounts and two of
+    /// them by one account each. The rule this replaced answered nothing at all
+    /// here, on exactly the servers a breakdown is worth having on. This answers
+    /// the three and puts the other two together, and the two accounts behind
+    /// the fold are what makes that group showable.
+    /// <para>
+    /// The thin members are used by DIFFERENT accounts on purpose. Two members
+    /// one person used would fold into a group standing on that person, which is
+    /// the case below rather than this one.
+    /// </para>
+    /// </remarks>
+    /// <param name="dimension">Which dimension the fold is asked over.</param>
+    [Theory]
+    [InlineData("client")]
+    [InlineData("device")]
+    public void AMemberOneAccountUsedFoldsIntoTheGroupWithNoName(string dimension)
+    {
+        Store(
+            APlay(Alice, AFilm, March, "Jellyfin Web", "device-1"),
+            APlay(Bob, AFilm, March.AddHours(1), "Jellyfin Web", "device-1"),
+            APlay(Alice, AnotherFilm, March.AddHours(2), "Findroid", "device-2"),
+            APlay(Bob, AnotherFilm, March.AddHours(3), "Findroid", "device-2"),
+            APlay(Alice, AFilm, March.AddHours(4), "Swiftfin", "device-3"),
+            APlay(Bob, AFilm, March.AddHours(5), "Swiftfin", "device-3"),
+            APlay(Alice, AFilm, March.AddHours(6), "Roku", "device-4"),
+            APlay(Bob, AnotherFilm, March.AddHours(7), "Kodi", "device-5"));
+
+        var breakdown = new AggregateQueries(OpenTheStore).Breakdown(
+            AWeekFrom(March),
+            dimension == "client" ? PlayDimension.Client : PlayDimension.Device);
+
+        Assert.NotNull(breakdown);
+        Assert.Equal(3, breakdown.Rows.Count);
+        Assert.NotNull(breakdown.Combined);
+        Assert.Equal(2, breakdown.Combined.Plays);
+
+        // The rows alone no longer add up, and the rows plus the group do. That
+        // is the property this type is held to once a member can be folded, and
+        // a fold that lost a play would pass every other assertion here.
+        Assert.Equal(8, breakdown.Plays);
+        Assert.Equal(
+            breakdown.Plays,
+            breakdown.Rows.Sum(row => row.Delivery.Plays) + breakdown.Combined.Plays);
+    }
+
+    /// <summary>
+    /// The group thin members fold into is held to the same threshold a row is,
+    /// so a breakdown whose thin members come to one account between them is
+    /// withheld whole. The total beside it is still answered.
+    /// </summary>
+    /// <remarks>
+    /// The half of the decision that is easy to leave out, and the one that
+    /// makes the fold worth anything. A group standing on one account is that
+    /// account under a shorter name, and calling it the rest changes nothing
+    /// about who it is about: an administrator who knows the row above is
+    /// everybody else reads the fold as one person watching.
+    /// <para>
+    /// One thin member on its own always lands here, because the accounts behind
+    /// one thin member are exactly what made it thin. Two are needed before a
+    /// fold can be shown at all, which is what the case above has.
+    /// </para>
     /// <para>
     /// The total stays because a total on its own is not half of a subtraction.
     /// Withholding it as well would cost every report on the server a figure
     /// that names nobody.
     /// </para>
     /// </remarks>
+    /// <param name="dimension">Which dimension the fold is asked over.</param>
     [Theory]
     [InlineData("client")]
     [InlineData("device")]
-    public void ABreakdownWithARowStandingOnOneAccountIsWithheldAndTheTotalIsNot(string dimension)
+    public void ABreakdownWhoseFoldWouldStandOnOneAccountIsWithheldAndTheTotalIsNot(string dimension)
     {
         Store(
             APlay(Alice, AFilm, March, "Jellyfin Web", "device-1"),
-            APlay(Alice, AnotherFilm, March.AddHours(1), "Jellyfin Web", "device-1"),
-            APlay(Bob, AFilm, March.AddHours(2), "Roku", "device-2"));
+            APlay(Bob, AFilm, March.AddHours(1), "Jellyfin Web", "device-1"),
+            APlay(Bob, AnotherFilm, March.AddHours(2), "Roku", "device-2"));
 
         var queries = new AggregateQueries(OpenTheStore);
         var window = AWeekFrom(March);
@@ -183,9 +248,15 @@ public sealed class AggregateQueryTests : IDisposable
     /// <para>
     /// Two accounts, one of which has agreed to be named. Every route to a
     /// figure about one of them is walked: there is no dimension to group
-    /// accounts by, both breakdowns that could stand in for one are withheld,
-    /// and the only figure left is a total over both. The subtraction has no
-    /// second operand.
+    /// accounts by, both breakdowns that could stand in for one come back with
+    /// no rows and one group covering everybody, and the only other figure is a
+    /// total over both. The subtraction has no second operand.
+    /// </para>
+    /// <para>
+    /// The two breakdowns used to be withheld outright here and are not, which
+    /// is the fold decided on 2026-08-24 arriving. What this case asserts is
+    /// unchanged: what matters is that nothing comes back that is about one of
+    /// the two, and a group over both is not.
     /// </para>
     /// </remarks>
     [Fact]
@@ -205,8 +276,19 @@ public sealed class AggregateQueryTests : IDisposable
             Enum.GetValues<PlayDimension>(),
             dimension => dimension.ToString().Contains("User", StringComparison.OrdinalIgnoreCase));
 
-        Assert.Null(queries.Breakdown(window, PlayDimension.Client));
-        Assert.Null(queries.Breakdown(window, PlayDimension.Device));
+        foreach (var dimension in Enum.GetValues<PlayDimension>())
+        {
+            // Neither is withheld any more and neither carries a second
+            // operand: every member here stands on one account, so every member
+            // folds, and what comes back is one group over both people that
+            // says nothing the total does not already say.
+            var breakdown = queries.Breakdown(window, dimension);
+
+            Assert.NotNull(breakdown);
+            Assert.Empty(breakdown.Rows);
+            Assert.NotNull(breakdown.Combined);
+            Assert.Equal(2, breakdown.Combined.Plays);
+        }
 
         var total = queries.Total(window);
 
@@ -227,9 +309,10 @@ public sealed class AggregateQueryTests : IDisposable
     /// <remarks>
     /// The case that separates the two, and the one the cases above cannot: two
     /// accounts, each watching twice on a client of its own. Counted in plays,
-    /// every row stands on two and the breakdown is answered, which hands an
+    /// every member stands on two and every member is a row, which hands an
     /// administrator one row per person under another name. Counted in accounts,
-    /// every row stands on one and the breakdown is withheld.
+    /// every member stands on one, so no member is a row and both fold into one
+    /// group over the two of them.
     /// <para>
     /// Four hundred plays from one person are still one account, which is the
     /// sentence this asserts. It matters most on the dimensions that are not the
@@ -248,8 +331,16 @@ public sealed class AggregateQueryTests : IDisposable
         var queries = new AggregateQueries(OpenTheStore);
         var window = AWeekFrom(March);
 
-        Assert.Null(queries.Breakdown(window, PlayDimension.Client));
-        Assert.Null(queries.Breakdown(window, PlayDimension.Device));
+        foreach (var dimension in Enum.GetValues<PlayDimension>())
+        {
+            var breakdown = queries.Breakdown(window, dimension);
+
+            Assert.NotNull(breakdown);
+            Assert.Empty(breakdown.Rows);
+            Assert.NotNull(breakdown.Combined);
+            Assert.Equal(4, breakdown.Combined.Plays);
+        }
+
         Assert.Equal(4, queries.Total(window).Plays);
     }
 
@@ -515,6 +606,8 @@ public sealed class AggregateQueryTests : IDisposable
                 queries.Distribution(window, zone).Cells.Select(cell => cell.ToString())),
             "breakdown" => queries.Breakdown(window, PlayDimension.Client) is { } rows
                 ? string.Join("; ", rows.Rows.Select(row => row.ToString()))
+                    + " + "
+                    + (rows.Combined?.ToString() ?? "nothing folded")
                 : "withheld",
             "reasons" => string.Join(
                 "; ",

@@ -49,6 +49,13 @@
 
 import { barBreakdown, escapeText, stateNotice } from './charts.js';
 
+/* What the group of members too few accounts stand behind is called in the
+ * picture. A wording rather than a name, and one that says what the bar IS: a
+ * label reading like a client would put a thing nobody uses in a list of things
+ * people use, and a label reading like a person would be the one reading issue
+ * #41's third condition refuses in as many words. */
+const GROUPED_TOGETHER = 'Grouped together, too few accounts to show separately';
+
 /* What an answer may say it is. Ready is the one that carries rows; the other
  * three are the situations issue #64 asks every view to tell apart. */
 const STATES = ['ready', 'empty', 'loading', 'failed'];
@@ -76,7 +83,7 @@ const DIMENSIONS = {
  * plays of theirs the server re-encoded, or says which of the other three
  * situations the view is in.
  *
- * @param {{state: string, reason?: string, dimension?: string, plays?: number, rows?: ReadonlyArray<{name: string|null, delivery: {plays: number, unknown: number, transcode: number}}>}} answer The breakdown, as the server folded it, or the state it is in instead.
+ * @param {{state: string, reason?: string, dimension?: string, plays?: number, rows?: ReadonlyArray<{name: string|null, delivery: {plays: number, unknown: number, transcode: number}}>, combined?: {plays: number, unknown: number, transcode: number}|null}} answer The breakdown, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function clientsAndDevices(answer) {
@@ -94,12 +101,30 @@ export function clientsAndDevices(answer) {
     /* Two fields and no third. Whatever else a row arrives carrying does not
      * reach the drawing, which is what makes "this view names no user" a
      * statement about the code rather than about the data it was tested with. */
-    const members = (answer.rows ?? []).map((row) => ({
+    const named = (answer.rows ?? []).map((row) => ({
         label: labelOf(row, dimension),
         plays: row.delivery.plays,
         unknown: row.delivery.unknown,
         transcode: row.delivery.transcode,
     }));
+
+    /* The group the fold put the members too few accounts stand behind into. It
+     * is drawn last and under a wording of this view's own, because it is the
+     * one bar in the picture that is not a client or a device. It arrives with
+     * no name and no key on purpose, and inventing one here would put it in the
+     * picture as though somebody used it. Issue #41. */
+    const folded = answer.combined
+        ? [
+              {
+                  label: GROUPED_TOGETHER,
+                  plays: answer.combined.plays,
+                  unknown: answer.combined.unknown,
+                  transcode: answer.combined.transcode,
+              },
+          ]
+        : [];
+
+    const members = named.concat(folded);
 
     const unreported = members.reduce((running, member) => running + member.unknown, 0);
 
@@ -127,7 +152,7 @@ export function clientsAndDevices(answer) {
             },
         ) +
         '<figcaption class="stats-view-note">' +
-        escapeText(caption(answer, members, unreported)) +
+        escapeText(caption(answer, members, unreported, folded.length > 0)) +
         '</figcaption>' +
         '</figure>'
     );
@@ -144,23 +169,33 @@ export function clientsAndDevices(answer) {
  * @param {{plays?: number}} answer The breakdown.
  * @param {ReadonlyArray<{label: string}>} members The rows being drawn.
  * @param {number} unreported How many plays carried no delivery method.
+ * @param {boolean} anyFolded Whether one of the bars is the grouped-together one.
  * @returns {string} The sentence.
  */
-function caption(answer, members, unreported) {
+function caption(answer, members, unreported, anyFolded) {
     const plays = typeof answer.plays === 'number' ? answer.plays : null;
     const counted =
         plays === null
             ? `${members.length} in this range.`
             : `${members.length} over ${plays} plays in this range, and every play is in exactly one of them.`;
 
+    /* Said in the caption and not only in a bar label, because a reader who
+     * counts the bars and finds fewer clients than they know their server has
+     * would otherwise conclude the plugin lost some. What it did was decline to
+     * name them. */
+    const grouping = anyFolded
+        ? ' One bar is the members too few accounts use for this view to show them ' +
+          'separately, put together so that their plays are still counted.'
+        : '';
+
     if (unreported === 0) {
-        return `${counted} The server reported how it delivered every one of them.`;
+        return `${counted} The server reported how it delivered every one of them.${grouping}`;
     }
 
     return (
         `${counted} The server reported no delivery method for ${unreported} of those plays, ` +
         'so a bar in the lower drawing counts the plays known to have been re-encoded and ' +
-        'not the plays that were.'
+        `not the plays that were.${grouping}`
     );
 }
 

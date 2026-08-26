@@ -39,11 +39,13 @@ namespace Jellyfin.Plugin.Stats.Reports;
 /// THE SECOND HALF IS THE ARITHMETIC ONE AND IT IS A RULE THAT RUNS. A row
 /// backed by one account names that account to anybody who knows who was
 /// watching, and suppressing the row alone moves the subtraction to the total
-/// rather than preventing it. So a breakdown whose rows do not all stand on at
-/// least <see cref="FewestAccountsBehindARow"/> accounts is withheld entirely,
-/// and the total beside it stays available because a total on its own is not
-/// half of a subtraction. Issue #41 is where that was decided and what it costs
-/// is written there.
+/// rather than preventing it. So every member standing on fewer than
+/// <see cref="FewestAccountsBehindARow"/> accounts is folded into one group that
+/// has no name and no key, that group is held to the same threshold, and where
+/// it cannot meet it the breakdown is withheld entirely. The total beside it
+/// stays available either way, because a total on its own is not half of a
+/// subtraction. Issue #41 is where both were decided and what each costs is
+/// written there.
 /// </para>
 /// <para>
 /// Every shape opens the store, reads what its window allows, folds it, and
@@ -165,17 +167,32 @@ public sealed class AggregateQueries
         => HourAndWeekdayGrid.Over(Read(window), zone, window.FromUtc, window.ToUtc);
 
     /// <summary>
-    /// The fourth shape: one row per member of a dimension, or nothing where
-    /// answering it would name somebody.
+    /// The fourth shape: one row per member of a dimension, with the members too
+    /// few accounts stand behind folded into one group that has no name, or
+    /// nothing at all where even that group would name somebody.
     /// </summary>
     /// <remarks>
     /// The shape the privacy rule actually bites on. A client or a device that
     /// one account alone used is that account under another name, and the rows
     /// beside it plus the total are enough to recover what that account watched
-    /// whether or not the thin row is shown. So the breakdown is answered only
-    /// when every row it would return stands on at least
-    /// <see cref="FewestAccountsBehindARow"/> accounts, and is withheld whole
-    /// otherwise.
+    /// whether or not the thin row is shown. So no member standing on fewer than
+    /// <see cref="FewestAccountsBehindARow"/> accounts is ever a row.
+    /// <para>
+    /// WHAT HAPPENS TO THOSE MEMBERS WAS DECIDED ON ISSUE #41 ON 2026-08-24 AND
+    /// IS NOT WHAT THIS SHAPE USED TO DO. They fold into one group rather than
+    /// the whole breakdown being withheld. Withholding it whole is safe by
+    /// refusing to answer at all, which on a small server is every breakdown:
+    /// three clients used by two accounts and two used by one each answered
+    /// nothing, on exactly the servers a breakdown is worth having on. The fold
+    /// answers the three and puts the other two together.
+    /// </para>
+    /// <para>
+    /// THE THRESHOLD REACHES THE FOLD TOO. A group standing on one account is
+    /// that account under a shorter name, so where the members that would fold
+    /// come to fewer than the threshold between them there is no breakdown at
+    /// all. One thin member on its own always lands there, because the accounts
+    /// behind one thin member are what made it thin.
+    /// </para>
     /// <para>
     /// WITHHELD IS NOT EMPTY AND THE DIFFERENCE IS THE WHOLE ANSWER. A range
     /// with no plays in it and a range whose breakdown may not be shown are
@@ -189,19 +206,46 @@ public sealed class AggregateQueries
     /// </remarks>
     /// <param name="window">The range and the bound.</param>
     /// <param name="dimension">What to group by, from a closed set the user is not in.</param>
-    /// <returns>The rows and what they add up to, or null where the breakdown is withheld.</returns>
+    /// <returns>The rows, the group the rest folded into, and what they add up to together, or null where the breakdown is withheld.</returns>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
     /// <exception cref="TooManyPlaysToAnswerException">The range holds more plays than the bound allows.</exception>
     public DimensionBreakdown? Breakdown(QueryWindow window, PlayDimension dimension)
     {
         var plays = Read(window);
+        var accounts = AccountsBehindEachGroup(plays, dimension);
 
-        if (!EveryGroupStandsOnEnoughAccounts(plays, dimension))
+        var folding = new List<string>();
+        var behindTheFold = new HashSet<Guid>();
+
+        foreach (var (key, behind) in accounts)
+        {
+            if (behind.Count >= FewestAccountsBehindARow)
+            {
+                continue;
+            }
+
+            folding.Add(key);
+            behindTheFold.UnionWith(behind);
+        }
+
+        // The threshold reaches the group the thin members fold into, and it is
+        // the same number. A group standing on one account is that account
+        // under a different name, and giving it no name does not change who it
+        // is about; on a server where every member is used by one person, the
+        // fold would otherwise publish that person as "the rest". So where what
+        // would fold comes to fewer accounts than a row needs, there is no
+        // breakdown at all.
+        //
+        // One thin member on its own always lands here, which is why the case
+        // reads as a whole withhold rather than as a group of one: a member is
+        // thin because fewer than the threshold stood behind it, so the union
+        // of exactly one thin member is thin by the same count.
+        if (folding.Count > 0 && behindTheFold.Count < FewestAccountsBehindARow)
         {
             return null;
         }
 
-        return DimensionBreakdown.Over(plays, dimension);
+        return DimensionBreakdown.Over(plays, dimension, folding);
     }
 
     /// <summary>
@@ -341,19 +385,27 @@ public sealed class AggregateQueries
     }
 
     /// <summary>
-    /// Whether every member of a dimension in this set of plays was used by
-    /// enough distinct accounts for the breakdown to be answerable.
+    /// How many distinct accounts stand behind each member of a dimension in
+    /// this set of plays.
     /// </summary>
     /// <remarks>
-    /// A set with no plays in it passes, and that is deliberate rather than an
-    /// edge nobody thought about: an empty range has no rows to stand on
-    /// anybody, and answering it with nothing tells a reader the range is empty,
-    /// which is true and names nobody.
+    /// A set with no plays in it produces no groups, and that is deliberate
+    /// rather than an edge nobody thought about: an empty range has no member
+    /// standing on anybody, nothing folds, and answering it with an empty
+    /// breakdown tells a reader the range is empty, which is true and names
+    /// nobody.
+    /// <para>
+    /// The keys are spelled the way <see cref="DimensionBreakdown"/> spells
+    /// them. They have to be, or the accounts are counted over one grouping and
+    /// the rule applied to another.
+    /// </para>
     /// </remarks>
     /// <param name="plays">The plays the breakdown would be folded from.</param>
     /// <param name="dimension">What the breakdown would group by.</param>
-    /// <returns>Whether the breakdown may be answered.</returns>
-    private static bool EveryGroupStandsOnEnoughAccounts(IReadOnlyList<PlayRecord> plays, PlayDimension dimension)
+    /// <returns>The accounts behind each member.</returns>
+    private static Dictionary<string, HashSet<Guid>> AccountsBehindEachGroup(
+        IReadOnlyList<PlayRecord> plays,
+        PlayDimension dimension)
     {
         var accounts = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
 
@@ -370,15 +422,7 @@ public sealed class AggregateQueries
             behind.Add(play.UserId);
         }
 
-        foreach (var behind in accounts.Values)
-        {
-            if (behind.Count < FewestAccountsBehindARow)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return accounts;
     }
 
     /// <summary>
