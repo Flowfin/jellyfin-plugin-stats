@@ -167,8 +167,8 @@ public class AValueTheEndpointCannotReadTests
     }
 
     /// <summary>
-    /// Every value any action in this plugin takes off a request is either an
-    /// identity the route carries or one of the two window instants.
+    /// Every value any action in this plugin takes off a request is one this
+    /// file has admitted by name.
     /// </summary>
     /// <remarks>
     /// The condition this file serves is about every filter and sort parameter,
@@ -204,7 +204,19 @@ public class AValueTheEndpointCannotReadTests
             // which rows the server reaches for, and this decides nothing about
             // rows at all. It is admitted by name so the set stays closed, and
             // that is the whole of what the set is worth. Issue #42.
-            "answer"
+            "answer",
+
+            // The filter and the sort on the aggregate top list, and the first
+            // two entries here that ARE what issue #55's second condition is
+            // about. They are admitted because each maps through a
+            // ClosedSet<T> and a value in neither set is refused before the
+            // store is opened, which is what that condition asks for, and
+            // because neither reaches the store as anything but a member of an
+            // enumeration this build declares. The set they map through is
+            // driven at ClosedSetTests and the refusal is driven at
+            // TheAggregateTopListTests.
+            "grouping",
+            "order"
         };
 
         var taken = typeof(YourYearController).Assembly
@@ -222,10 +234,70 @@ public class AValueTheEndpointCannotReadTests
 
         Assert.True(
             unexpected.Count == 0,
-            "These action parameters are neither an identity nor a window, and issue #55 asks that a "
-            + "filter or a sort map through a closed set before one of either exists: "
+            "These action parameters are not in the set this file admits, and issue #55 asks that a "
+            + "filter or a sort map through a closed set rather than arriving as a value nobody declared: "
             + string.Join(", ", unexpected));
     }
+
+
+    /// <summary>
+    /// No action takes an enumeration off a request, so a closed choice cannot
+    /// be bound straight out of the query.
+    /// </summary>
+    /// <remarks>
+    /// THIS IS THE ONE-WORD MISTAKE ISSUE #55'S SECOND CONDITION IS LOST TO,
+    /// and it is available on every filter and every sort somebody will ever
+    /// add here. An action declaring <c>[FromQuery] TopListOrder order</c> reads
+    /// as closed: the type has two members, the framework refuses a member name
+    /// it does not know, and every reader of the diff nods. What the framework
+    /// does with a NUMBER is the part nobody pictures, and it was measured here
+    /// rather than assumed. A number outside the members is refused; a member's
+    /// OWN number is not. <c>?order=0</c> and <c>?order=1</c> arrive as the two
+    /// members, and <c>?order=</c> arrives as nothing and takes the default. So
+    /// the endpoint answers a vocabulary nobody declared, one that changes
+    /// meaning when a member is reordered, and no reading of the source says
+    /// so.
+    /// <para>
+    /// Refused structurally rather than by a case per parameter, because the
+    /// case per parameter is exactly what somebody adding the next one forgets.
+    /// A choice reaches an action as a string and is mapped by
+    /// <see cref="ClosedSet{T}"/>, which knows only the spellings it was given.
+    /// </para>
+    /// <para>
+    /// What this cannot see is a closed choice arriving as a number on purpose,
+    /// an <c>int</c> parameter a caller indexes a column list with. That is a
+    /// name judgement, which is the same bound the greppable rule's own record
+    /// states, and this walk does not claim it.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void NoActionTakesAnEnumerationOffARequest()
+    {
+        var bound = typeof(YourYearController).Assembly
+            .GetTypes()
+            .Where(t => typeof(ControllerBase).IsAssignableFrom(t) && !t.IsAbstract)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            .Where(m => m.GetCustomAttributes<HttpMethodAttribute>(inherit: true).Any())
+            .SelectMany(m => m.GetParameters().Select(parameter => new
+            {
+                Where = Name(m) + "." + parameter.Name,
+                Type = Nullable.GetUnderlyingType(parameter.ParameterType) ?? parameter.ParameterType
+            }))
+            .ToList();
+
+        Assert.NotEmpty(bound);
+
+        var enumerations = bound.Where(parameter => parameter.Type.IsEnum).Select(parameter => parameter.Where).ToList();
+
+        Assert.True(
+            enumerations.Count == 0,
+            "These action parameters bind an enumeration straight off the request, and a number outside the "
+            + "declared members binds to it without being refused: "
+            + string.Join(", ", enumerations));
+    }
+
+    private static string Name(MethodInfo action)
+        => action.DeclaringType!.Name + "." + action.Name;
 
     private static string Path(Guid userId)
         => "/Stats/Users/" + userId.ToString("D", CultureInfo.InvariantCulture) + "/Plays";

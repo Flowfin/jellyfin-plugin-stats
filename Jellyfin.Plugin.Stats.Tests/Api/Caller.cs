@@ -8,8 +8,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Net;
 
@@ -58,15 +60,24 @@ public sealed class Caller
     /// Gets a signed-in administrator.
     /// </summary>
     /// <remarks>
-    /// Carried as its own shape even though no endpoint in this plugin reads
-    /// elevation today, because the row this shape produces is the statement
-    /// issue #43 is about: an administrator asking for somebody else's detail
-    /// is refused like anybody else. A matrix without this shape would be a
-    /// matrix that never asked.
+    /// The row this shape produces on the self routes is the statement issue
+    /// #43 is about: an administrator asking for somebody else's detail is
+    /// refused like anybody else. A matrix without this shape would be a matrix
+    /// that never asked.
+    /// <para>
+    /// IT CARRIES THE PERMISSION AND NOT ONLY THE FLAG. This shape used to be
+    /// an administrator by a boolean of this file's own, which was enough while
+    /// nothing in the plugin read elevation. The aggregate reports do, off
+    /// <c>PermissionKind.IsAdministrator</c> on the account the server
+    /// describes, so a shape carrying the flag alone would be refused by the
+    /// endpoint it exists to prove the administrator cell of.
+    /// <c>TheAdministratorShapeIsTheOnlyElevatedOne</c> is what keeps the flag
+    /// and the permission from drifting apart.
+    /// </para>
     /// </remarks>
     public static Caller Administrator { get; } = new(
         "an administrator",
-        FakeUserManager.NewUser("administrator", new Guid("33333333-3333-3333-3333-333333333333")),
+        Elevated(FakeUserManager.NewUser("administrator", new Guid("33333333-3333-3333-3333-333333333333"))),
         true);
 
     /// <summary>
@@ -128,4 +139,29 @@ public sealed class Caller
     /// <returns>The caller, as the server describes one.</returns>
     public AuthorizationInfo AsTheServerDescribesIt()
         => new() { User = Account, IsAuthenticated = Account is not null };
+
+    /// <summary>
+    /// Gives an account the administrator permission, the way the server's own
+    /// answer about elevation reads it.
+    /// </summary>
+    /// <remarks>
+    /// Any entry already standing for that permission is taken out first. A
+    /// fresh account carries the default set, and the read this stands in for
+    /// takes the first entry of the kind it is asked about, so appending beside
+    /// a default would leave which answer wins depending on the order a
+    /// collection happens to be in.
+    /// </remarks>
+    /// <param name="account">The account.</param>
+    /// <returns>The same account.</returns>
+    private static User Elevated(User account)
+    {
+        foreach (var standing in account.Permissions.Where(p => p.Kind == PermissionKind.IsAdministrator).ToList())
+        {
+            account.Permissions.Remove(standing);
+        }
+
+        account.Permissions.Add(new Permission(PermissionKind.IsAdministrator, true));
+
+        return account;
+    }
 }
