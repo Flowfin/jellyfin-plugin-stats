@@ -65,12 +65,14 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="clock">The clock the endpoints read the current year from, or a fixed one in 2026 where none is given.</param>
     /// <param name="deletion">What removes an account's own plays. A test that only reads statuses lets this default to one over a store holding nothing.</param>
     /// <param name="consent">What holds each account's answer about being named. Defaults to one over a store that keeps answers in memory.</param>
+    /// <param name="access">What the library says about which items a caller may see. Defaults to one where every item asked about is visible, so a test about anything else is not silently testing the access rule.</param>
     public InProcessEndpoints(
         Func<Guid, int, TimeZoneInfo, int, YearInReview>? fold = null,
         PluginConfiguration? configuration = null,
         TimeProvider? clock = null,
         OwnHistoryDeletion? deletion = null,
-        ConsentRegister? consent = null)
+        ConsentRegister? consent = null,
+        IItemAccess? access = null)
     {
         var settings = configuration ?? new PluginConfiguration();
         var moment = clock ?? new FixedClock(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
@@ -94,6 +96,7 @@ public sealed class InProcessEndpoints : IDisposable
         services.AddSingleton(_who);
         services.AddSingleton<IAuthorizationContext>(new CallerContext(_who));
         services.AddSingleton(new HeldYears(fold ?? NothingWatched, moment));
+        services.AddSingleton(access ?? FakeItemAccess.EverythingVisible);
         services.AddSingleton(deletion ?? new OwnHistoryDeletion(() => new NothingStored(), 1));
 
         // One store for the register rather than one per call, so an answer
