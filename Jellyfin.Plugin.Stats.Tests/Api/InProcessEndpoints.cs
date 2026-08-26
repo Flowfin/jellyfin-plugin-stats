@@ -24,6 +24,7 @@ using Jellyfin.Plugin.Stats.Api;
 using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Privacy;
+using Jellyfin.Plugin.Stats.Reports;
 using Jellyfin.Plugin.Stats.Tests.Fakes;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authentication;
@@ -66,13 +67,15 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="deletion">What removes an account's own plays. A test that only reads statuses lets this default to one over a store holding nothing.</param>
     /// <param name="consent">What holds each account's answer about being named. Defaults to one over a store that keeps answers in memory.</param>
     /// <param name="access">What the library says about which items a caller may see. Defaults to one where every item asked about is visible, so a test about anything else is not silently testing the access rule.</param>
+    /// <param name="reports">The layer the aggregate routes answer through. Defaults to one over a store holding no plays, so a test about a status is not also a test about somebody's arithmetic.</param>
     public InProcessEndpoints(
         Func<Guid, int, TimeZoneInfo, int, YearInReview>? fold = null,
         PluginConfiguration? configuration = null,
         TimeProvider? clock = null,
         OwnHistoryDeletion? deletion = null,
         ConsentRegister? consent = null,
-        IItemAccess? access = null)
+        IItemAccess? access = null,
+        AggregateQueries? reports = null)
     {
         var settings = configuration ?? new PluginConfiguration();
         var moment = clock ?? new FixedClock(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
@@ -104,6 +107,7 @@ public sealed class InProcessEndpoints : IDisposable
         // it.
         var answers = new NothingStored();
         services.AddSingleton(consent ?? new ConsentRegister(() => answers, moment));
+        services.AddSingleton(reports ?? new AggregateQueries(() => new NothingStored()));
         services.AddSingleton<Func<PluginConfiguration>>(() => settings);
         services.AddSingleton(moment);
 
@@ -198,9 +202,9 @@ public sealed class InProcessEndpoints : IDisposable
     /// A store with nothing in it, for the tests that only read statuses.
     /// </summary>
     /// <remarks>
-    /// It answers the two deletions with nought and refuses everything else,
-    /// so a test that reached this by accident fails rather than passing over
-    /// an answer nobody arranged.
+    /// It answers the two deletions with nought, a range with no plays, and
+    /// refuses everything else, so a test that reached this by accident fails
+    /// rather than passing over an answer nobody arranged.
     /// </remarks>
     private sealed class NothingStored : IPlayStore
     {
@@ -227,7 +231,12 @@ public sealed class InProcessEndpoints : IDisposable
 
         public void Add(PlayRecord play) => throw NotPartOfThis();
 
-        public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+        // The one read this store answers, because an aggregate route reads a
+        // range and a matrix cell about who may ask has to reach the answer
+        // rather than a failure. A range holding nothing is the honest empty
+        // server, and a test about what an aggregate says is handed a layer of
+        // its own rather than this one.
+        public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit) => [];
 
         public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
 
