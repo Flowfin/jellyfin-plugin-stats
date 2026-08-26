@@ -9,9 +9,10 @@
 // this file use one: what is asserted here is a property of the read and not of
 // the fold. Every moment is chosen by the test and nothing reads a clock.
 //
-// Issue #56, first condition. The third asks for a case over a large store and
-// there is none here; what was tried, what it cost and what it broke are written
-// on that issue.
+// Issue #56, first condition. THIS COMMENT SAID THE THIRD CONDITION HAD NO CASE
+// AND SENT A READER TO THE ISSUE FOR WHAT IT COST. There is one now, in
+// EveryEndpointOverALargeStoreTests.cs, and what made it writable is that the
+// store takes a sequence in one piece of work rather than a row at a time.
 
 using System;
 using System.IO;
