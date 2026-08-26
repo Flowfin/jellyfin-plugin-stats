@@ -30,9 +30,10 @@ namespace Jellyfin.Plugin.Stats.Aggregation;
 /// </remarks>
 public sealed record DimensionBreakdown
 {
-    private DimensionBreakdown(IReadOnlyList<DimensionRow> rows, long plays)
+    private DimensionBreakdown(IReadOnlyList<DimensionRow> rows, DeliveryMethodShares? combined, long plays)
     {
         Rows = rows;
+        Combined = combined;
         Plays = plays;
     }
 
@@ -45,10 +46,45 @@ public sealed record DimensionBreakdown
     public IReadOnlyList<DimensionRow> Rows { get; }
 
     /// <summary>
-    /// Gets how many plays were folded, counted as they arrived. The rows above
-    /// add up to this, and that they do is the property this type exists to
-    /// hold rather than a fact about how it is written.
+    /// Gets the plays whose members were folded together because too few
+    /// accounts stood behind each of them, and nothing at all where no member
+    /// had to be.
     /// </summary>
+    /// <remarks>
+    /// It is not a row and it is deliberately not shaped like one. A member that
+    /// only one account used cannot be shown under its own name without naming
+    /// that account to anybody who knows who was watching, so those members are
+    /// folded into this one figure, which has no key and no name because it is
+    /// not a member of anything. Issue #41 decided the fold on 2026-08-24, in
+    /// place of the whole breakdown being withheld.
+    /// <para>
+    /// A reader who wants it as a row has to make one, and in making it has to
+    /// choose a label. That is the point of the shape: a combined group with a
+    /// key would sit in <see cref="Rows"/> and be drawn as though it were a
+    /// client somebody uses, which is the reading issue #41's third condition
+    /// refuses in as many words.
+    /// </para>
+    /// <para>
+    /// It never stands on fewer accounts than a row would have needed. Where
+    /// the members that would have folded into it come to fewer than that
+    /// between them, there is no breakdown at all rather than a thin group
+    /// under another name, and the layer that applies the rule is where that is
+    /// decided.
+    /// </para>
+    /// </remarks>
+    public DeliveryMethodShares? Combined { get; }
+
+    /// <summary>
+    /// Gets how many plays were folded, counted as they arrived.
+    /// </summary>
+    /// <remarks>
+    /// THE ROWS ALONE NO LONGER ADD UP TO THIS, and that is the one thing to
+    /// read carefully about this type. The rows and <see cref="Combined"/>
+    /// together do, which is the same property in the presence of a group that
+    /// has no name. A reader who adds the rows up and meets a larger count is
+    /// looking at a breakdown some of whose members were folded, and the figure
+    /// that says so is beside them rather than missing.
+    /// </remarks>
     public long Plays { get; }
 
     /// <summary>
@@ -62,11 +98,16 @@ public sealed record DimensionBreakdown
     /// </remarks>
     /// <param name="plays">The plays to fold. The range they belong to is chosen before they get here.</param>
     /// <param name="dimension">What to group them by.</param>
-    /// <returns>The rows and the number of plays they were folded from.</returns>
+    /// <param name="foldedTogether">The keys that may not be shown under their own names, which become one group with no name. Empty where every member may be shown.</param>
+    /// <returns>The rows, the group the rest were folded into, and the number of plays both were folded from.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The dimension is not one this build knows.</exception>
-    public static DimensionBreakdown Over(IEnumerable<PlayRecord> plays, PlayDimension dimension)
+    public static DimensionBreakdown Over(
+        IEnumerable<PlayRecord> plays,
+        PlayDimension dimension,
+        IReadOnlyCollection<string> foldedTogether)
     {
         ArgumentNullException.ThrowIfNull(plays);
+        ArgumentNullException.ThrowIfNull(foldedTogether);
 
         var grouped = new Dictionary<string, List<PlayRecord>>(StringComparer.Ordinal);
         var labels = new Dictionary<string, Label>(StringComparer.Ordinal);
@@ -96,9 +137,23 @@ public sealed record DimensionBreakdown
             underThisKey.Add(play);
         }
 
+        // Which keys fold is decided before this and handed in, because the
+        // rule that decides it counts accounts and this fold has never seen an
+        // account. Passing the keys rather than the accounts keeps it that way:
+        // there is nothing here to count people with.
+        var folding = new HashSet<string>(foldedTogether, StringComparer.Ordinal);
+
         var rows = new List<DimensionRow>(grouped.Count);
+        var combined = new List<PlayRecord>();
+
         foreach (var pair in grouped)
         {
+            if (folding.Contains(pair.Key))
+            {
+                combined.AddRange(pair.Value);
+                continue;
+            }
+
             rows.Add(new DimensionRow(pair.Key, labels[pair.Key].Name, DeliveryMethodShares.Over(pair.Value)));
         }
 
@@ -109,7 +164,14 @@ public sealed record DimensionBreakdown
             return byPlays != 0 ? byPlays : string.CompareOrdinal(left.Key, right.Key);
         });
 
-        return new DimensionBreakdown(rows, folded);
+        // Nothing folded is nothing to say. A group carrying no plays and a
+        // breakdown that had no member to fold are the same fact, and answering
+        // the second with an empty group would tell a reader that something was
+        // withheld from them when nothing was.
+        return new DimensionBreakdown(
+            rows,
+            combined.Count == 0 ? null : DeliveryMethodShares.Over(combined),
+            folded);
     }
 
     /// <summary>

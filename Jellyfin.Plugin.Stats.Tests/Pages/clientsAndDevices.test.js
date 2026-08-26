@@ -185,6 +185,58 @@ test('the view names no user, whatever the rows carry', () => {
     assert.doesNotMatch(drawn, /jellyfin-web/);
 });
 
+test('the group too few accounts stand behind is drawn, said to be a group, and counted', () => {
+    /* Issue #41's third condition at the surface a person reads. The fold hands
+     * this view a figure with no name and no key; what the view may not do is
+     * leave it out, which would lose plays out of a partition, or draw it under
+     * something that reads like one more client. */
+    const drawn = clientsAndDevices({
+        state: 'ready',
+        dimension: 'client',
+        plays: 8,
+        rows: [row('Jellyfin Web', { plays: 4, transcode: 1 }), row('Findroid', { plays: 2 })],
+        combined: { plays: 2, unknown: 0, directPlay: 2, directStream: 0, transcode: 0 },
+    });
+
+    assert.match(drawn, /<title>Grouped together, too few accounts to show separately: 2<\/title>/);
+    assert.match(drawn, /3 over 8 plays in this range, and every play is in exactly one of them/);
+    assert.match(drawn, /too few accounts use for this view to show them separately/);
+});
+
+test('the group is not drawn as a member when the fold had nothing to group', () => {
+    /* A breakdown that withheld nothing and one that folded an empty group are
+     * different statements. Drawing a bar for the second would tell a reader
+     * that something was kept from them when nothing was. */
+    const drawn = clientsAndDevices({
+        state: 'ready',
+        dimension: 'client',
+        plays: 6,
+        rows: [row('Jellyfin Web', { plays: 4 }), row('Findroid', { plays: 2 })],
+        combined: null,
+    });
+
+    assert.doesNotMatch(drawn, /Grouped together/);
+    assert.doesNotMatch(drawn, /too few accounts/);
+    assert.match(drawn, /2 over 6 plays in this range/);
+});
+
+test('the group is said to be a group and never named like a person', () => {
+    /* The wording is what this condition is about, so it is read rather than
+     * assumed. A label that could be somebody's name, or a word like other that
+     * says nothing about why the bar exists, would pass a test that only checked
+     * the bar was there. */
+    const drawn = clientsAndDevices({
+        state: 'ready',
+        dimension: 'device',
+        plays: 5,
+        rows: [row('A tablet', { plays: 3 })],
+        combined: { plays: 2, unknown: 0, directPlay: 2, directStream: 0, transcode: 0 },
+    });
+
+    assert.match(drawn, /Grouped together/);
+    assert.match(drawn, /too few accounts to show separately/);
+});
+
 test('a breakdown with no state is refused rather than drawn', () => {
     const ready = {
         dimension: 'client',

@@ -56,7 +56,7 @@ public class DimensionBreakdownTests
                     method: (PlayMethod)generator.Next(0, 4)));
             }
 
-            var breakdown = DimensionBreakdown.Over(plays, dimension);
+            var breakdown = DimensionBreakdown.Over(plays, dimension, []);
 
             Assert.Equal((long)length, breakdown.Plays);
             Assert.Equal(breakdown.Plays, breakdown.Rows.Sum(row => row.Delivery.Plays));
@@ -105,7 +105,8 @@ public class DimensionBreakdownTests
                 APlay(client: string.Empty),
                 APlay(client: "   ")
             },
-            PlayDimension.Client);
+            PlayDimension.Client,
+            []);
 
         Assert.Equal(4, breakdown.Plays);
         Assert.Equal(4, breakdown.Rows.Sum(row => row.Delivery.Plays));
@@ -131,7 +132,8 @@ public class DimensionBreakdownTests
                 APlay(client: "Unknown"),
                 APlay(client: string.Empty)
             },
-            PlayDimension.Client);
+            PlayDimension.Client,
+            []);
 
         Assert.Equal(2, breakdown.Rows.Count);
         Assert.Contains(breakdown.Rows, row => row.Name == "Unknown" && row.Key == "Unknown");
@@ -154,7 +156,8 @@ public class DimensionBreakdownTests
                 APlay(deviceId: "device-1", deviceName: "Front room", startedUtc: Noon.AddDays(2)),
                 APlay(deviceId: "device-1", deviceName: "Living room", startedUtc: Noon.AddDays(1))
             },
-            PlayDimension.Device);
+            PlayDimension.Device,
+            []);
 
         var row = Assert.Single(breakdown.Rows);
 
@@ -178,7 +181,8 @@ public class DimensionBreakdownTests
                 APlay(deviceId: "device-1", deviceName: "Living room", startedUtc: Noon),
                 APlay(deviceId: "device-1", deviceName: string.Empty, startedUtc: Noon.AddDays(1))
             },
-            PlayDimension.Device);
+            PlayDimension.Device,
+            []);
 
         var row = Assert.Single(breakdown.Rows);
 
@@ -200,7 +204,8 @@ public class DimensionBreakdownTests
                 APlay(deviceId: string.Empty, deviceName: "A browser", startedUtc: Noon),
                 APlay(deviceId: string.Empty, deviceName: "Another browser", startedUtc: Noon.AddHours(1))
             },
-            PlayDimension.Device);
+            PlayDimension.Device,
+            []);
 
         var row = Assert.Single(breakdown.Rows);
 
@@ -226,7 +231,8 @@ public class DimensionBreakdownTests
                 APlay(client: "Findroid", method: PlayMethod.Unknown),
                 APlay(client: "Infuse", method: PlayMethod.DirectStream)
             },
-            PlayDimension.Client);
+            PlayDimension.Client,
+            []);
 
         var findroid = Assert.Single(breakdown.Rows, row => row.Key == "Findroid");
 
@@ -266,13 +272,13 @@ public class DimensionBreakdownTests
     public void ADimensionThisBuildHasNoColumnForIsRefused()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => DimensionBreakdown.Over(new[] { APlay() }, (PlayDimension)99));
+            () => DimensionBreakdown.Over(new[] { APlay() }, (PlayDimension)99, []));
     }
 
     [Fact]
     public void AMissingSequenceIsRefusedRatherThanReadAsEmpty()
     {
-        Assert.Throws<ArgumentNullException>(() => DimensionBreakdown.Over(null!, PlayDimension.Client));
+        Assert.Throws<ArgumentNullException>(() => DimensionBreakdown.Over(null!, PlayDimension.Client, []));
     }
 
     /// <summary>
