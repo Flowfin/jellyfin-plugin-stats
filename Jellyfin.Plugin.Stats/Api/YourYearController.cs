@@ -35,6 +35,12 @@ namespace Jellyfin.Plugin.Stats.Api;
 /// <see cref="HeldYears"/>, which is handed the fold as a function where the
 /// plugin is assembled, so the store is opened by that function and never here.
 /// </para>
+/// <para>
+/// It does reach the library, for one question and while the request is being
+/// served: whether the account asking may still see an item a top list would
+/// name. That is the only thing the library is permitted to answer here, and it
+/// never supplies a label. Issue #54.
+/// </para>
 /// </remarks>
 [ApiController]
 [Authorize]
@@ -75,6 +81,7 @@ public sealed class YourYearController : ControllerBase
     public const int EarliestYearAnswered = 1970;
 
     private readonly HeldYears _years;
+    private readonly IItemAccess _access;
     private readonly IAuthorizationContext _callers;
     private readonly Func<PluginConfiguration> _configuration;
     private readonly TimeProvider _clock;
@@ -83,21 +90,25 @@ public sealed class YourYearController : ControllerBase
     /// Initializes a new instance of the <see cref="YourYearController"/> class.
     /// </summary>
     /// <param name="years">Where a folded year is asked for.</param>
+    /// <param name="access">What the library says about which items the caller may still see, asked while the request is served.</param>
     /// <param name="callers">What the server says about who made a request.</param>
     /// <param name="configuration">The current settings, read at the moment one is needed rather than held.</param>
     /// <param name="clock">Says which year the server is in, so a year that has not happened is refused rather than folded.</param>
     public YourYearController(
         HeldYears years,
+        IItemAccess access,
         IAuthorizationContext callers,
         Func<PluginConfiguration> configuration,
         TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(years);
+        ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(callers);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(clock);
 
         _years = years;
+        _access = access;
         _callers = callers;
         _configuration = configuration;
         _clock = clock;
@@ -150,7 +161,12 @@ public sealed class YourYearController : ControllerBase
 
         try
         {
-            return Ok(_years.For(userId, year, zone, TopListLength));
+            // The held answer is read for whoever is asking rather than served
+            // as it was folded. A finished year is kept until the rows under
+            // it move, and access is a fact about now: an item this account
+            // lost sight of yesterday moved no row, so nothing would ever tell
+            // the hold to let go of a list still naming it. Issue #54.
+            return Ok(_years.For(userId, year, zone, TopListLength).SeenBy(userId, _access));
         }
         catch (StoreCouldNotBeOpenedException)
         {

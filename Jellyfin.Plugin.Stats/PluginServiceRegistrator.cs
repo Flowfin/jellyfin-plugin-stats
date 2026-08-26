@@ -9,6 +9,7 @@ using Jellyfin.Plugin.Stats.Privacy;
 using Jellyfin.Plugin.Stats.Reports;
 using Jellyfin.Plugin.Stats.ScheduledTasks;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
@@ -136,6 +137,25 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
                     topCount,
                     store.OldestPlayStartedUtc())),
             provider.GetRequiredService<TimeProvider>()));
+
+        // The one question the library is asked on the read path: may the
+        // account a report is being answered for still see an item that report
+        // would name. It is asked while a request is served rather than folded
+        // into a held year, because access is a fact about now and a held year
+        // is let go of only when the rows under it move. Issue #54.
+        //
+        // Two functions rather than the two managers, for the reason the
+        // channel names above take one: the reach is held to the operations
+        // that are used, and the library is resolved at the moment a question
+        // is asked rather than when the container is built.
+        // The third function is where the server's own answer is asked for, and
+        // it carries no decision of its own: everything this plugin decides
+        // about an absent item or an absent account is decided in the class
+        // below, where a suite can drive it. Issue #54.
+        serviceCollection.AddSingleton<IItemAccess>(provider => new LibraryItemAccess(
+            itemId => provider.GetRequiredService<ILibraryManager>().GetItemById(itemId),
+            userId => provider.GetRequiredService<IUserManager>().GetUserById(userId),
+            static (item, account) => item.IsVisibleStandalone(account)));
 
         // What removes one account's own plays when that account asks. It is
         // registered rather than built in the controller because the store is

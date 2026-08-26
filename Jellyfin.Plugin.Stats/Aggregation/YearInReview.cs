@@ -53,6 +53,10 @@ namespace Jellyfin.Plugin.Stats.Aggregation;
 /// </remarks>
 public sealed record YearInReview
 {
+    private readonly IReadOnlyList<TitleRow> _rankedItems;
+    private readonly IReadOnlyList<TitleRow> _rankedSeries;
+    private readonly int _topCount;
+
     private YearInReview(int year, string zoneId, YearCoverage coverage)
     {
         Year = year;
@@ -61,6 +65,9 @@ public sealed record YearInReview
         AnythingRecorded = false;
         TopItems = Array.Empty<TitleRow>();
         TopSeries = Array.Empty<TitleRow>();
+        _rankedItems = Array.Empty<TitleRow>();
+        _rankedSeries = Array.Empty<TitleRow>();
+        _topCount = 0;
     }
 
     private YearInReview(
@@ -76,8 +83,9 @@ public sealed record YearInReview
         long finished,
         long abandoned,
         DeliveryMethodShares delivery,
-        IReadOnlyList<TitleRow> topItems,
-        IReadOnlyList<TitleRow> topSeries)
+        IReadOnlyList<TitleRow> rankedItems,
+        IReadOnlyList<TitleRow> rankedSeries,
+        int topCount)
     {
         Year = year;
         ZoneId = zoneId;
@@ -92,6 +100,42 @@ public sealed record YearInReview
         Finished = finished;
         Abandoned = abandoned;
         Delivery = delivery;
+        _rankedItems = rankedItems;
+        _rankedSeries = rankedSeries;
+        _topCount = topCount;
+        TopItems = FirstOf(rankedItems, topCount);
+        TopSeries = FirstOf(rankedSeries, topCount);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="YearInReview"/> class from
+    /// an already-folded year, with its two lists taken again.
+    /// </summary>
+    /// <remarks>
+    /// This is what reading a folded year for a particular account produces.
+    /// Every figure is copied rather than recomputed. Access decides which rows
+    /// a top list carries and it decides nothing else, so a total taken from
+    /// this copy and a total taken from the fold it came from are the same
+    /// number by construction rather than by two walks agreeing.
+    /// </remarks>
+    private YearInReview(YearInReview folded, IReadOnlyList<TitleRow> topItems, IReadOnlyList<TitleRow> topSeries)
+    {
+        Year = folded.Year;
+        ZoneId = folded.ZoneId;
+        Coverage = folded.Coverage;
+        AnythingRecorded = folded.AnythingRecorded;
+        Plays = folded.Plays;
+        Watched = folded.Watched;
+        DistinctItems = folded.DistinctItems;
+        LongestPlay = folded.LongestPlay;
+        BusiestDay = folded.BusiestDay;
+        BusiestMonth = folded.BusiestMonth;
+        Finished = folded.Finished;
+        Abandoned = folded.Abandoned;
+        Delivery = folded.Delivery;
+        _rankedItems = folded._rankedItems;
+        _rankedSeries = folded._rankedSeries;
+        _topCount = folded._topCount;
         TopItems = topItems;
         TopSeries = topSeries;
     }
@@ -200,6 +244,12 @@ public sealed record YearInReview
     /// two orderings disagree and a reader that wants the other one should not
     /// need a second fold to get it. Offering both as lists of their own is a
     /// condition of the top lists issue and not of this one.
+    /// <para>
+    /// Straight out of the fold this is every item, cut to the bound and asked
+    /// about nobody. <see cref="SeenBy"/> is what makes it a list for a
+    /// particular account, and a caller that serves this to a person without
+    /// going through it is serving a list nothing has checked. Issue #54.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<TitleRow> TopItems { get; }
 
@@ -215,6 +265,14 @@ public sealed record YearInReview
     /// labelled. It is left absent rather than filled with the name of one of
     /// the episodes under it, which would read as a series called after
     /// whichever episode happened to be folded first.
+    /// <para>
+    /// It is cut by <see cref="SeenBy"/> on the same rule as the item list,
+    /// although no name is being withheld today. A row here is still a
+    /// statement that this account watched something under a parent, and the
+    /// day a stored series name arrives on the row this list starts printing
+    /// one; a filter written for items alone would leak on the change that
+    /// added the label rather than on the change that added the filter.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<TitleRow> TopSeries { get; }
 
@@ -330,8 +388,56 @@ public sealed record YearInReview
             finished,
             abandoned,
             DeliveryMethodShares.Over(theirs),
-            TopOf(items, topCount),
-            TopOf(series, topCount));
+            RankedOf(items),
+            RankedOf(series),
+            topCount);
+    }
+
+    /// <summary>
+    /// The same year read for one account, with the top lists carrying only the
+    /// rows that account may be shown.
+    /// </summary>
+    /// <remarks>
+    /// The cut happens here rather than in the fold, and that is the whole of
+    /// why the fold keeps its lists whole. Access is a fact about now and a
+    /// folded year is kept between requests, so an answer that had filtered on
+    /// the way in would go on handing out an item this account lost access to
+    /// months ago and would leave out one they have since been given, with
+    /// nothing to make it let go: no row moved, so nothing tells the hold that
+    /// the answer is stale. Asking per request costs a bounded number of
+    /// library questions and cannot be stale by more than the request.
+    /// <para>
+    /// Only the lists move. Every total is what it was, so a play of an item
+    /// this account may not see is still counted in
+    /// <see cref="Plays"/>, <see cref="Watched"/> and
+    /// <see cref="DistinctItems"/>, and only its name is withheld. That is the
+    /// sentence issue #54 is written on: a report that dropped the play from
+    /// its totals as well would be answering a different question, and the
+    /// difference between the total and the list is not something an account
+    /// can turn back into a name.
+    /// </para>
+    /// <para>
+    /// A year with nothing in it comes back unchanged. There is no list to cut
+    /// and no item to ask about, and building a copy of it would be a second
+    /// object saying exactly what the first one says.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The account this year is being read for.</param>
+    /// <param name="access">What the library says about which items that account may see.</param>
+    /// <returns>The year as that account may be shown it.</returns>
+    public YearInReview SeenBy(Guid userId, IItemAccess access)
+    {
+        ArgumentNullException.ThrowIfNull(access);
+
+        if (!AnythingRecorded)
+        {
+            return this;
+        }
+
+        return new YearInReview(
+            this,
+            Shown(_rankedItems, userId, access, _topCount),
+            Shown(_rankedSeries, userId, access, _topCount));
     }
 
     /// <summary>
@@ -377,8 +483,8 @@ public sealed record YearInReview
     }
 
     /// <summary>
-    /// A top list out of what was tallied, longest watched first and equal
-    /// times in the order the identifiers sort in, cut to the bound asked for.
+    /// Everything that was tallied as a ranked list, longest watched first and
+    /// equal times in the order the identifiers sort in, cut to nothing.
     /// </summary>
     /// <remarks>
     /// The order is decided here rather than by the order the plays arrived in,
@@ -386,8 +492,15 @@ public sealed record YearInReview
     /// tie is broken on the identifier and never left to the dictionary, because
     /// an unstable order between two items with the same watched time is a list
     /// that changes between two readings of the same year.
+    /// <para>
+    /// It is kept whole rather than cut to the bound, and that is what makes
+    /// <see cref="SeenBy"/> able to hand back a full list. A fold that cut
+    /// first would leave a caller who may not see two of their own top ten
+    /// with eight rows instead of ten with the next two moved up, and the eight
+    /// would be a correct answer to a question nobody asked. Issue #54.
+    /// </para>
     /// </remarks>
-    private static List<TitleRow> TopOf(Dictionary<Guid, Tally> tallies, int topCount)
+    private static List<TitleRow> RankedOf(Dictionary<Guid, Tally> tallies)
     {
         var rows = new List<TitleRow>(tallies.Count);
         foreach (var pair in tallies)
@@ -402,7 +515,60 @@ public sealed record YearInReview
             return byWatched != 0 ? byWatched : left.Key.CompareTo(right.Key);
         });
 
-        return rows.Count <= topCount ? rows : rows.GetRange(0, topCount);
+        return rows;
+    }
+
+    /// <summary>
+    /// The head of a ranked list, or the whole of it where it is no longer than
+    /// the bound.
+    /// </summary>
+    private static IReadOnlyList<TitleRow> FirstOf(IReadOnlyList<TitleRow> ranked, int topCount)
+    {
+        if (ranked.Count <= topCount)
+        {
+            return ranked;
+        }
+
+        var head = new List<TitleRow>(topCount);
+        for (var i = 0; i < topCount; i++)
+        {
+            head.Add(ranked[i]);
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// The rows of one ranked list this account may be shown, filled up to the
+    /// bound.
+    /// </summary>
+    /// <remarks>
+    /// The walk stops as soon as the list is full, which is what bounds how
+    /// often the library is asked. A year of two thousand distinct items costs
+    /// the bound plus however many rows above the cut this account may not see,
+    /// rather than two thousand questions per request.
+    /// </remarks>
+    private static List<TitleRow> Shown(
+        IReadOnlyList<TitleRow> ranked,
+        Guid userId,
+        IItemAccess access,
+        int topCount)
+    {
+        var shown = new List<TitleRow>(topCount);
+
+        for (var i = 0; i < ranked.Count && shown.Count < topCount; i++)
+        {
+            // False is the only answer that drops a row. Null is the library
+            // holding no such item, which is a play of something that has since
+            // been deleted rather than something this account may not see, and
+            // it is named out of the row the way every other label here is.
+            if (access.MaySee(userId, ranked[i].Key) != false)
+            {
+                shown.Add(ranked[i]);
+            }
+        }
+
+        return shown;
     }
 
     /// <summary>

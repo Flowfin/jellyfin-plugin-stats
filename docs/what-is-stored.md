@@ -209,6 +209,16 @@ No page in this plugin sends either request. The settings page reads settings
 and shows no stored row, so a person reaching either route today addresses it by
 hand.
 
+The year answer is cut to what the account asking may still see. Every label in
+it comes off the row that was written when the play happened, and the library is
+asked one thing while the request is served: whether that account may see the
+item a row of a top list would name. An item it may not see is dropped from the
+lists and still counted in the totals, so a figure never moves for a reason a
+reader cannot see; an item the library no longer holds is named, because a play
+of something that has since been deleted is still that account's own play and
+there is no access question left to ask about it. The rows are untouched by any
+of this: what changes is the answer, per request, and never the store.
+
 Beyond those two, the readers of this data are whoever can read the file. That is
 the server's own account and anyone with access to the server data directory or
 to a backup of it, and `docs/plugin-data.md` names the two paths.
