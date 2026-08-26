@@ -180,9 +180,13 @@ public sealed class HowAPlayWasClosedTests : IDisposable
     [Fact]
     public void TheColumnArrivesAsAnAppendedStepAndAnOlderStoreStillReads()
     {
-        Assert.Equal(7, SchemaMigrations.Latest);
+        // The list, not the length. What this case is about is that the column
+        // arrived by appending, so every step before this one has to be exactly
+        // where it was and the newest number moves each time another is
+        // appended. Eight is the day-by-day rollups of issue #252.
+        Assert.Equal(8, SchemaMigrations.Latest);
         Assert.Equal(
-            new[] { 1, 2, 3, 4, 5, 6, 7 },
+            new[] { 1, 2, 3, 4, 5, 6, 7, 8 },
             SchemaMigrations.All.Select(step => step.Version));
 
         Directory.CreateDirectory(_root);

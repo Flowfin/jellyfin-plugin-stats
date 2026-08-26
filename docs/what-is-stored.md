@@ -173,6 +173,50 @@ along with their rows, because an account the server no longer has has nobody
 left to have answered. A person deleting their own history keeps their answer:
 they are still here, and the answer is still theirs.
 
+## One row per day, account, kind of item and client
+
+`daily_rollups` holds the day-by-day account of what was played, folded as the
+rows are written rather than counted again on every request. Nothing in it is a
+fact this plugin does not already hold: every column is one a play row carries
+or one that follows from the play rows alone, so the table can be produced again
+from the rows underneath it and compared against them.
+
+| column                 | holds                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Day`                  | The calendar day, written as an ISO date, in the zone the table states below. Part of the identity of the row.              |
+| `UserId`               | The account the plays behind the row belong to. Part of the identity of the row.                                           |
+| `ItemType`             | The kind of item they were of. Part of the identity of the row.                                                            |
+| `ClientName`           | The client they were played on. Part of the identity of the row.                                                           |
+| `Plays`                | How many plays the row stands over.                                                                                        |
+| `WatchedDurationTicks` | How long was watched across them, added up. Ticks, like every other duration here, so a rebuild adds the same numbers rather than rounded ones. |
+| `Completed`            | How many of those plays reached the end of the item.                                                                       |
+| `UnknownMethod`        | How many of them began with no delivery method reported.                                                                   |
+| `DirectPlay`           | How many of them began as a direct play.                                                                                   |
+| `DirectStream`         | How many of them began as a direct stream, which is the case a report calls remuxed.                                       |
+| `Transcode`            | How many of them began as a transcode.                                                                                     |
+
+The four delivery counts add up to `Plays`, because a play adds one to exactly
+one of them. Transcoded is one column and direct is the sum of two, and folding
+them here would have lost the difference between a play the server repackaged
+and one it re-encoded.
+
+`rollup_zone` holds one row and one column, `ZoneId`, and it is the zone every
+day above was counted in. Which day a play falls on is not a fact about the
+play: a play at half past eleven at night belongs to a different day depending
+on whose midnight is meant. The table states one answer for itself rather than
+each reader assuming one.
+
+A store states the zone it first kept a rollup in, and keeps stating it. Moving
+the setting afterwards does not move these rows, because rekeying them is a
+rebuild of the table rather than a setting taking effect, and a file holding one
+day keyed in two zones is a file nothing can read as a day.
+
+**This table is empty on a store that already held plays before it arrived.** It
+is filled as rows are written, so an upgrade brings the table and none of the
+days the store already has. What produces those is a rebuild from the play rows,
+which is #253 and is not built. Nothing reads this table yet either; the report
+that will is #254.
+
 ## What is refused on purpose
 
 Three things a playback session carries are absent from the row and from the
