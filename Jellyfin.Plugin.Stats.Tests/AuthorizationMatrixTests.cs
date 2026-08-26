@@ -45,10 +45,11 @@ public class AuthorizationMatrixTests
     /// PUT    /Stats/Users/{userId}/Consent        | their own      | 401       | 200              | 200                       | 200
     /// PUT    /Stats/Users/{userId}/Consent        | somebody else's| 401       | 403              | 403                       | 403
     /// GET    /Stats/Reports/Top                     | nobody's       | 401       | 403              | 403                       | 200
+    /// GET    /Stats/Reports/Breakdown               | nobody's       | 401       | 403              | 403                       | 200
     /// </code>
-    /// The last row is the first one in this table whose answer is not about a
-    /// person, and it is the only row so far with a 200 in the administrator
-    /// cell alone. Who may ask for an aggregate view was decided on issue #55
+    /// The last two rows are the ones whose answer is not about a person, and
+    /// they are the only rows so far with a 200 in the administrator cell
+    /// alone. Who may ask for an aggregate view was decided on issue #55
     /// on 2026-08-24 and the answer is an administrator only, on least
     /// privilege; the two ordinary cells are that decision and not a rule about
     /// whose rows are whose, which is why the row asks for nobody's.
@@ -167,6 +168,15 @@ public class AuthorizationMatrixTests
             Action: "AggregateReportsController.GetTopTitles",
             Method: "GET",
             Path: "/Stats/Reports/Top?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z",
+            RowsAskedFor: WhoseRows.NobodysInParticular,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 200),
+        new Row(
+            Action: "AggregateReportsController.GetBreakdown",
+            Method: "GET",
+            Path: "/Stats/Reports/Breakdown?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z",
             RowsAskedFor: WhoseRows.NobodysInParticular,
             Anonymous: 401,
             Someone: 403,

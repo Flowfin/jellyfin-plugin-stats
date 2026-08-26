@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Mime;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Reports;
 using MediaBrowser.Controller.Net;
@@ -95,6 +96,19 @@ public sealed class AggregateReportsController : ControllerBase
         new KeyValuePair<string, TopListOrder>("plays", TopListOrder.Plays));
 
     /// <summary>
+    /// Gets what a request may ask a breakdown to be grouped by.
+    /// </summary>
+    /// <remarks>
+    /// The account is deliberately absent, and it is absent from the
+    /// enumeration behind this rather than from the spellings here, so a
+    /// request cannot ask for it whatever it writes.
+    /// <see cref="PlayDimension"/> carries the argument.
+    /// </remarks>
+    public static ClosedSet<PlayDimension> Dimensions { get; } = new(
+        new KeyValuePair<string, PlayDimension>("client", PlayDimension.Client),
+        new KeyValuePair<string, PlayDimension>("device", PlayDimension.Device));
+
+    /// <summary>
     /// Reads the most watched titles over a range, across the whole server.
     /// </summary>
     /// <remarks>
@@ -156,31 +170,10 @@ public sealed class AggregateReportsController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        if (from is null || to is null)
-        {
-            return BadRequest();
-        }
-
         if (!Chose(nameof(grouping), grouping, Groupings, TopListGrouping.Item, out var groupRowsBy)
-            || !Chose(nameof(order), order, Orders, TopListOrder.WatchedTime, out var sort))
+            || !Chose(nameof(order), order, Orders, TopListOrder.WatchedTime, out var sort)
+            || !ARangeThisPluginAnswersOver(from, to, out var window))
         {
-            return BadRequest();
-        }
-
-        QueryWindow window;
-
-        try
-        {
-            window = QueryWindow.Of(from.Value.UtcDateTime, to.Value.UtcDateTime);
-        }
-        catch (ArgumentException)
-        {
-            // A range that ends before it starts, or one longer than any shape
-            // here answers over. Both are the caller asking for something this
-            // plugin will not do rather than the plugin failing, and both are
-            // refused rather than shortened, because a report folded from the
-            // part of a range that fitted reads exactly like one folded from
-            // the whole of it.
             return BadRequest();
         }
 
@@ -212,6 +205,119 @@ public sealed class AggregateReportsController : ControllerBase
             // believed.
             return StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    /// <summary>
+    /// Reads how a range divides between the clients or the devices the plays
+    /// came from, across the whole server.
+    /// </summary>
+    /// <remarks>
+    /// The question this answers is what asked the server to do the work, and
+    /// that is a client and a device rather than a person. Nothing in the answer
+    /// can name an account: the row type has no field for one and the set a
+    /// request may group by has no account in it, so the response is the same
+    /// whatever anybody has said about being named. Issue #59.
+    /// <para>
+    /// A member only one account used is not a row. It is folded into the group
+    /// the answer carries beside the rows, and where what would fold stands on
+    /// too few accounts to be shown at all the whole breakdown is withheld,
+    /// which is a different answer from an empty one and is carried as one.
+    /// Issue #41 is where that rule is.
+    /// </para>
+    /// </remarks>
+    /// <param name="from">The first moment of the range.</param>
+    /// <param name="to">The first moment after the range.</param>
+    /// <param name="dimension">What to group by. One of <see cref="Dimensions"/>, and the client where the request does not say.</param>
+    /// <returns>The breakdown.</returns>
+    /// <response code="200">The rows and the group, or the statement that the breakdown is withheld.</response>
+    /// <response code="400">The range is absent, unreadable or longer than this plugin answers over, or a dimension was named that is not one this plugin knows.</response>
+    /// <response code="401">The request carried no authenticated caller.</response>
+    /// <response code="403">The caller is not an administrator.</response>
+    /// <response code="503">The plugin could not open its store, so it has no answer rather than an empty one.</response>
+    [HttpGet("Breakdown")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<BreakdownReport>> GetBreakdown(
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to,
+        [FromQuery] string? dimension)
+    {
+        var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
+
+        if (!CallerIdentity.IsAnAdministrator(caller))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (!Chose(nameof(dimension), dimension, Dimensions, PlayDimension.Client, out var groupRowsBy)
+            || !ARangeThisPluginAnswersOver(from, to, out var window))
+        {
+            return BadRequest();
+        }
+
+        try
+        {
+            var folded = _reports.Breakdown(window, groupRowsBy);
+
+            return Ok(folded is null ? BreakdownReport.NotShown : BreakdownReport.Of(folded));
+        }
+        catch (TooManyPlaysToAnswerException)
+        {
+            return BadRequest();
+        }
+        catch (StoreCouldNotBeOpenedException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>
+    /// Reads the range off the request, where it is one this plugin will answer
+    /// over.
+    /// </summary>
+    /// <remarks>
+    /// Both ends are required. On the deletion route an absent window means
+    /// every play the account has, and that spelling is the one that costs;
+    /// here an absent end is refused, so a request that lost half its query on
+    /// the way cannot become a report over a period nobody asked for. That also
+    /// removes the case issue #229 had to build a guard for: a named end
+    /// carrying nothing binds to no instant, which is the same nothing an absent
+    /// end binds to, and both are refused by the same line rather than being
+    /// told apart.
+    /// <para>
+    /// A range that ends before it starts, or one longer than any shape here
+    /// answers over, is the caller asking for something this plugin will not do
+    /// rather than the plugin failing. Both are refused rather than shortened,
+    /// because a report folded from the part of a range that fitted reads
+    /// exactly like one folded from the whole of it.
+    /// </para>
+    /// </remarks>
+    /// <param name="from">The first moment of the range.</param>
+    /// <param name="to">The first moment after the range.</param>
+    /// <param name="window">The range and the bound.</param>
+    /// <returns><c>true</c> where the request named a range this plugin answers over.</returns>
+    private static bool ARangeThisPluginAnswersOver(DateTimeOffset? from, DateTimeOffset? to, out QueryWindow window)
+    {
+        window = null!;
+
+        if (from is null || to is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            window = QueryWindow.Of(from.Value.UtcDateTime, to.Value.UtcDateTime);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
