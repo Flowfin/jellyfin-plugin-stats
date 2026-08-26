@@ -60,6 +60,39 @@ public interface IPlayStore : IDisposable
     void Add(PlayRecord play);
 
     /// <summary>
+    /// Adds a sequence of finished plays, as one piece of work rather than as
+    /// one piece of work each.
+    /// </summary>
+    /// <remarks>
+    /// The default is the loop a caller would otherwise write, so an
+    /// implementation that has nothing to gain from the difference owes
+    /// nothing. What the store on a file gains is the whole of why this exists:
+    /// a row written on its own is its own transaction and its own flush to the
+    /// disk, and what that rate comes to was measured rather than reasoned
+    /// about, under issue #56, where the figures are. A store that can only be
+    /// written a row at a time is a store nobody can fill, and a report whose
+    /// behaviour over a large one is therefore never exercised is a report
+    /// nobody has measured.
+    /// <para>
+    /// IT IS ALL OR NOTHING WHERE THE IMPLEMENTATION MAKES IT SO, AND THAT IS A
+    /// DIFFERENCE RATHER THAN A DETAIL. <see cref="Add"/> called in a loop
+    /// leaves the rows before a failure behind it. A caller that needs the rows
+    /// before a bad one kept - which is what an archive import is written to do
+    /// - calls <see cref="Add"/> and not this.
+    /// </para>
+    /// </remarks>
+    /// <param name="plays">The plays to keep.</param>
+    void AddMany(IEnumerable<PlayRecord> plays)
+    {
+        ArgumentNullException.ThrowIfNull(plays);
+
+        foreach (var play in plays)
+        {
+            Add(play);
+        }
+    }
+
+    /// <summary>
     /// Writes a play that has started and not stopped, replacing what was
     /// written for the same key.
     /// </summary>
