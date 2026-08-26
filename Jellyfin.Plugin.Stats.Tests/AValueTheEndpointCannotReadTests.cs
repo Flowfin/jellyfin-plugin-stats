@@ -216,7 +216,14 @@ public class AValueTheEndpointCannotReadTests
             // driven at ClosedSetTests and the refusal is driven at
             // TheAggregateTopListTests.
             "grouping",
-            "order"
+            "order",
+
+            // What a breakdown groups by, on the aggregate route. It is the
+            // same case as the two above and is admitted for the same reason:
+            // it maps through a ClosedSet<T> whose members come from an
+            // enumeration the account is absent from, so a request cannot ask
+            // to be shown people whatever it writes here.
+            "dimension"
         };
 
         var taken = typeof(YourYearController).Assembly

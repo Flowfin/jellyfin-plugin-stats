@@ -10,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Api;
 using Jellyfin.Plugin.Stats.Reports;
 using Xunit;
@@ -25,7 +26,7 @@ public class ClosedSetTests
     /// Gets the two sets this plugin declares, each beside the enumeration it
     /// is the wire vocabulary for.
     /// </summary>
-    public static TheoryData<string> DeclaredSets => ["groupings", "orders"];
+    public static TheoryData<string> DeclaredSets => ["groupings", "orders", "dimensions"];
 
     /// <summary>
     /// A spelling the set was given maps to what it was given for, whatever
@@ -114,6 +115,10 @@ public class ClosedSetTests
                 AggregateReportsController.Orders.Spellings,
                 AggregateReportsController.Orders.Members.Select(pair => (int)pair.Value).ToList(),
                 Enum.GetValues<TopListOrder>().Select(member => (int)member).ToList()),
+            "dimensions" => (
+                AggregateReportsController.Dimensions.Spellings,
+                AggregateReportsController.Dimensions.Members.Select(pair => (int)pair.Value).ToList(),
+                Enum.GetValues<PlayDimension>().Select(member => (int)member).ToList()),
             _ => throw new ArgumentOutOfRangeException(nameof(which), which, "That is not one of the declared sets.")
         };
 
