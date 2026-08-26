@@ -376,6 +376,13 @@ public sealed class UserDeletedTests : IDisposable
 
         public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();
 
+        // A rollup this store never kept. The same refusal as the reads above
+        // and for the same reason: answering with none would let a caller that
+        // asked about days pass through a fake that has none.
+        public TimeZoneInfo? RollupZone => throw NotPartOfThis();
+
+        public IEnumerable<DailyRollup> AllRollups() => throw NotPartOfThis();
+
         public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();

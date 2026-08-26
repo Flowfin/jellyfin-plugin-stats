@@ -272,7 +272,10 @@ public class TheChannelALivePlayWasOnTests : IDisposable
     [Fact]
     public void TheColumnArrivesAsAnAppendedStepAndAnOlderStoreStillReads()
     {
-        Assert.Equal(7, SchemaMigrations.Latest);
+        // Moves each time a step is appended, which is what this case asserts
+        // is the only way a column arrives. Eight is the day-by-day rollups of
+        // issue #252, and the step this case is about is still the seventh.
+        Assert.Equal(8, SchemaMigrations.Latest);
 
         Directory.CreateDirectory(_root);
 

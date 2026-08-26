@@ -54,6 +54,32 @@ namespace Jellyfin.Plugin.Stats.Data;
 public interface IPlayStore : IDisposable
 {
     /// <summary>
+    /// Gets the zone the day-by-day rollups in this store were counted in, or
+    /// null where the store has not keyed one yet.
+    /// </summary>
+    /// <remarks>
+    /// Which day a play falls on is not a fact about the play, so a day in a
+    /// rollup means nothing without this. It is stated once for the whole table
+    /// rather than carried on each row, because a file holding two answers for
+    /// one day, keyed in two zones, is a file nothing can read as a day.
+    /// <para>
+    /// Null says the store has never keyed a rollup. It is not the same as the
+    /// zone being the default one, and a reader that treats it as such would
+    /// report a day boundary the store has never used.
+    /// </para>
+    /// <para>
+    /// A STORE STATES THE ZONE IT WAS FIRST KEYED IN AND NOT THE ONE THE PROCESS
+    /// IS CONFIGURED WITH TODAY. A store opened under a different setting keeps
+    /// the zone already stated, because rekeying every rollup is a rebuild and
+    /// issue #253 is where that lives. Until then a changed setting reaches
+    /// everything a report folds out of play rows and reaches none of these
+    /// rows, and this property is how a reader tells which of the two they are
+    /// looking at.
+    /// </para>
+    /// </remarks>
+    TimeZoneInfo? RollupZone { get; }
+
+    /// <summary>
     /// Adds one finished play.
     /// </summary>
     /// <param name="play">The play to keep.</param>
@@ -214,6 +240,18 @@ public interface IPlayStore : IDisposable
     /// </remarks>
     /// <returns>Every row, walked once.</returns>
     IEnumerable<PlayRecord> AllPlays();
+
+    /// <summary>
+    /// Walks every day-by-day rollup the store holds.
+    /// </summary>
+    /// <remarks>
+    /// A sequence walked once and drawn a row at a time, the same shape and for
+    /// the same reason as the exports above: a caller holding every rollup on a
+    /// server is a caller that chose to. What a report wants is a range, and
+    /// that is issue #254 rather than this.
+    /// </remarks>
+    /// <returns>Every rollup, walked once, in day order.</returns>
+    IEnumerable<DailyRollup> AllRollups();
 
     /// <summary>
     /// Walks every row belonging to one user, in the same order.

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Jellyfin.Plugin.Stats.Aggregation;
+using Jellyfin.Plugin.Stats.Configuration;
 using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.Stats.Data;
@@ -316,7 +317,60 @@ public sealed class SqlitePlayStore : IPlayStore
     // sentence above.
     private const char ReasonSeparator = '|';
 
+    // The shape a day is written in. An ISO date sorts as text in the order it
+    // sorts as a date, so a range over days is a range over the column.
+    private const string DayFormat = "yyyy-MM-dd";
+
+    // The day-by-day fold, written as the row that produced it is written.
+    //
+    // One statement rather than a read and then a write. A rollup row either
+    // exists for this day, account, item type and client or it does not, and
+    // asking first would be two round trips and a window between them in which
+    // another writer inserts the row this one then inserts again.
+    //
+    // The delivery counts arrive as noughts and ones rather than as a branch
+    // per method, so one play adds one to exactly one of the four columns and
+    // the four always add up to the play count.
+    private const string FoldThePlayIntoItsDay =
+        @"INSERT INTO daily_rollups (
+              Day, UserId, ItemType, ClientName,
+              Plays, WatchedDurationTicks, Completed,
+              UnknownMethod, DirectPlay, DirectStream, Transcode
+          )
+          VALUES (
+              $day, $userId, $itemType, $clientName,
+              1, $watched, $completed,
+              $unknownMethod, $directPlay, $directStream, $transcode
+          )
+          ON CONFLICT (Day, UserId, ItemType, ClientName) DO UPDATE SET
+              Plays = Plays + 1,
+              WatchedDurationTicks = WatchedDurationTicks + excluded.WatchedDurationTicks,
+              Completed = Completed + excluded.Completed,
+              UnknownMethod = UnknownMethod + excluded.UnknownMethod,
+              DirectPlay = DirectPlay + excluded.DirectPlay,
+              DirectStream = DirectStream + excluded.DirectStream,
+              Transcode = Transcode + excluded.Transcode";
+
+    private const string SelectEveryRollup =
+        @"-- unbounded: walked
+          SELECT Day, UserId, ItemType, ClientName,
+                 Plays, WatchedDurationTicks, Completed,
+                 UnknownMethod, DirectPlay, DirectStream, Transcode
+          FROM daily_rollups
+          ORDER BY Day, UserId, ItemType, ClientName";
+
+    private const string SelectTheRollupZone =
+        @"-- bound: LIMIT 1, over a table that holds one row
+          SELECT ZoneId
+          FROM rollup_zone
+          LIMIT 1";
+
+    private const string StateTheRollupZone =
+        "INSERT INTO rollup_zone (ZoneId) VALUES ($zoneId)";
+
     private readonly SqliteConnection _connection;
+
+    private readonly TimeZoneInfo _rollupZone;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SqlitePlayStore"/> class,
@@ -324,7 +378,14 @@ public sealed class SqlitePlayStore : IPlayStore
     /// yet.
     /// </summary>
     /// <param name="dataFolderPath">The folder the store file belongs in.</param>
-    public SqlitePlayStore(string dataFolderPath)
+    /// <param name="rollupZone">
+    /// The zone days are counted in where this file has not stated one yet.
+    /// Where it has, the stated zone stands and this argument is not used, for
+    /// the reason written at <see cref="RollupZone"/>. Null is the zone the
+    /// configuration model defaults to, so a caller with no opinion gets the
+    /// same answer as one that read the default and passed it.
+    /// </param>
+    public SqlitePlayStore(string dataFolderPath, TimeZoneInfo? rollupZone = null)
     {
         ArgumentNullException.ThrowIfNull(dataFolderPath);
 
@@ -355,6 +416,13 @@ public sealed class SqlitePlayStore : IPlayStore
             // has not had yet, so there is one route rather than a create path
             // and an upgrade path that can disagree about what the schema is.
             SchemaMigrator.MigrateToLatest(_connection, SchemaMigrations.All);
+
+            // Read before written, and written only where the file states
+            // nothing. A store that has already keyed rollups in one zone keeps
+            // that zone whatever this process is configured with, because the
+            // rows already there mean days in it and rekeying them is a rebuild
+            // rather than a setting taking effect.
+            _rollupZone = ZoneTheFileStates() ?? StateTheZone(rollupZone ?? DefaultRollupZone());
         }
         catch
         {
@@ -380,15 +448,32 @@ public sealed class SqlitePlayStore : IPlayStore
     public static int SchemaVersion => SchemaMigrations.Latest;
 
     /// <inheritdoc />
+    public TimeZoneInfo? RollupZone => _rollupZone;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A transaction over two statements, because the row and the day it moves
+    /// are one fact. A rollup that gained a play the store then failed to write
+    /// is a figure standing over a row nobody can find, which is the one thing
+    /// a rollup may never be.
+    /// </remarks>
     public void Add(PlayRecord play)
     {
         ArgumentNullException.ThrowIfNull(play);
 
-        using var command = _connection.CreateCommand();
-        command.CommandText = InsertPlay;
-        BindThePlay(command, play);
+        using var transaction = _connection.BeginTransaction();
 
-        command.ExecuteNonQuery();
+        using (var command = _connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = InsertPlay;
+            BindThePlay(command, play);
+            command.ExecuteNonQuery();
+        }
+
+        FoldIntoTheDay(transaction, play);
+
+        transaction.Commit();
     }
 
     /// <inheritdoc />
@@ -429,6 +514,8 @@ public sealed class SqlitePlayStore : IPlayStore
                 command.Parameters.Clear();
                 BindThePlay(command, play);
                 command.ExecuteNonQuery();
+
+                FoldIntoTheDay(transaction, play);
             }
         }
 
@@ -477,6 +564,8 @@ public sealed class SqlitePlayStore : IPlayStore
             forget.Parameters.AddWithValue("$playKey", playKey);
             forget.ExecuteNonQuery();
         }
+
+        FoldIntoTheDay(transaction, play);
 
         transaction.Commit();
     }
@@ -573,6 +662,36 @@ public sealed class SqlitePlayStore : IPlayStore
         while (reader.Read())
         {
             yield return ReadPlay(reader);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// An iterator for the same reason the walks above are, and ordered by the
+    /// key so two stores holding the same rollups walk them in the same order.
+    /// </remarks>
+    public IEnumerable<DailyRollup> AllRollups()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectEveryRollup;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            yield return new DailyRollup
+            {
+                Day = DateOnly.ParseExact(reader.GetString(0), DayFormat, CultureInfo.InvariantCulture),
+                UserId = Guid.ParseExact(reader.GetString(1), "N"),
+                ItemType = reader.GetString(2),
+                ClientName = reader.GetString(3),
+                Plays = reader.GetInt64(4),
+                Watched = TimeSpan.FromTicks(reader.GetInt64(5)),
+                Completed = reader.GetInt64(6),
+                UnknownMethod = reader.GetInt64(7),
+                DirectPlay = reader.GetInt64(8),
+                DirectStream = reader.GetInt64(9),
+                Transcode = reader.GetInt64(10)
+            };
         }
     }
 
@@ -980,6 +1099,79 @@ public sealed class SqlitePlayStore : IPlayStore
     /// <param name="ticks">The stored ticks.</param>
     /// <returns>The moment, in UTC.</returns>
     private static DateTime Utc(long ticks) => new(ticks, DateTimeKind.Utc);
+
+    // The zone the configuration model falls back to, resolved through the same
+    // acceptance test the setting is written through, so a store opened with no
+    // opinion and a store opened from the untouched setting key the same days.
+    private static TimeZoneInfo DefaultRollupZone()
+        => TimeZoneInfo.FindSystemTimeZoneById(ConfigurationLimits.DefaultRollupTimeZone);
+
+    // Which of the four delivery columns this play adds one to. A play adds one
+    // to exactly one of them, so the four add up to the play count and a reader
+    // adding them can tell that nothing was dropped.
+    private static (long Unknown, long DirectPlay, long DirectStream, long Transcode) DeliveryOf(PlayMethod method)
+        => method switch
+        {
+            PlayMethod.DirectPlay => (0, 1, 0, 0),
+            PlayMethod.DirectStream => (0, 0, 1, 0),
+            PlayMethod.Transcode => (0, 0, 0, 1),
+            _ => (1, 0, 0, 0)
+        };
+
+    private TimeZoneInfo? ZoneTheFileStates()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheRollupZone;
+
+        var stated = command.ExecuteScalar();
+        if (stated is null or DBNull)
+        {
+            return null;
+        }
+
+        // A zone this machine cannot resolve is the one case where the file
+        // says something the process cannot act on. It is not repaired here and
+        // it is not swallowed: a store that keyed its days in a zone this
+        // machine does not have is a store whose rollups nobody here can read
+        // as days, and answering with the default would silently move every one
+        // of them.
+        return TimeZoneInfo.FindSystemTimeZoneById((string)stated);
+    }
+
+    private TimeZoneInfo StateTheZone(TimeZoneInfo zone)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = StateTheRollupZone;
+        command.Parameters.AddWithValue("$zoneId", zone.Id);
+        command.ExecuteNonQuery();
+
+        return zone;
+    }
+
+    // Folds one finished play into the day it belongs to. Called from inside
+    // whatever transaction is writing the row, so the row and the day it moves
+    // arrive together or neither does.
+    private void FoldIntoTheDay(SqliteTransaction transaction, PlayRecord play)
+    {
+        var delivery = DeliveryOf(play.PlayMethodAtStart);
+
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = FoldThePlayIntoItsDay;
+        command.Parameters.AddWithValue(
+            "$day",
+            LocalDay.Of(play.StartedUtc, _rollupZone).ToString(DayFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$userId", Text(play.UserId));
+        command.Parameters.AddWithValue("$itemType", play.ItemType);
+        command.Parameters.AddWithValue("$clientName", play.ClientName);
+        command.Parameters.AddWithValue("$watched", play.WatchedDuration.Ticks);
+        command.Parameters.AddWithValue("$completed", play.ReachedTheEnd ? 1 : 0);
+        command.Parameters.AddWithValue("$unknownMethod", delivery.Unknown);
+        command.Parameters.AddWithValue("$directPlay", delivery.DirectPlay);
+        command.Parameters.AddWithValue("$directStream", delivery.DirectStream);
+        command.Parameters.AddWithValue("$transcode", delivery.Transcode);
+        command.ExecuteNonQuery();
+    }
 
     /// <summary>
     /// Takes the ticks of a timestamp that has to be in UTC, and refuses one

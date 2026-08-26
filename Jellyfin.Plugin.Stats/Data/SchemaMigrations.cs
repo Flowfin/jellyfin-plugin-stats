@@ -186,6 +186,66 @@ public static class SchemaMigrations
               WordingVersion INTEGER NOT NULL
           )";
 
+    // The day-by-day account of what was played, folded as rows are written.
+    //
+    // Every column is one a play row carries or one that follows from the play
+    // rows alone. That is not a preference: the rebuild in issue #253 has to be
+    // able to produce this row again from the rows underneath it, so a figure
+    // that could not be derived from them would make this table the only record
+    // of something, and the only record of something cannot be rebuilt.
+    //
+    // The key is the four things a report groups by. A day, an account, a kind
+    // of item and a client name together name one row, so a play folds into the
+    // row it belongs to and no reader has to add rows up to answer about one of
+    // them.
+    //
+    // The day is TEXT and not a number of ticks, because it is a calendar day
+    // rather than a moment: a day has no single length, so the instant that
+    // would stand for it is a second fact somebody would have to convert back.
+    // Written as an ISO date, which sorts as text in the order it sorts as a
+    // date, so a range over days is a range over this column.
+    //
+    // Which day a play falls on depends on whose midnight is meant, so the zone
+    // these days were counted in is stated at the table below rather than
+    // assumed by each reader.
+    //
+    // Four delivery counts rather than the two a reader usually wants. The fold
+    // this stands beside distinguishes four, so folding them to two here would
+    // fold away the difference between a play the server repackaged and one it
+    // re-encoded, and would leave a play whose method was never reported with
+    // nowhere to go. Transcoded is one column and direct is the sum of two.
+    private const string CreateTheDailyRollupsTable =
+        @"CREATE TABLE IF NOT EXISTS daily_rollups (
+              Day TEXT NOT NULL,
+              UserId TEXT NOT NULL,
+              ItemType TEXT NOT NULL,
+              ClientName TEXT NOT NULL,
+              Plays INTEGER NOT NULL,
+              WatchedDurationTicks INTEGER NOT NULL,
+              Completed INTEGER NOT NULL,
+              UnknownMethod INTEGER NOT NULL,
+              DirectPlay INTEGER NOT NULL,
+              DirectStream INTEGER NOT NULL,
+              Transcode INTEGER NOT NULL,
+              PRIMARY KEY (Day, UserId, ItemType, ClientName)
+          )";
+
+    // The zone the days above were counted in, stated once for the whole table.
+    //
+    // A column on every rollup row was the alternative and it says something
+    // different: it would let one file hold two answers for one day, one keyed
+    // in each of two zones, which is a store nothing can read as a day. One row
+    // here says the table has one meaning, and a store whose setting has moved
+    // since is a store whose rollups have to be rebuilt rather than one whose
+    // rows quietly change what they mean.
+    //
+    // Shaped like the version table beside it: no key, one row, read with a
+    // limit. Nothing here fills it, because a migration cannot know what the
+    // running configuration says. The store writes it the first time it keys a
+    // rollup, and until then the table is empty and states nothing.
+    private const string CreateTheRollupZoneTable =
+        "CREATE TABLE IF NOT EXISTS rollup_zone (ZoneId TEXT NOT NULL)";
+
     /// <summary>
     /// Gets the steps, in the order they are applied.
     /// </summary>
@@ -241,6 +301,15 @@ public static class SchemaMigrations
     /// writes for a play that was not live television, so what the column says
     /// is that this row names no channel rather than that the channel was
     /// called nothing. That is issue #40's remaining sentence.
+    /// </para>
+    /// <para>
+    /// The eighth is the day-by-day account and the zone its days are counted
+    /// in, two tables created beside the others. A store from any earlier build
+    /// arrives with every row it had, because creating a table reads nothing and
+    /// moves nothing, and it arrives with both tables empty. The rollups a store
+    /// already holding plays is owed are what issue #253's rebuild is for: a step
+    /// that folded them here would be reading every row on the file inside a
+    /// migration, which is work no upgrade can bound.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
@@ -298,6 +367,15 @@ public static class SchemaMigrations
             [
                 RecordTheChannelALivePlayWasOn,
                 RecordTheChannelARunningLivePlayIsOn
+            ]
+        },
+        new SchemaMigration
+        {
+            Version = 8,
+            Statements =
+            [
+                CreateTheDailyRollupsTable,
+                CreateTheRollupZoneTable
             ]
         }
     ];
