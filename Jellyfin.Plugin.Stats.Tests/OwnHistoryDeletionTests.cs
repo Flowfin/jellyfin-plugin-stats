@@ -390,6 +390,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = startedUtc,
             EndedUtc = startedUtc.AddMinutes(41),
             WatchedDuration = TimeSpan.FromMinutes(38),

@@ -245,7 +245,7 @@ public sealed class CaptureGateTests
     {
         using var writer = new QueuedPlayWriter(() => store, QueuedPlayWriter.DefaultBound, NullLogger<QueuedPlayWriter>.Instance);
         var gate = new CaptureGate(writer, () => configuration);
-        var tracker = new PlayTracker(gate, NullLogger<PlayTracker>.Instance);
+        var tracker = new PlayTracker(gate, FakeChannelNames.Empty, NullLogger<PlayTracker>.Instance);
         var sessions = new FakeSessionManager();
         var listener = new PlaybackEventListener(sessions, tracker, NothingWasLeftOpen.Pass(), NullLogger<PlaybackEventListener>.Instance);
 
@@ -281,6 +281,7 @@ public sealed class CaptureGateTests
             ParentId = null,
             ItemName = "An item",
             ItemRuntime = TimeSpan.FromMinutes(90),
+            ChannelName = null,
             StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
             EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
             WatchedDuration = TimeSpan.FromMinutes(38),

@@ -177,6 +177,7 @@ public class DeliveryMethodSharesTests
         ParentId = Guid.Parse("99999999-8888-7777-6666-555555555555"),
         ItemName = "An episode",
         ItemRuntime = TimeSpan.FromMinutes(42),
+        ChannelName = null,
         StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
         EndedUtc = new DateTime(2026, 3, 14, 9, 41, 0, DateTimeKind.Utc),
         WatchedDuration = TimeSpan.FromMinutes(38),

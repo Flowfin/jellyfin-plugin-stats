@@ -274,6 +274,25 @@ public static class PlayArchive
             }
         }
 
+        if (version < 7)
+        {
+            // Issue #40 added the channel a live television play was on. A row
+            // written before it does not name one, and null is the answer
+            // rather than a guess: nothing was resolving a channel when it was
+            // recorded, and it is the same answer a play that was not live
+            // television carries anyway.
+            //
+            // It fills an absence and never overwrites an answer, for the
+            // reason the step above gives: a row the capture writes today
+            // arrives reading as version one while carrying every column added
+            // since, so a bare assignment would throw away the channel on
+            // every import.
+            if (!written.ContainsKey(nameof(PlayRecord.ChannelName)))
+            {
+                written[nameof(PlayRecord.ChannelName)] = null;
+            }
+        }
+
         return written;
     }
 

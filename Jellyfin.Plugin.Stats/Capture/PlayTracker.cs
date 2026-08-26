@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Stats.Data;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -70,6 +71,7 @@ public sealed class PlayTracker : IPlaybackEventSink
     private readonly Dictionary<string, TrackedPlay> _open = new(StringComparer.Ordinal);
     private readonly object _gate = new();
     private readonly IPlaySink _sink;
+    private readonly IChannelNames _channels;
     private readonly ILogger<PlayTracker> _logger;
     private int _eventsWithNoOpenPlay;
 
@@ -77,10 +79,12 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// Initializes a new instance of the <see cref="PlayTracker"/> class.
     /// </summary>
     /// <param name="sink">Where a finished play is handed to.</param>
+    /// <param name="channels">What a live television play's channel is called.</param>
     /// <param name="logger">The logger.</param>
-    public PlayTracker(IPlaySink sink, ILogger<PlayTracker> logger)
+    public PlayTracker(IPlaySink sink, IChannelNames channels, ILogger<PlayTracker> logger)
     {
         _sink = sink;
+        _channels = channels;
         _logger = logger;
     }
 
@@ -127,7 +131,7 @@ public sealed class PlayTracker : IPlaybackEventSink
     /// </remarks>
     public void PlaybackStarted(PlaybackProgressEventArgs args)
     {
-        var play = TrackedPlay.From(args);
+        var play = TrackedPlay.From(args, _channels);
         var key = KeyOf(args);
 
         lock (_gate)
@@ -376,6 +380,7 @@ public sealed class PlayTracker : IPlaybackEventSink
         private readonly Guid? _parentId;
         private readonly string _itemName;
         private readonly TimeSpan? _itemRuntime;
+        private readonly string? _channelName;
         private readonly DateTime _startedUtc;
         private readonly string _clientName;
         private readonly string _deviceId;
@@ -385,7 +390,7 @@ public sealed class PlayTracker : IPlaybackEventSink
 
         private DateTime? _playMethodChangedUtc;
 
-        private TrackedPlay(PlaybackProgressEventArgs args)
+        private TrackedPlay(PlaybackProgressEventArgs args, IChannelNames channels)
         {
             var item = args.Item;
 
@@ -396,6 +401,7 @@ public sealed class PlayTracker : IPlaybackEventSink
             _parentId = SeriesOf(item);
             _itemName = item.Name;
             _itemRuntime = RuntimeOf(item);
+            _channelName = ChannelOf(item, channels);
             _clientName = args.ClientName;
             _deviceId = args.DeviceId;
             _deviceName = args.DeviceName;
@@ -431,8 +437,9 @@ public sealed class PlayTracker : IPlaybackEventSink
         /// Opens a play from the start event that began it.
         /// </summary>
         /// <param name="args">The start event.</param>
+        /// <param name="channels">What a live television play's channel is called.</param>
         /// <returns>The open play.</returns>
-        public static TrackedPlay From(PlaybackProgressEventArgs args) => new(args);
+        public static TrackedPlay From(PlaybackProgressEventArgs args, IChannelNames channels) => new(args, channels);
 
         /// <summary>
         /// Folds one progress report, or the stop, into the play.
@@ -467,6 +474,7 @@ public sealed class PlayTracker : IPlaybackEventSink
                 ParentId = _parentId,
                 ItemName = _itemName,
                 ItemRuntime = _itemRuntime,
+                ChannelName = _channelName,
                 StartedUtc = _startedUtc,
 
                 // Not the moment the stop arrived. The field the times come from
@@ -558,6 +566,46 @@ public sealed class PlayTracker : IPlaybackEventSink
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// The channel a live television play is on, and null for everything
+        /// else.
+        /// </summary>
+        /// <remarks>
+        /// Two kinds are live television as far as a play is concerned and they
+        /// answer differently. A channel played as itself is its own name, so
+        /// nothing is resolved. A programme carries the identifier of the
+        /// channel it is on and no name for it, so the name is asked for once
+        /// here, on the start event, and travels on the row from then on.
+        /// <para>
+        /// The kind is asked rather than the item's source type. Reading the
+        /// source type of a video calls back into the server's live television
+        /// manager, which is a static this plugin does not set and no test
+        /// stands one up, so the property that reads as the obvious test throws
+        /// outside a running server. The two kinds below are what
+        /// <c>GetBaseItemKind</c> returns for a programme and for a channel,
+        /// compiled rather than worked out, and issue #40 carries the run.
+        /// </para>
+        /// </remarks>
+        /// <param name="item">The item being played.</param>
+        /// <param name="channels">What a channel identifier is called.</param>
+        /// <returns>The channel, or null.</returns>
+        private static string? ChannelOf(BaseItem item, IChannelNames channels)
+        {
+            var kind = item.GetBaseItemKind();
+
+            if (kind == BaseItemKind.TvChannel)
+            {
+                return string.IsNullOrEmpty(item.Name) ? null : item.Name;
+            }
+
+            if (kind != BaseItemKind.Program)
+            {
+                return null;
+            }
+
+            return channels.NameOf(item.ChannelId);
         }
 
         /// <summary>

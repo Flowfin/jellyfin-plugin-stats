@@ -144,6 +144,28 @@ public static class SchemaMigrations
     private const string RecordWhatWillCloseARunningPlay =
         "ALTER TABLE open_plays ADD COLUMN ClosedBy INTEGER NULL";
 
+    // What issue #40 asks for, on both tables. A live television play has no
+    // programme length worth a completion ratio and no title a report can group
+    // on twice, and what it does have is the channel it was on. The name and
+    // not the identifier: a live channel is renamed and taken off the air, and
+    // the rows a yearly report is about are exactly the old ones, so an
+    // identifier stored alone becomes unnameable with time.
+    //
+    // Null on every row already on the file, and null on every row that is not
+    // live television, which reads back as the row naming no channel. There is
+    // no value that could stand for "was live television and the channel is
+    // unknown" without a report being able to print it as a channel.
+    //
+    // An addition rather than a rebuild, so no row is read, written or
+    // discarded, and the open table gets it for the reason the two before it
+    // did: one function reads a row out of either table, so a column on one is
+    // a column on both.
+    private const string RecordTheChannelALivePlayWasOn =
+        "ALTER TABLE plays ADD COLUMN ChannelName TEXT NULL";
+
+    private const string RecordTheChannelARunningLivePlayIsOn =
+        "ALTER TABLE open_plays ADD COLUMN ChannelName TEXT NULL";
+
     // What one account has said about being named in the views this plugin
     // draws. One row per account and the account is the key, because the
     // question has one answer at a time and what a reader asks is what that
@@ -212,6 +234,14 @@ public static class SchemaMigrations
     /// turned every row a previous build wrote into a claim that the server sent
     /// a stop for it.
     /// </para>
+    /// <para>
+    /// The seventh records the channel a live television play was on, on both
+    /// tables, and it is an addition for the same reason the sixth was. Every
+    /// row already on the file is null there, and so is every row this build
+    /// writes for a play that was not live television, so what the column says
+    /// is that this row names no channel rather than that the channel was
+    /// called nothing. That is issue #40's remaining sentence.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
     [
@@ -259,6 +289,15 @@ public static class SchemaMigrations
             [
                 RecordWhatClosedAPlay,
                 RecordWhatWillCloseARunningPlay
+            ]
+        },
+        new SchemaMigration
+        {
+            Version = 7,
+            Statements =
+            [
+                RecordTheChannelALivePlayWasOn,
+                RecordTheChannelARunningLivePlayIsOn
             ]
         }
     ];
