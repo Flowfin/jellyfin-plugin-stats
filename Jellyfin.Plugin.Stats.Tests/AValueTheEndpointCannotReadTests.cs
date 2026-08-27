@@ -387,6 +387,8 @@ public class AValueTheEndpointCannotReadTests
 
         public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
+        public void RebuildRollups() => throw NotPartOfThis();
+
         private static NotSupportedException NotPartOfThis()
             => new("This store answers only what a deletion asks.");
     }

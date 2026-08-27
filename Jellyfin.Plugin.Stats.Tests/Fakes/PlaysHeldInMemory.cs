@@ -86,6 +86,8 @@ public sealed class PlaysHeldInMemory : IPlayStore
 
     public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
+    public void RebuildRollups() => throw NotPartOfThis();
+
     public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
     public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();

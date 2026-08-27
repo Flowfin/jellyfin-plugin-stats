@@ -397,6 +397,8 @@ public sealed class UserDeletedTests : IDisposable
 
         public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
+        public void RebuildRollups() => throw NotPartOfThis();
+
         public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
 
         public void AddAndForgetOpenPlay(PlayRecord play, string playKey) => throw NotPartOfThis();
