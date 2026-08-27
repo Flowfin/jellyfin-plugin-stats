@@ -373,6 +373,9 @@ public class AValueTheEndpointCannotReadTests
 
         public IEnumerable<DailyRollup> AllRollups() => throw NotPartOfThis();
 
+
+        public IReadOnlyList<DailyRollup> RollupsFor(Guid userId, DateOnly fromDay, DateOnly toDay, int limit) => throw NotPartOfThis();
+
         public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();

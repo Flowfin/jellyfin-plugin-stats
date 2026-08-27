@@ -246,6 +246,22 @@ public static class SchemaMigrations
     private const string CreateTheRollupZoneTable =
         "CREATE TABLE IF NOT EXISTS rollup_zone (ZoneId TEXT NOT NULL)";
 
+    // What a report over one account's year reads through. Issue #254.
+    //
+    // The table's own key leads with the day, which serves a range over days for
+    // everybody and serves one account's range badly: the planner walks every
+    // account's rows inside the range and discards the ones that are not the
+    // caller's, and it cannot take the order of the last two columns from a key
+    // it is ranging over, so it sorts afterwards as well. A wrap-up is always
+    // about one account, so the account leads here and the day ranges after it.
+    //
+    // The last two columns are on the end for the order rather than for the
+    // search. With the account fixed and the days ranged over, an index ending
+    // where the query orders is the difference between handing rows back as
+    // they are read and holding the whole year before the first one.
+    private const string IndexRollupsByAccountAndDay =
+        "CREATE INDEX IF NOT EXISTS ix_rollups_user_day ON daily_rollups (UserId, Day, ItemType, ClientName)";
+
     // What each deletion said about the rows it took. Issue #251.
     //
     // A deletion removes rows and leaves nothing behind, so a reader arriving
@@ -416,6 +432,11 @@ public static class SchemaMigrations
         {
             Version = 9,
             Statements = [CreateTheDeletionsTable]
+        },
+        new SchemaMigration
+        {
+            Version = 10,
+            Statements = [IndexRollupsByAccountAndDay]
         }
     ];
 

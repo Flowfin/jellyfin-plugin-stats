@@ -379,6 +379,26 @@ public sealed class SqlitePlayStore : IPlayStore
               DirectStream = DirectStream + excluded.DirectStream,
               Transcode = Transcode + excluded.Transcode";
 
+    // One account's rollups inside a range of days. Issue #254.
+    //
+    // The range is on the leading column of the primary key and the account is
+    // the column after it, so the planner walks the days the range names and
+    // never the table. That is the whole reason a day is stored as an ISO date
+    // rather than as a number of ticks: it sorts as text in the order it sorts
+    // as a date, so a range over days is a range over the key.
+    //
+    // The order is the key's own with the account taken out of it, which is
+    // already the order the rows come back in, so nothing is sorted afterwards.
+    private const string SelectARollupRange =
+        @"-- bound: LIMIT $limit
+          SELECT Day, UserId, ItemType, ClientName,
+                 Plays, WatchedDurationTicks, Completed,
+                 UnknownMethod, DirectPlay, DirectStream, Transcode
+          FROM daily_rollups
+          WHERE Day >= $from AND Day < $to AND UserId = $userId
+          ORDER BY Day, ItemType, ClientName
+          LIMIT $limit";
+
     private const string SelectEveryRollup =
         @"-- unbounded: walked
           SELECT Day, UserId, ItemType, ClientName,
@@ -791,21 +811,64 @@ public sealed class SqlitePlayStore : IPlayStore
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            yield return new DailyRollup
-            {
-                Day = DateOnly.ParseExact(reader.GetString(0), DayFormat, CultureInfo.InvariantCulture),
-                UserId = Guid.ParseExact(reader.GetString(1), "N"),
-                ItemType = reader.GetString(2),
-                ClientName = reader.GetString(3),
-                Plays = reader.GetInt64(4),
-                Watched = TimeSpan.FromTicks(reader.GetInt64(5)),
-                Completed = reader.GetInt64(6),
-                UnknownMethod = reader.GetInt64(7),
-                DirectPlay = reader.GetInt64(8),
-                DirectStream = reader.GetInt64(9),
-                Transcode = reader.GetInt64(10)
-            };
+            yield return ReadRollup(reader);
         }
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<DailyRollup> RollupsFor(Guid userId, DateOnly fromDay, DateOnly toDay, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        // A range that ends before it starts is a caller mistake and never an
+        // empty year. The statement would answer it with no rows, which reads
+        // exactly like an account that recorded nothing, so it is refused here
+        // instead of being handed back as one.
+        ArgumentOutOfRangeException.ThrowIfLessThan(toDay, fromDay);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectARollupRange;
+        command.Parameters.AddWithValue("$from", fromDay.ToString(DayFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$to", toDay.ToString(DayFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$userId", userId.ToString("N", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var rollups = new List<DailyRollup>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            rollups.Add(ReadRollup(reader));
+        }
+
+        return rollups;
+    }
+
+    /// <summary>
+    /// Reads one rollup off a reader positioned on a row.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the walk and the range read, so the eleven ordinals are written
+    /// once. Two copies of them would agree until a column moved, and the one
+    /// that was not edited would go on reading the row it used to.
+    /// </remarks>
+    /// <param name="reader">The reader, on a row from either statement.</param>
+    /// <returns>The rollup.</returns>
+    private static DailyRollup ReadRollup(SqliteDataReader reader)
+    {
+        return new DailyRollup
+        {
+            Day = DateOnly.ParseExact(reader.GetString(0), DayFormat, CultureInfo.InvariantCulture),
+            UserId = Guid.ParseExact(reader.GetString(1), "N"),
+            ItemType = reader.GetString(2),
+            ClientName = reader.GetString(3),
+            Plays = reader.GetInt64(4),
+            Watched = TimeSpan.FromTicks(reader.GetInt64(5)),
+            Completed = reader.GetInt64(6),
+            UnknownMethod = reader.GetInt64(7),
+            DirectPlay = reader.GetInt64(8),
+            DirectStream = reader.GetInt64(9),
+            Transcode = reader.GetInt64(10)
+        };
     }
 
     /// <inheritdoc />

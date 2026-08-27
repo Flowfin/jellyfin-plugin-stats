@@ -263,6 +263,45 @@ public interface IPlayStore : IDisposable
     IEnumerable<DailyRollup> AllRollups();
 
     /// <summary>
+    /// Reads the day-by-day rollups one account has inside a range of days.
+    /// </summary>
+    /// <remarks>
+    /// What a report over a year issues, and the reason the table exists. The
+    /// walk above hands back every rollup on the server, so reading one year
+    /// through it would touch every day of every account to answer about one
+    /// account's twelve months, which is the scan the fold on the write path was
+    /// built to stop. Issue #254.
+    /// <para>
+    /// Bounded like every other read here, and the bound is the caller's to
+    /// decide about. The store hands back at most <paramref name="limit"/> rows
+    /// and says nothing about whether the range held more, which is the same
+    /// shape <see cref="PlaysBetween"/> has and for the same reason: what a
+    /// short answer means is a question about the report, not about the file. A
+    /// caller that must not fold a truncated year asks for one more row than it
+    /// will accept and refuses on the extra one, which is what the query layer
+    /// already does for plays.
+    /// </para>
+    /// <para>
+    /// The range is half-open, the same way a window over plays is: the first
+    /// day is in and the last is the first day after. A calendar year is then
+    /// the first of January to the first of January, and no caller has to know
+    /// whether the year it asked about had a leap day in it.
+    /// </para>
+    /// <para>
+    /// The days are the local days the store states its rollups are counted in,
+    /// which is <see cref="RollupZone"/> and is not a fact about any play. A
+    /// caller working a year out from a zone of its own would be asking about
+    /// days this table does not hold.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The account.</param>
+    /// <param name="fromDay">The first day in the range.</param>
+    /// <param name="toDay">The first day after the range.</param>
+    /// <param name="limit">How many rows at most. The store never returns more than this.</param>
+    /// <returns>The rollups, in day order, and empty where there are none.</returns>
+    IReadOnlyList<DailyRollup> RollupsFor(Guid userId, DateOnly fromDay, DateOnly toDay, int limit);
+
+    /// <summary>
     /// Throws away every rollup the store holds and folds them again from the
     /// play rows.
     /// </summary>
