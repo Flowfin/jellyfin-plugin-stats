@@ -36,6 +36,8 @@ public class AuthorizationMatrixTests
     /// Read down a row and it says who may see what:
     /// <code>
     /// endpoint                                   | rows asked for | anonymous | an ordinary user | a different ordinary user | an administrator
+    /// GET    /Stats/Users/{userId}/Years          | their own      | 401       | 200              | 200                       | 200
+    /// GET    /Stats/Users/{userId}/Years          | somebody else's| 401       | 403              | 403                       | 403
     /// GET    /Stats/Users/{userId}/Years/{year}   | their own      | 401       | 200              | 200                       | 200
     /// GET    /Stats/Users/{userId}/Years/{year}   | somebody else's| 401       | 403              | 403                       | 403
     /// DELETE /Stats/Users/{userId}/Plays          | their own      | 401       | 200              | 200                       | 200
@@ -91,6 +93,24 @@ public class AuthorizationMatrixTests
 
     public static readonly IReadOnlyList<Row> Matrix =
     [
+        new Row(
+            Action: "YourYearController.GetYears",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Years",
+            RowsAskedFor: WhoseRows.TheCallersOwn,
+            Anonymous: 401,
+            Someone: 200,
+            SomeoneElse: 200,
+            Administrator: 200),
+        new Row(
+            Action: "YourYearController.GetYears",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Years",
+            RowsAskedFor: WhoseRows.SomebodyElses,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 403),
         new Row(
             Action: "YourYearController.GetYear",
             Method: "GET",

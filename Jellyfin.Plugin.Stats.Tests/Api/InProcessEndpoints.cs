@@ -68,6 +68,7 @@ public sealed class InProcessEndpoints : IDisposable
     /// <param name="consent">What holds each account's answer about being named. Defaults to one over a store that keeps answers in memory.</param>
     /// <param name="access">What the library says about which items a caller may see. Defaults to one where every item asked about is visible, so a test about anything else is not silently testing the access rule.</param>
     /// <param name="reports">The layer the aggregate routes answer through. Defaults to one over a store holding no plays, so a test about a status is not also a test about somebody's arithmetic.</param>
+    /// <param name="held">What years an account has plays in. Defaults to none, for the reason the fold does: a case about a status is not a case about somebody's history.</param>
     public InProcessEndpoints(
         Func<Guid, int, TimeZoneInfo, int, YearInReview>? fold = null,
         PluginConfiguration? configuration = null,
@@ -75,7 +76,8 @@ public sealed class InProcessEndpoints : IDisposable
         OwnHistoryDeletion? deletion = null,
         ConsentRegister? consent = null,
         IItemAccess? access = null,
-        AggregateQueries? reports = null)
+        AggregateQueries? reports = null,
+        YearsAnAccountHas? held = null)
     {
         var settings = configuration ?? new PluginConfiguration();
         var moment = clock ?? new FixedClock(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
@@ -99,6 +101,7 @@ public sealed class InProcessEndpoints : IDisposable
         services.AddSingleton(_who);
         services.AddSingleton<IAuthorizationContext>(new CallerContext(_who));
         services.AddSingleton(new HeldYears(fold ?? NothingWatched, moment));
+        services.AddSingleton(held ?? NoYears);
         services.AddSingleton(access ?? FakeItemAccess.EverythingVisible);
         services.AddSingleton(deletion ?? new OwnHistoryDeletion(() => new NothingStored(), 1));
 
@@ -120,6 +123,20 @@ public sealed class InProcessEndpoints : IDisposable
         application.UseEndpoints(endpoints => endpoints.MapControllers());
         _pipeline = application.Build();
     }
+
+    /// <summary>
+    /// The years an account has where a case named none.
+    /// </summary>
+    /// <remarks>
+    /// Empty rather than a year of its own, the same choice the fold above
+    /// makes: a case about who may ask is not a case about what they watched,
+    /// and a default that answered with a year would put one into every such
+    /// case without anybody choosing it.
+    /// </remarks>
+    /// <param name="userId">The account.</param>
+    /// <param name="zone">The zone the years would be read in.</param>
+    /// <returns>No years.</returns>
+    private static IReadOnlyList<int> NoYears(Guid userId, TimeZoneInfo zone) => [];
 
     /// <summary>
     /// Sends one GET request as one of the four callers.

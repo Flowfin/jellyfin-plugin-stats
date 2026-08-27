@@ -24,6 +24,10 @@
  * moment a range is measured back from does too, so every function here answers
  * the same way on any machine and at any hour. docs/headless-tests.md.
  *
+ * The duration reader this needs sits in the drawing module rather than here,
+ * because two pages reading a span two ways is two pages disagreeing about what
+ * an hour is.
+ *
  * `mountUsageOverTime` is the one exception and it is deliberately four lines:
  * it is the only thing here that touches a document, and nothing in this tree
  * can drive one. What it does is read two controls, call `usageOverTimeMarkup`
@@ -31,6 +35,7 @@
  * the functions above it, where the node suite reaches them.
  */
 
+import { minutesIn } from './charts.js';
 import { usageOverTime } from './usageOverTime.js';
 
 /* The longest range any shape in the query layer answers over, in days. Stated
@@ -84,42 +89,6 @@ export function rangeOf(days, now) {
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
 
     return { from: from.toISOString(), to: to.toISOString() };
-}
-
-/**
- * Reads a duration the way the endpoint writes one.
- *
- * The server writes a span as `hh:mm:ss`, with a day count and a full stop in
- * front of it once it passes twenty-four hours, and the seconds carry a
- * fractional part where there is one. A page that read only the first shape
- * would report a fortnight of watching as fourteen minutes.
- *
- * @param {string} span The duration as the endpoint wrote it.
- * @returns {number} The whole minutes in it.
- */
-export function minutesIn(span) {
-    if (typeof span !== 'string') {
-        throw new Error(
-            'A watched time is read as the text the endpoint wrote, and this answer carried ' +
-                'something else. Treating it as nought would draw a day somebody watched as a ' +
-                'day nobody did.',
-        );
-    }
-
-    const parts = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(span);
-
-    if (parts === null) {
-        throw new Error(
-            `A watched time of "${span}" is not a duration this page can read. It is refused ` +
-                'rather than guessed at, because every guess here is a figure about somebody.',
-        );
-    }
-
-    const days = parts[1] === undefined ? 0 : Number(parts[1]);
-
-    return Math.round(
-        days * 24 * 60 + Number(parts[2]) * 60 + Number(parts[3]) + Number(parts[4]) / 60,
-    );
 }
 
 /**

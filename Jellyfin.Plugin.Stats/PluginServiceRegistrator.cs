@@ -1,6 +1,7 @@
 using System;
 using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.Stats.Aggregation;
+using Jellyfin.Plugin.Stats.Api;
 using Jellyfin.Plugin.Stats.Capture;
 using Jellyfin.Plugin.Stats.Configuration;
 using Jellyfin.Plugin.Stats.Data;
@@ -119,6 +120,19 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // make the four removals below reach whatever holds a folded year, so
         // that a reader arriving later cannot be the change that has to
         // remember to wire them.
+        // Which years an account has rows in, read when a selector asks rather
+        // than kept. The retention sweep deletes by the started column, so a
+        // year leaves this list when the last of its rows goes, and a value
+        // taken at start-up would go on offering a year whose rows are gone.
+        //
+        // Handed in as a function for the reason the fold below is: this is the
+        // one place that opens a store, and the endpoint that asks may not name
+        // the store's interface at all.
+        serviceCollection.AddSingleton<YearsAnAccountHas>(_ =>
+            (userId, zone) => ReadFromTheStore.Answering(
+                OpenTheStore,
+                store => store.YearsWithPlaysFor(userId, zone)));
+
         serviceCollection.AddSingleton(provider => new HeldYears(
             (userId, year, zone, topCount) => ReadFromTheStore.Answering(OpenTheStore, store =>
 

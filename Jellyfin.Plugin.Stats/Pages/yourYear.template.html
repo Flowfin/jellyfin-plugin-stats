@@ -1,0 +1,22 @@
+<div id="stats-your-year-page" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <h1>Your year</h1>
+
+            <p class="stats-page-about">
+                This page is about you. It is drawn from your own plays, on your own authority, and
+                nobody else's account can be asked for through it.
+            </p>
+
+            <div id="stats-year-view"></div>
+        </div>
+    </div>
+
+    <script id="stats-page-code"></script>
+
+    <script>
+        ApiClient.getCurrentUser().then(function (user) {
+            mountYourYear(document.querySelector('#stats-your-year-page'), ApiClient, user.Id);
+        });
+    </script>
+</div>

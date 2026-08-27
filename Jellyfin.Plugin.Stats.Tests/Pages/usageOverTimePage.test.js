@@ -21,7 +21,6 @@ import {
     USAGE_PATH,
     boundSentence,
     forDrawing,
-    minutesIn,
     rangeOf,
     usageOverTimeMarkup,
 } from '../../Jellyfin.Plugin.Stats/Pages/usageOverTimePage.js';
@@ -71,19 +70,6 @@ test('a range of no days, or of part of one, is refused', () => {
 test('a range measured back from nothing is refused rather than read off a clock', () => {
     for (const now of [undefined, null, 'now', new Date('nonsense')]) {
         assert.throws(() => rangeOf(30, now), /measured back from/);
-    }
-});
-
-test('a duration is read in both the shapes the endpoint writes', () => {
-    assert.equal(minutesIn('00:00:00'), 0);
-    assert.equal(minutesIn('01:20:00'), 80);
-    assert.equal(minutesIn('14.06:30:00'), 14 * 24 * 60 + 390);
-    assert.equal(minutesIn('00:01:30.5000000'), 2);
-});
-
-test('a duration in a shape this page cannot read is refused rather than guessed at', () => {
-    for (const span of ['', 'PT80M', '80', '1:2', null, 42]) {
-        assert.throws(() => minutesIn(span), /watched time/);
     }
 });
 
