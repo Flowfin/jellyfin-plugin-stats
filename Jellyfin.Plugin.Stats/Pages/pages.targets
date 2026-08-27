@@ -1,0 +1,82 @@
+<Project>
+
+  <!--
+    How a drawing reaches a browser.
+
+    The page modules under this directory import each other by relative path,
+    and every plugin page the server serves is served from one address with the
+    page named in the query, so `./charts.js` inside a module fetched from
+    /web/ConfigurationPage?name=... resolves to /web/charts.js, which belongs to
+    the web client and where nothing this plugin ships answers. The reading of
+    the server's own DashboardController that established that is on issue #67.
+
+    So the modules are assembled into one file per page before they are
+    embedded: the tracked template's empty script element is filled with the
+    modules it names, with the imports between them removed because they are no
+    longer separate files. The modules stay tracked source with their own node
+    suite, and no page carries a second, hand-written copy of anything.
+
+    The assembly is a function of tracked bytes and nothing else. Nothing here
+    reads a setting, a clock, an environment variable or a network, so two
+    builds of one commit produce the same page, and PageAssetTests recomputes
+    the same assembly and compares it against what was embedded - so the rule
+    written here and the rule written there cannot silently disagree.
+  -->
+
+  <UsingTask TaskName="AssembleAPage" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Template ParameterType="System.String" Required="true" />
+      <Modules ParameterType="System.String[]" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        const string Slot = "<script id=\"stats-page-code\"></script>";
+
+        var template = File.ReadAllText(Template).Replace("\r\n", "\n");
+
+        if (template.IndexOf(Slot, StringComparison.Ordinal) < 0)
+        {
+            Log.LogError("The page template " + Template + " carries no empty script element for its code, so there is nowhere to put the modules it names.");
+            return false;
+        }
+
+        var code = new StringBuilder();
+
+        foreach (var module in Modules)
+        {
+            foreach (var line in File.ReadAllText(module).Replace("\r\n", "\n").Split('\n'))
+            {
+                // An import between two modules that are now one file names a
+                // file that is not there any more. Every import in this
+                // directory is one line ending in a semicolon, and a module
+                // that imported anything else would be reaching outside the
+                // plugin, which no-external-host-in-a-page-script refuses.
+                if (line.StartsWith("import ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // What was exported is now in scope. The word is removed rather
+                // than the declaration being rewritten, so what is in the page
+                // is the tracked line minus one word.
+                code.Append(line.StartsWith("export ", StringComparison.Ordinal) ? line.Substring("export ".Length) : line);
+                code.Append('\n');
+            }
+        }
+
+        var page = template.Replace(Slot, "<script id=\"stats-page-code\">\n" + code.ToString() + "</script>");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+
+        // Written only where it would change, so a build that assembles the
+        // same page again does not make the compiler read it again.
+        if (!File.Exists(Destination) || !string.Equals(File.ReadAllText(Destination), page, StringComparison.Ordinal))
+        {
+            File.WriteAllText(Destination, page);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+</Project>

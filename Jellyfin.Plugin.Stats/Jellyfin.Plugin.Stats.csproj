@@ -161,4 +161,38 @@
     <EmbeddedResource Include="Privacy\consent.txt" />
   </ItemGroup>
 
+  <!--
+    The pages assembled from the drawing modules. Pages\pages.targets carries
+    the reason and the rule; what is here names which template takes which
+    modules, in the order they are laid out, and where the assembled page goes.
+
+    The assembled file is written under the intermediate directory rather than
+    beside the template, so nothing generated is tracked and a clone that has
+    never been built holds only the source it was written from. The logical name
+    is stated, because a resource embedded from that path would otherwise be
+    named after the directory the build wrote it into.
+  -->
+  <Import Project="Pages\pages.targets" />
+
+  <!--
+    The rule itself is an input, and not only the files it reads. Without that
+    line a change to how a page is assembled leaves the assembled page on disk
+    untouched and every check over it green, which is how this was found: the
+    rule was deleted, the suite was run, and nothing went red.
+  -->
+  <Target Name="AssembleThePages" BeforeTargets="PrepareForBuild"
+          Inputs="Pages\pages.targets;$(MSBuildProjectFullPath);Pages\usageOverTime.template.html;Pages\charts.js;Pages\usageOverTime.js;Pages\usageOverTimePage.js"
+          Outputs="$(IntermediateOutputPath)pages\usageOverTime.html">
+    <AssembleAPage Template="Pages\usageOverTime.template.html"
+                   Modules="Pages\charts.js;Pages\usageOverTime.js;Pages\usageOverTimePage.js"
+                   Destination="$(IntermediateOutputPath)pages\usageOverTime.html" />
+  </Target>
+
+  <Target Name="EmbedTheAssembledPages" AfterTargets="AssembleThePages">
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)pages\usageOverTime.html"
+                        LogicalName="Jellyfin.Plugin.Stats.Pages.usageOverTime.html" />
+    </ItemGroup>
+  </Target>
+
 </Project>
