@@ -62,9 +62,9 @@ public sealed class DailyRollupTests : IDisposable
     [Fact]
     public void TheTablesArriveAsAnAppendedStepAndAnOlderStoreStillReads()
     {
-        Assert.Equal(9, SchemaMigrations.Latest);
+        Assert.Equal(10, SchemaMigrations.Latest);
         Assert.Equal(
-            new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 },
+            new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 },
             SchemaMigrations.All.Select(step => step.Version));
 
         Directory.CreateDirectory(_root);
