@@ -263,6 +263,39 @@ public interface IPlayStore : IDisposable
     IEnumerable<DailyRollup> AllRollups();
 
     /// <summary>
+    /// Throws away every rollup the store holds and folds them again from the
+    /// play rows.
+    /// </summary>
+    /// <remarks>
+    /// What makes a rollup derived rather than authoritative. A table that
+    /// cannot be produced again from the rows underneath it is the only copy of
+    /// what it holds, and a table that has drifted from those rows is worse than
+    /// no table at all, because it is believed. Both are read the same way:
+    /// rebuild and compare. Issue #253.
+    /// <para>
+    /// It reads the rows a page at a time rather than all of them, for the
+    /// reason every other read here carries a bound: a server that has been
+    /// recording for years has no safe unbounded read, and a rebuild is exactly
+    /// the operation somebody runs against the largest store they have.
+    /// </para>
+    /// <para>
+    /// The result is the incremental fold's, not an approximation of it. Every
+    /// column of a rollup is one a play row carries or one that follows from the
+    /// play rows alone, so the two agree exactly, and a case that finds them
+    /// disagreeing has found a defect in one of them rather than a rounding.
+    /// </para>
+    /// <para>
+    /// What it cannot recover is a play whose row is gone. A retention deletion
+    /// removes rows and leaves the figures over them standing, so a rebuild on a
+    /// swept store produces the days it still has rows for and not the days it
+    /// has aged out of. That is the setting doing its work rather than a defect,
+    /// and it is why a rebuild is asked for by an operator rather than run on a
+    /// schedule.
+    /// </para>
+    /// </remarks>
+    void RebuildRollups();
+
+    /// <summary>
     /// Walks every row belonging to one user, in the same order.
     /// </summary>
     /// <remarks>

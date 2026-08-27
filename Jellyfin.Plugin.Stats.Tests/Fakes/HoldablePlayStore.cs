@@ -262,6 +262,9 @@ public sealed class HoldablePlayStore : IPlayStore
     public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
     /// <inheritdoc />
+    public void RebuildRollups() => throw NotPartOfThis();
+
+    /// <inheritdoc />
     public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
     /// <inheritdoc />

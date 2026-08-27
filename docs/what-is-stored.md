@@ -213,9 +213,30 @@ day keyed in two zones is a file nothing can read as a day.
 
 **This table is empty on a store that already held plays before it arrived.** It
 is filled as rows are written, so an upgrade brings the table and none of the
-days the store already has. What produces those is a rebuild from the play rows,
-which is #253 and is not built. Nothing reads this table yet either; the report
-that will is #254.
+days the store already has. What produces those is a rebuild, which reads the
+play rows a page at a time and folds them again from scratch, throwing away every
+row here first. Nothing reads this table yet; the report that will is #254.
+
+The rebuild is what makes this table derived rather than authoritative. A table
+that cannot be produced again from the rows underneath it is the only copy of
+what it holds, and one that has drifted from them is worse than no table at all,
+because it is believed. Both are read the same way: rebuild and compare.
+
+**A rebuild produces the days the store still has rows for, and no others.** On a
+store the retention sweep has aged rows out of, the days those rows were in are
+in this table and not in the play rows, so a rebuild there throws away exactly
+the figures the sweep deliberately left standing. That is why a rebuild is an
+operation somebody asks for rather than one anything runs on a schedule.
+
+**A corrective deletion moves these rows and a retention deletion does not.** The
+two are opposite statements about the same play rows, and which one a deletion
+was is written down beside it in the table below. A corrective deletion takes
+each removed play back out of the day it was folded into, before the row goes,
+inside the same transaction, and a day nothing is left in stops being a day
+rather than standing at nought. A retention deletion leaves every figure here
+where it is, which is what the longer aggregate window exists for: the daily
+sweep at the default ninety days would otherwise empty aggregates about three
+hundred days before their own expiry, on every installation running defaults.
 
 ## One row per deletion that removed something
 
@@ -248,7 +269,14 @@ it would disagree with the rows on any server whose clock has moved.
 **This table is empty on a store that already held plays before it arrived.**
 The deletions such a store performed were made by builds that recorded no class,
 and filling them in would invent the answer this table exists to stop being
-guessed. Nothing reads the table yet; what will is the rebuild in #253.
+guessed.
+
+Nothing reads the table back yet. What acts on the class is the deletion itself:
+a corrective one reaches the day-by-day rollups above and a retention one leaves
+them standing, both decided from the argument the call carried rather than from
+this table. What this holds is the account a later reader has of which deletions
+were which, and on a store upgraded from an earlier build that account starts at
+the day the table arrived.
 
 ## What is refused on purpose
 

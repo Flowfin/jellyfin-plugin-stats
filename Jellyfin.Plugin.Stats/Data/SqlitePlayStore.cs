@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -341,6 +342,13 @@ public sealed class SqlitePlayStore : IPlayStore
     // sorts as a date, so a range over days is a range over the column.
     private const string DayFormat = "yyyy-MM-dd";
 
+    // How many rows a rebuild reads at once. The deletions' bite, and named
+    // separately for the reason each of those is named where it is used: a size
+    // shared between two operations makes a change to either one a change to
+    // both. Small enough that what is held is a page rather than a store, and
+    // large enough that a year of rows is not ten thousand statements.
+    private const int RebuildPage = 500;
+
     // The day-by-day fold, written as the row that produced it is written.
     //
     // One statement rather than a read and then a write. A rollup row either
@@ -378,6 +386,91 @@ public sealed class SqlitePlayStore : IPlayStore
                  UnknownMethod, DirectPlay, DirectStream, Transcode
           FROM daily_rollups
           ORDER BY Day, UserId, ItemType, ClientName";
+
+    // The columns a rollup is folded from, and nothing else. A rebuild and a
+    // corrective deletion both walk rows to move the same eleven figures, and
+    // reading the whole play row to do it would carry the item name, the device
+    // and the transcode summary through a loop that never looks at them.
+    //
+    // Keyed off the row identifier rather than paged by an offset. An offset
+    // re-reads the same rows when something is deleted underneath the walk,
+    // which is the shape a rebuild running beside a sweep arrives in.
+    private const string SelectTheRollupColumnsAfter =
+        @"-- bound: LIMIT $limit
+          SELECT Id, StartedUtcTicks, UserId, ItemType, ClientName,
+                 WatchedDurationTicks, ReachedTheEnd, PlayMethodAtStart
+          FROM plays
+          WHERE Id > $after
+          ORDER BY Id
+          LIMIT $limit";
+
+    // The same columns over each of the three deletions' own doomed sets, so a
+    // corrective deletion can take those rows out of the days they were folded
+    // into before they stop existing. Each mirrors the inner select of the
+    // statement beside it exactly - the same condition, the same order and the
+    // same bound - because a set that differed by one row would move a figure
+    // by a play that is still in the file, or leave one standing for a play
+    // that is not.
+    //
+    // Three statements rather than one with a condition assembled in C#, for
+    // the reason the three deletions themselves are three.
+    private const string SelectTheRollupColumnsBefore =
+        @"-- bound: LIMIT $limit
+          SELECT Id, StartedUtcTicks, UserId, ItemType, ClientName,
+                 WatchedDurationTicks, ReachedTheEnd, PlayMethodAtStart
+          FROM plays
+          WHERE StartedUtcTicks < $cutoff
+          ORDER BY Id
+          LIMIT $limit";
+
+    private const string SelectTheRollupColumnsOfAUser =
+        @"-- bound: LIMIT $limit
+          SELECT Id, StartedUtcTicks, UserId, ItemType, ClientName,
+                 WatchedDurationTicks, ReachedTheEnd, PlayMethodAtStart
+          FROM plays
+          WHERE UserId = $userId
+          ORDER BY Id
+          LIMIT $limit";
+
+    private const string SelectTheRollupColumnsOfAUserBetween =
+        @"-- bound: LIMIT $limit
+          SELECT Id, StartedUtcTicks, UserId, ItemType, ClientName,
+                 WatchedDurationTicks, ReachedTheEnd, PlayMethodAtStart
+          FROM plays
+          WHERE UserId = $userId AND StartedUtcTicks >= $from AND StartedUtcTicks < $to
+          ORDER BY Id
+          LIMIT $limit";
+
+    // Taking one play back out of the day it was folded into. The mirror of the
+    // fold above, subtracting exactly what that statement added, so a day the
+    // deletion emptied ends at nought on every column rather than at a
+    // remainder.
+    //
+    // It updates and never inserts. A row that is not there is a play written
+    // by a build from before this table existed, which was never folded into
+    // anything, and inserting a negative row for it would put a figure in the
+    // table that no play produced.
+    private const string TakeThePlayOutOfItsDay =
+        @"UPDATE daily_rollups SET
+              Plays = Plays - 1,
+              WatchedDurationTicks = WatchedDurationTicks - $watched,
+              Completed = Completed - $completed,
+              UnknownMethod = UnknownMethod - $unknownMethod,
+              DirectPlay = DirectPlay - $directPlay,
+              DirectStream = DirectStream - $directStream,
+              Transcode = Transcode - $transcode
+          WHERE Day = $day AND UserId = $userId AND ItemType = $itemType AND ClientName = $clientName";
+
+    // A day nothing is left in stops being a day. A row reading nought plays is
+    // not the same statement as no row: the first says the account watched
+    // nothing that day, which a report would draw, and the second says there is
+    // nothing to say.
+    private const string ForgetTheDaysThatAreEmpty =
+        "DELETE FROM daily_rollups WHERE Plays <= 0";
+
+    // What a rebuild starts from. Not a drop: the table stays, its shape stays,
+    // and what goes is every row in it.
+    private const string ForgetEveryRollup = "DELETE FROM daily_rollups";
 
     private const string SelectTheRollupZone =
         @"-- bound: LIMIT 1, over a table that holds one row
@@ -853,6 +946,8 @@ public sealed class SqlitePlayStore : IPlayStore
 
         var cutoff = UtcTicks(cutoffUtc, nameof(cutoffUtc));
 
+        using var transaction = _connection.BeginTransaction();
+
         // The open rows first, and unbounded, because a play older than the
         // retention window that is still marked as running is a leftover rather
         // than a session anybody is watching, and there is one row per session
@@ -860,17 +955,29 @@ public sealed class SqlitePlayStore : IPlayStore
         // finds no finished rows left has still taken them.
         using (var stale = _connection.CreateCommand())
         {
+            stale.Transaction = transaction;
             stale.CommandText = ForgetTheOpenPlaysBefore;
             stale.Parameters.AddWithValue("$cutoff", cutoff);
             stale.ExecuteNonQuery();
         }
 
+        MoveTheDaysThoseRowsWereIn(
+            transaction,
+            deletionClass,
+            SelectTheRollupColumnsBefore,
+            doomed => doomed.Parameters.AddWithValue("$cutoff", cutoff),
+            limit);
+
         using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = DeletePlaysBefore;
         command.Parameters.AddWithValue("$cutoff", cutoff);
         command.Parameters.AddWithValue("$limit", limit);
 
-        return Recorded(command.ExecuteNonQuery(), deletionClass);
+        var deleted = Recorded(transaction, command.ExecuteNonQuery(), deletionClass);
+        transaction.Commit();
+
+        return deleted;
     }
 
     /// <inheritdoc />
@@ -879,17 +986,28 @@ public sealed class SqlitePlayStore : IPlayStore
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
         Declared(deletionClass);
 
+        using var transaction = _connection.BeginTransaction();
+
         // The account's running play goes too, and it goes first. A caller
         // bites until this answers nought, so anything left to the last call
         // would be left to a call that never comes.
         using (var running = _connection.CreateCommand())
         {
+            running.Transaction = transaction;
             running.CommandText = ForgetTheOpenPlaysOfAUser;
             running.Parameters.AddWithValue("$userId", Text(userId));
             running.ExecuteNonQuery();
         }
 
+        MoveTheDaysThoseRowsWereIn(
+            transaction,
+            deletionClass,
+            SelectTheRollupColumnsOfAUser,
+            doomed => doomed.Parameters.AddWithValue("$userId", Text(userId)),
+            limit);
+
         using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = DeletePlaysOfAUser;
 
         // Through the same Text as the write and as PlaysFor. A Guid formatted
@@ -898,7 +1016,10 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$userId", Text(userId));
         command.Parameters.AddWithValue("$limit", limit);
 
-        return Recorded(command.ExecuteNonQuery(), deletionClass);
+        var deleted = Recorded(transaction, command.ExecuteNonQuery(), deletionClass);
+        transaction.Commit();
+
+        return deleted;
     }
 
     /// <inheritdoc />
@@ -918,10 +1039,13 @@ public sealed class SqlitePlayStore : IPlayStore
 
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(from, to, nameof(fromUtc));
 
+        using var transaction = _connection.BeginTransaction();
+
         // The account's running play as well, where it started inside the
         // window, and first for the reason the deletion above gives.
         using (var running = _connection.CreateCommand())
         {
+            running.Transaction = transaction;
             running.CommandText = ForgetTheOpenPlaysOfAUserBetween;
             running.Parameters.AddWithValue("$userId", Text(userId));
             running.Parameters.AddWithValue("$from", from);
@@ -929,7 +1053,20 @@ public sealed class SqlitePlayStore : IPlayStore
             running.ExecuteNonQuery();
         }
 
+        MoveTheDaysThoseRowsWereIn(
+            transaction,
+            deletionClass,
+            SelectTheRollupColumnsOfAUserBetween,
+            doomed =>
+            {
+                doomed.Parameters.AddWithValue("$userId", Text(userId));
+                doomed.Parameters.AddWithValue("$from", from);
+                doomed.Parameters.AddWithValue("$to", to);
+            },
+            limit);
+
         using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = DeletePlaysOfAUserBetween;
 
         // Through the same Text as the write and as PlaysFor, for the reason
@@ -939,7 +1076,48 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$to", to);
         command.Parameters.AddWithValue("$limit", limit);
 
-        return Recorded(command.ExecuteNonQuery(), deletionClass);
+        var deleted = Recorded(transaction, command.ExecuteNonQuery(), deletionClass);
+        transaction.Commit();
+
+        return deleted;
+    }
+
+    /// <inheritdoc />
+    public void RebuildRollups()
+    {
+        using var transaction = _connection.BeginTransaction();
+
+        using (var forget = _connection.CreateCommand())
+        {
+            forget.Transaction = transaction;
+            forget.CommandText = ForgetEveryRollup;
+            forget.ExecuteNonQuery();
+        }
+
+        // Keyed off the last identifier read rather than counted, so a walk
+        // over a store something else is writing to reads each row once. The
+        // whole rebuild is one transaction, so a run that fails part of the way
+        // leaves the rollups it started with rather than the half it had got
+        // to, which is the difference between a table that is behind and a
+        // table that is wrong.
+        long after = 0;
+        while (true)
+        {
+            var page = RollupColumnsOf(transaction, SelectTheRollupColumnsAfter, command => command.Parameters.AddWithValue("$after", after), RebuildPage);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            for (var i = 0; i < page.Count; i++)
+            {
+                FoldIntoTheDay(transaction, page[i]);
+            }
+
+            after = page[^1].Id;
+        }
+
+        transaction.Commit();
     }
 
     /// <inheritdoc />
@@ -1203,25 +1381,135 @@ public sealed class SqlitePlayStore : IPlayStore
     // whatever transaction is writing the row, so the row and the day it moves
     // arrive together or neither does.
     private void FoldIntoTheDay(SqliteTransaction transaction, PlayRecord play)
-    {
-        var delivery = DeliveryOf(play.PlayMethodAtStart);
+        => FoldIntoTheDay(transaction, RollupColumns.Of(play));
 
+    // The same fold over the columns alone, which is what a rebuild has: it
+    // walks the values a rollup is made of rather than whole play rows. One
+    // statement for both routes, so a rebuild cannot fold a play into a
+    // different day from the one the write path put it in.
+    private void FoldIntoTheDay(SqliteTransaction transaction, RollupColumns row)
+    {
         using var command = _connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = FoldThePlayIntoItsDay;
+        BindTheRollupRow(command, row);
+        command.ExecuteNonQuery();
+    }
+
+    // The mirror of it. Subtracts exactly what the fold added, so a rollup a
+    // corrective deletion emptied ends at nought on every column rather than at
+    // a remainder.
+    private void TakeOutOfTheDay(SqliteTransaction transaction, RollupColumns row)
+    {
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = TakeThePlayOutOfItsDay;
+        BindTheRollupRow(command, row);
+        command.ExecuteNonQuery();
+    }
+
+    // Takes the rows one deletion is about to remove out of the days they were
+    // folded into, and only where the deletion is correcting the record.
+    //
+    // Before the rows go rather than after, because afterwards there is nothing
+    // left to read the days off. Inside the deletion own transaction, so a
+    // store never holds rows whose day has already been taken away from them.
+    //
+    // A retention deletion reaches none of this. Its statement is that the raw
+    // rows have aged out and the figures over them stand, which is what the
+    // longer aggregate window exists for: the daily sweep at the default ninety
+    // days would otherwise empty aggregates about three hundred days before
+    // their own expiry, on every installation running defaults, and take that
+    // setting out of service without anybody deciding to remove it.
+    private void MoveTheDaysThoseRowsWereIn(
+        SqliteTransaction transaction,
+        DeletionClass deletionClass,
+        string statement,
+        Action<SqliteCommand> bind,
+        int limit)
+    {
+        if (deletionClass != DeletionClass.Corrective)
+        {
+            return;
+        }
+
+        var doomed = RollupColumnsOf(transaction, statement, bind, limit);
+        if (doomed.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < doomed.Count; i++)
+        {
+            TakeOutOfTheDay(transaction, doomed[i]);
+        }
+
+        using var forget = _connection.CreateCommand();
+        forget.Transaction = transaction;
+        forget.CommandText = ForgetTheDaysThatAreEmpty;
+        forget.ExecuteNonQuery();
+    }
+
+    // Reads a bounded page of the columns a rollup is made of, into memory
+    // before anything is written. One connection cannot be read from and
+    // written through at once without the writes landing under the reader, and
+    // the page is bounded by the caller own bite, so what is held is one
+    // statement worth of rows.
+    [SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "The statement is not composed at run time. It is one of four constants in this file, chosen by the caller because a rebuild and each of the three deletions read the same columns over a different doomed set, and no route from a request, a configuration value or a stored row reaches this parameter. The analyser cannot see that because the statement is data by design: the alternative is the condition assembled in C# that no-sql-built-by-concatenation refuses, which is the defect this shape exists to avoid.")]
+    private List<RollupColumns> RollupColumnsOf(
+        SqliteTransaction transaction,
+        string statement,
+        Action<SqliteCommand> bind,
+        int limit)
+    {
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = statement;
+        bind(command);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var rows = new List<RollupColumns>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new RollupColumns
+            {
+                Id = reader.GetInt64(0),
+                StartedUtc = new DateTime(reader.GetInt64(1), DateTimeKind.Utc),
+                StoredUserId = reader.GetString(2),
+                ItemType = reader.GetString(3),
+                ClientName = reader.GetString(4),
+                Watched = TimeSpan.FromTicks(reader.GetInt64(5)),
+                ReachedTheEnd = reader.GetInt64(6) != 0,
+                MethodAtStart = (PlayMethod)reader.GetInt64(7)
+            });
+        }
+
+        return rows;
+    }
+
+    // The eleven values both statements take, bound once. The fold adds them
+    // and the mirror subtracts them, and binding them in two places is where
+    // the two would start disagreeing about what one play is worth.
+    private void BindTheRollupRow(SqliteCommand command, RollupColumns row)
+    {
+        var delivery = DeliveryOf(row.MethodAtStart);
+
         command.Parameters.AddWithValue(
             "$day",
-            LocalDay.Of(play.StartedUtc, _rollupZone).ToString(DayFormat, CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("$userId", Text(play.UserId));
-        command.Parameters.AddWithValue("$itemType", play.ItemType);
-        command.Parameters.AddWithValue("$clientName", play.ClientName);
-        command.Parameters.AddWithValue("$watched", play.WatchedDuration.Ticks);
-        command.Parameters.AddWithValue("$completed", play.ReachedTheEnd ? 1 : 0);
+            LocalDay.Of(row.StartedUtc, _rollupZone).ToString(DayFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$userId", row.StoredUserId);
+        command.Parameters.AddWithValue("$itemType", row.ItemType);
+        command.Parameters.AddWithValue("$clientName", row.ClientName);
+        command.Parameters.AddWithValue("$watched", row.Watched.Ticks);
+        command.Parameters.AddWithValue("$completed", row.ReachedTheEnd ? 1 : 0);
         command.Parameters.AddWithValue("$unknownMethod", delivery.Unknown);
         command.Parameters.AddWithValue("$directPlay", delivery.DirectPlay);
         command.Parameters.AddWithValue("$directStream", delivery.DirectStream);
         command.Parameters.AddWithValue("$transcode", delivery.Transcode);
-        command.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -1267,10 +1555,11 @@ public sealed class SqlitePlayStore : IPlayStore
     /// would end every deletion this plugin performs with an entry saying that
     /// nothing happened.
     /// </remarks>
+    /// <param name="transaction">The deletion's own transaction, so the entry and the removal arrive together or neither does.</param>
     /// <param name="rows">How many rows the statement removed.</param>
     /// <param name="deletionClass">What the deletion said about them.</param>
     /// <returns>The same count.</returns>
-    private int Recorded(int rows, DeletionClass deletionClass)
+    private int Recorded(SqliteTransaction transaction, int rows, DeletionClass deletionClass)
     {
         if (rows == 0)
         {
@@ -1278,6 +1567,7 @@ public sealed class SqlitePlayStore : IPlayStore
         }
 
         using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = RecordTheDeletion;
         command.Parameters.AddWithValue("$class", (int)deletionClass);
         command.Parameters.AddWithValue("$rows", rows);
@@ -1394,4 +1684,44 @@ public sealed class SqlitePlayStore : IPlayStore
         => reader.IsDBNull(ordinal) ? null : Utc(reader.GetInt64(ordinal));
 
     private static object Number(int? value) => value is null ? DBNull.Value : value.Value;
+
+    // What a rollup row is made of, and no more of a play than that. The
+    // account is carried as the text the column holds rather than as an
+    // identifier, because both routes into this type already have it in that
+    // form, and converting it twice is where a fold and a rebuild would start
+    // disagreeing about which row they mean.
+    private sealed record RollupColumns
+    {
+        public required long Id { get; init; }
+
+        public required DateTime StartedUtc { get; init; }
+
+        public required string StoredUserId { get; init; }
+
+        public required string ItemType { get; init; }
+
+        public required string ClientName { get; init; }
+
+        public required TimeSpan Watched { get; init; }
+
+        public required bool ReachedTheEnd { get; init; }
+
+        public required PlayMethod MethodAtStart { get; init; }
+
+        // The identifier is nought here, and it is never read on this route:
+        // what a write path folds is the row it is writing, which has no
+        // identifier until the insert gives it one. Only the walk that pages by
+        // identifier reads it.
+        public static RollupColumns Of(PlayRecord play) => new()
+        {
+            Id = 0,
+            StartedUtc = play.StartedUtc,
+            StoredUserId = Text(play.UserId),
+            ItemType = play.ItemType,
+            ClientName = play.ClientName,
+            Watched = play.WatchedDuration,
+            ReachedTheEnd = play.ReachedTheEnd,
+            MethodAtStart = play.PlayMethodAtStart
+        };
+    }
 }
