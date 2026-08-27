@@ -15,12 +15,19 @@
  * refuses a module that contains something and not one that lacks three things,
  * and writing it would mean naming every view file by hand.
  *
- * What separates a view from the module they draw with is read rather than
- * listed. The drawing module is the one that exports the notice, and every other
- * module here is a view and owes its three states. That makes the export named
- * after the file part of what a view is, which is the shape all four already
- * have, and a fifth that departs from it fails here rather than being quietly
- * skipped.
+ * What separates a view from the two other kinds of module here is read rather
+ * than listed. The drawing module is the one that exports the notice. A page
+ * module is one that exports a function whose name begins with `mount`, which is
+ * the only thing in this directory that touches a document: it wires a page's
+ * controls to a request and asks a view for the markup, so it draws nothing of
+ * its own and owes no states. Every module that is neither is a view and owes
+ * its three. That makes the export named after the file part of what a view is,
+ * which is the shape they all already have, and one that departs from it fails
+ * here rather than being quietly skipped.
+ *
+ * The three kinds are asserted to cover the directory, so a fourth kind added
+ * later turns this suite red rather than being counted as a view that is missing
+ * its states, or worse, skipped.
  *
  * The words for the three are not repeated in this file. Each expectation is the
  * drawing module's own output for that state, so a change to the wording moves
@@ -77,7 +84,14 @@ const loaded = await Promise.all(
 );
 
 const drawing = loaded.filter((module) => typeof module.exports.stateNotice === 'function');
-const views = loaded.filter((module) => typeof module.exports.stateNotice !== 'function');
+const pages = loaded.filter(
+    (module) =>
+        typeof module.exports.stateNotice !== 'function' &&
+        Object.keys(module.exports).some(
+            (name) => name.startsWith('mount') && typeof module.exports[name] === 'function',
+        ),
+);
+const views = loaded.filter((module) => !drawing.includes(module) && !pages.includes(module));
 
 /**
  * What a view is expected to have put into its markup for a state.
@@ -126,7 +140,7 @@ function answerFor(module, situation) {
     return { ...BESIDE_THE_STATE[module.name], state: situation.state, reason: situation.reason };
 }
 
-test('the page directory holds one drawing module and views beside it', () => {
+test('the page directory holds one drawing module, its views, and the pages that wire them', () => {
     /* Without this the file passes by finding nothing. A directory that stopped
      * matching what is read above would leave every case underneath it running
      * over an empty list and reporting green. */
@@ -137,6 +151,16 @@ test('the page directory holds one drawing module and views beside it', () => {
             'them differently, and that holds only while one module writes them.',
     );
     assert.ok(views.length > 0, 'No view was found next to the drawing module.');
+
+    /* The three kinds cover the directory. A module that is none of them would
+     * otherwise be counted as a view and asked for states it does not owe, or
+     * be dropped out of every list here without anything saying so. */
+    assert.equal(
+        drawing.length + pages.length + views.length,
+        loaded.length,
+        'A module in this directory is the drawing, a view, or a page that wires one, and ' +
+            'something here is none of the three.',
+    );
 });
 
 test('every view in the directory is one this file knows how to ask', () => {

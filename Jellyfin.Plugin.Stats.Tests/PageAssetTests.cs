@@ -17,12 +17,37 @@ namespace Jellyfin.Plugin.Stats.Tests;
 /// <para>
 /// This suite reads the compiled assembly rather than the files beside it,
 /// because the embedded copy is the one a server serves. Three properties are
-/// asserted over it: the embedded asset is byte for byte the tracked file, so
-/// nothing is substituted into it while it is built; it carries no marker for a
-/// value a server would fill in; and the only identifier in it is the plugin's
-/// own. The first two are what "no value is embedded at build time" means in a
-/// form a machine can refuse, and the third is what a leaked user or item would
-/// look like.
+/// asserted over it: the embedded asset is exactly what its tracked source
+/// produces, so nothing is substituted into it while it is built; it carries no
+/// marker for a value a server would fill in; and the only identifier in it is
+/// the plugin's own. The first two are what "no value is embedded at build time"
+/// means in a form a machine can refuse, and the third is what a leaked user or
+/// item would look like.
+/// <para>
+/// THERE ARE TWO KINDS OF PAGE HERE AND THE FIRST PROPERTY MEANS SOMETHING
+/// DIFFERENT FOR EACH. A page written as a page is embedded byte for byte, which
+/// is what it has always meant. A page assembled from the drawing modules is
+/// embedded as its tracked template with the modules laid into the template's
+/// empty script element, and what is refused there is any difference from that
+/// assembly - so the bytes still come from tracked files and nothing else, and
+/// the build cannot put a value into a page any more than it could before. Issue
+/// #67 is where the assembly was decided and why: every plugin page is served
+/// from one address with the page named in the query, so the relative imports
+/// between the modules find nothing, and a page that carried its code by hand
+/// would put the modules out of reach of the suite that drives them.
+/// </para>
+/// <para>
+/// WHAT THE MARKER CHECK READS MOVED WITH IT, AND THIS IS THE PART TO READ
+/// TWICE. It reads the tracked source a page was produced from rather than the
+/// produced page: the tracked file for a page written as one, and the template
+/// for an assembled one. The modules are not scanned by it, because they carry
+/// nineteen JSDoc type annotations of the shape <c>{{a: string}}</c> that the
+/// marker pattern matches and that are not markers - they were there before any
+/// of this and no route read them, since both halves of that rule read
+/// <c>.html</c>. What stands in their place is the property above: every byte
+/// inside the script element came from a tracked module, so the build cannot
+/// have filled anything in, and what a module says is what the review is for.
+/// </para>
 /// </para>
 /// <para>
 /// What this cannot see is a value somebody typed into a page by hand, because
@@ -73,9 +98,11 @@ public class PageAssetTests
     public void TheEmbeddedPageAssetsAreExactlyTheTrackedOnes()
     {
         var embedded = EmbeddedPageAssets().Keys.OrderBy(name => name, StringComparer.Ordinal);
-        var tracked = TrackedPageAssets().Keys.OrderBy(name => name, StringComparer.Ordinal);
+        var expected = TrackedPageAssets().Keys
+            .Concat(AssembledPages().Keys)
+            .OrderBy(name => name, StringComparer.Ordinal);
 
-        Assert.Equal(tracked, embedded);
+        Assert.Equal(expected, embedded);
     }
 
     /// <summary>
@@ -91,6 +118,11 @@ public class PageAssetTests
 
         foreach (var asset in EmbeddedPageAssets())
         {
+            if (AssembledPages().ContainsKey(asset.Key))
+            {
+                continue;
+            }
+
             Assert.True(
                 tracked.TryGetValue(asset.Key, out var path),
                 "The assembly embeds " + asset.Key + ", and no tracked file under the plugin project produces that name.");
@@ -101,18 +133,107 @@ public class PageAssetTests
         }
     }
 
+    /// <summary>
+    /// The same property for a page the build assembles: it is its tracked
+    /// template with the modules it names laid into the template's empty script
+    /// element, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The comparison is exact, so the rule written in the project file and the
+    /// rule written here cannot silently disagree: they produce the same bytes
+    /// or this fails. That is what buys the assembly, and it is why the rule is
+    /// deliberately small - drop the imports, which name files that are no
+    /// longer separate, and drop the word that exported what is now in scope.
+    /// <para>
+    /// What the build is declared to assemble is read out of the project file
+    /// rather than listed here. A page added there is covered by arriving, and a
+    /// list in this file would be the thing that goes stale against the build it
+    /// is about.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void EveryAssembledPageIsItsTemplateWithItsOwnModulesInIt()
+    {
+        var embedded = EmbeddedPageAssets();
+        var assembled = AssembledPages();
+
+        Assert.NotEmpty(assembled);
+
+        foreach (var page in assembled)
+        {
+            Assert.True(
+                embedded.TryGetValue(page.Key, out var bytes),
+                "The project declares that " + page.Key + " is assembled, and the assembly embeds no resource under that name.");
+
+            Assert.Equal(Assemble(page.Value.Template, page.Value.Modules), Text(bytes!).Replace("\r\n", "\n", StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// Every module the build lays into a page is a tracked file under the
+    /// plugin project, and every one of them reaches the page.
+    /// </summary>
+    /// <remarks>
+    /// The case above compares the page against an assembly of the files the
+    /// project names, so a project naming no modules at all would produce a page
+    /// with an empty script element and pass. This is the other direction.
+    /// </remarks>
+    [Fact]
+    public void EveryModuleAPageIsAssembledFromIsTrackedAndReachesIt()
+    {
+        foreach (var page in AssembledPages())
+        {
+            Assert.NotEmpty(page.Value.Modules);
+
+            var text = Text(EmbeddedPageAssets()[page.Key]);
+
+            foreach (var module in page.Value.Modules)
+            {
+                Assert.True(File.Exists(module), "The project assembles " + page.Key + " from " + module + ", which is not a file under the plugin project.");
+
+                // A declaration is only worth something if the module reaches
+                // the page, so a line of it is looked for rather than its name.
+                // The last thing a module declares is the one furthest from the
+                // top of the file, which is where a truncated read would stop.
+                var last = File.ReadAllText(module)
+                    .Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Split('\n')
+                    .Where(line => line.StartsWith("export function ", StringComparison.Ordinal))
+                    .Select(line => line["export ".Length..])
+                    .LastOrDefault();
+
+                Assert.True(last is not null, module + " declares no function, so nothing in it could reach a page.");
+                Assert.Contains(last!, text, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    /// <summary>
+    /// No page carries a marker for a value a server, a template engine or a
+    /// build step would fill in.
+    /// </summary>
+    /// <remarks>
+    /// Read over the tracked source each page is produced from: the file itself
+    /// for a page written as one, and the template for an assembled one. The
+    /// class remark above carries why the modules are outside this and what
+    /// holds in their place.
+    /// </remarks>
     [Fact]
     public void NoEmbeddedPageAssetCarriesAMarkerForAServerSideValue()
     {
-        foreach (var asset in EmbeddedPageAssets())
+        var sources = TrackedPageAssets()
+            .Select(asset => (asset.Key, Text(File.ReadAllBytes(asset.Value))))
+            .Concat(AssembledPages().Select(page => (page.Key, Text(File.ReadAllBytes(page.Value.Template)))));
+
+        foreach (var (name, text) in sources)
         {
-            var found = Regex.Matches(Text(asset.Value), SubstitutionMarker)
+            var found = Regex.Matches(text, SubstitutionMarker)
                 .Select(match => match.Value)
                 .ToArray();
 
             Assert.True(
                 found.Length == 0,
-                asset.Key + " carries " + found.Length + " substitution marker(s): " + string.Join(", ", found) + ". A page is served to an unauthenticated caller, so every value it shows is fetched after it loads and none is filled in for it.");
+                name + " carries " + found.Length + " substitution marker(s): " + string.Join(", ", found) + ". A page is served to an unauthenticated caller, so every value it shows is fetched after it loads and none is filled in for it.");
         }
     }
 
@@ -224,11 +345,84 @@ public class PageAssetTests
     /// <summary>
     /// Decides whether a name is one of the page assets these checks are about.
     /// </summary>
+    /// <remarks>
+    /// A template is not one. It is tracked source that no build embeds, and
+    /// counting it as a page would have the set comparison above looking for an
+    /// embedded resource that is not meant to exist.
+    /// </remarks>
     /// <param name="name">A resource name or a file path.</param>
     /// <returns>True where the name is a page asset.</returns>
     private static bool IsPageAsset(string name)
     {
-        return name.EndsWith(".html", StringComparison.Ordinal);
+        return name.EndsWith(".html", StringComparison.Ordinal)
+               && !name.EndsWith(".template.html", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The pages the project declares that the build assembles, by the resource
+    /// name each is embedded under.
+    /// </summary>
+    /// <remarks>
+    /// Read out of the project file rather than listed here, so what this suite
+    /// checks is what the build was told to do. A page added to the project is
+    /// covered by arriving.
+    /// </remarks>
+    /// <returns>The template and the modules of each assembled page.</returns>
+    private static IReadOnlyDictionary<string, (string Template, IReadOnlyList<string> Modules)> AssembledPages()
+    {
+        var project = Path.Combine(RepositoryRoot(), "Jellyfin.Plugin.Stats");
+        var text = File.ReadAllText(Path.Combine(project, "Jellyfin.Plugin.Stats.csproj"));
+        var declared = new Dictionary<string, (string, IReadOnlyList<string>)>(StringComparer.Ordinal);
+
+        foreach (Match call in Regex.Matches(text, "<AssembleAPage\\s+Template=\"(?<template>[^\"]+)\"\\s+Modules=\"(?<modules>[^\"]+)\"\\s+Destination=\"(?<destination>[^\"]+)\""))
+        {
+            var page = Path.GetFileName(call.Groups["destination"].Value.Replace('\\', Path.DirectorySeparatorChar));
+
+            declared[typeof(Plugin).Namespace + ".Pages." + page] = (
+                Path.Combine(project, call.Groups["template"].Value.Replace('\\', Path.DirectorySeparatorChar)),
+                call.Groups["modules"].Value
+                    .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(module => Path.Combine(project, module.Replace('\\', Path.DirectorySeparatorChar)))
+                    .ToList());
+        }
+
+        return declared;
+    }
+
+    /// <summary>
+    /// Lays a page's modules into its template, the way the build does.
+    /// </summary>
+    /// <remarks>
+    /// The same rule as the one in <c>Pages/pages.targets</c>, written a second
+    /// time on purpose and compared exactly against the first, so the two cannot
+    /// disagree without this failing.
+    /// </remarks>
+    /// <param name="template">The tracked template.</param>
+    /// <param name="modules">The modules it names, in order.</param>
+    /// <returns>The page.</returns>
+    private static string Assemble(string template, IReadOnlyList<string> modules)
+    {
+        const string Slot = "<script id=\"stats-page-code\"></script>";
+
+        var code = new System.Text.StringBuilder();
+
+        foreach (var module in modules)
+        {
+            foreach (var line in File.ReadAllText(module).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            {
+                if (line.StartsWith("import ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                code.Append(line.StartsWith("export ", StringComparison.Ordinal) ? line["export ".Length..] : line);
+                code.Append('\n');
+            }
+        }
+
+        return File.ReadAllText(template)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace(Slot, "<script id=\"stats-page-code\">\n" + code + "</script>", StringComparison.Ordinal);
     }
 
     /// <summary>

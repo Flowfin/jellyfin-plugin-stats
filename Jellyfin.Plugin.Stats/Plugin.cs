@@ -17,6 +17,18 @@ namespace Jellyfin.Plugin.Stats;
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
+    /// <summary>
+    /// What the server calls the page the usage view is drawn on.
+    /// </summary>
+    /// <remarks>
+    /// The name is how a page is asked for: every plugin page is served from one
+    /// address with the page named in the query, so this string is half of the
+    /// only address this view has. It is named here rather than written into the
+    /// page list below because the suite reads it back, and a page nobody can
+    /// name is a page nobody can open.
+    /// </remarks>
+    public const string UsageOverTimePage = "Stats: usage over time";
+
     private readonly ILogger<Plugin> _logger;
 
     private bool _configurationMigrated;
@@ -192,6 +204,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = Name,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
+            },
+            new PluginPageInfo
+            {
+                Name = UsageOverTimePage,
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.usageOverTime.html", GetType().Namespace)
             }
         ];
     }
