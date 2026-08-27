@@ -34,6 +34,15 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// from the paragraph above rather than an exception to it.
 /// </para>
 /// <para>
+/// Every removal here names what it means by removing, as an argument rather
+/// than as something the store works out. A retention sweep that takes a
+/// deleted account's last rows is still retention and a person deleting a
+/// fortnight inside the retention window is still correcting the record, so
+/// neither the rows that went nor the caller that asked says which of the two
+/// it was. Issue #251, and <see cref="DeletionsRecorded"/> is where a later
+/// reader meets the answer.
+/// </para>
+/// <para>
 /// Every removal here reaches the open plays as well as the finished ones, and
 /// that is the store's own doing rather than something each caller remembers.
 /// An open row holds the same account and the same item name a finished row
@@ -385,9 +394,10 @@ public interface IPlayStore : IDisposable
     /// </para>
     /// </remarks>
     /// <param name="cutoffUtc">The moment, in UTC. A row that started before it is deleted.</param>
+    /// <param name="deletionClass">What this deletion says about the rows it removes, recorded beside it.</param>
     /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
     /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
-    int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit);
+    int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit);
 
     /// <summary>
     /// Deletes rows belonging to one user, up to a limit, oldest written first.
@@ -410,9 +420,10 @@ public interface IPlayStore : IDisposable
     /// </para>
     /// </remarks>
     /// <param name="userId">The user whose rows go.</param>
+    /// <param name="deletionClass">What this deletion says about the rows it removes, recorded beside it.</param>
     /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
     /// <returns>How many finished rows this call deleted, and zero where there were none left to delete.</returns>
-    int DeletePlaysFor(Guid userId, int limit);
+    int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit);
 
     /// <summary>
     /// Deletes rows belonging to one user that started inside a window, up to a
@@ -442,9 +453,37 @@ public interface IPlayStore : IDisposable
     /// <param name="userId">The user whose rows go.</param>
     /// <param name="fromUtc">The first moment in the window, in UTC.</param>
     /// <param name="toUtc">The first moment after the window, in UTC.</param>
+    /// <param name="deletionClass">What this deletion says about the rows it removes, recorded beside it.</param>
     /// <param name="limit">How many rows at most. The store never deletes more than this in one call.</param>
     /// <returns>How many rows this call deleted, and zero where there were none left to delete.</returns>
-    int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit);
+    int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit);
+
+    /// <summary>
+    /// Reads back the deletions this store has performed, newest first.
+    /// </summary>
+    /// <remarks>
+    /// What makes the class something a later reader can see rather than
+    /// something the caller knew at the time. Every deletion above removes rows
+    /// and leaves nothing behind saying what it meant by removing them, so a
+    /// reader arriving afterwards has a gap in the rows and no way to tell a
+    /// window that aged out from plays somebody asked to stop counting. This is
+    /// where that is written down, and it is written by the store at the moment
+    /// it deletes rather than by whoever called.
+    /// <para>
+    /// A call that removed no rows leaves nothing here. A caller bites until a
+    /// bite comes back empty, so the last call of every deletion removes
+    /// nothing, and recording those would fill this with entries saying that
+    /// nothing happened.
+    /// </para>
+    /// <para>
+    /// Newest first because a reader asking this question is asking about the
+    /// deletions since whatever they last read, and a bound taken off the far
+    /// end of an oldest-first answer is the wrong end of the table. Issue #251.
+    /// </para>
+    /// </remarks>
+    /// <param name="limit">How many entries at most, newest first.</param>
+    /// <returns>What was deleted and what each deletion said about it, newest first, and empty where the store has deleted nothing.</returns>
+    IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit);
 
     /// <summary>
     /// Reads what one account has said about being named, and null where it has

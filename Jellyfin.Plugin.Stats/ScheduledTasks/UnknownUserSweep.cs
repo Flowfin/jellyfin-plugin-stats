@@ -132,7 +132,14 @@ public sealed class UnknownUserSweep
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var bitten = store.DeletePlaysFor(gone[i], _bite);
+                // Corrective, and this is the one of the two sweeps where
+                // that is worth reading twice. It is a scheduled task on a
+                // timer like the retention sweep, and what it removes is the
+                // rows of accounts the server no longer has, which is the
+                // account deletion arriving late rather than a window ageing
+                // out. The class belongs to what the deletion says and not to
+                // what runs it.
+                var bitten = store.DeletePlaysFor(gone[i], DeletionClass.Corrective, _bite);
                 if (bitten == 0)
                 {
                     break;

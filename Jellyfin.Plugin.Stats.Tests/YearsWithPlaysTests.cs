@@ -137,7 +137,7 @@ public sealed class YearsWithPlaysTests : IDisposable
 
         Assert.Equal([2023, 2024, 2025], store.YearsWithPlaysFor(Watcher, TimeZoneInfo.Utc));
 
-        store.DeletePlaysStartedBefore(new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc), 100);
+        store.DeletePlaysStartedBefore(new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc), DeletionClass.Retention, 100);
 
         Assert.Equal([2025], store.YearsWithPlaysFor(Watcher, TimeZoneInfo.Utc));
     }

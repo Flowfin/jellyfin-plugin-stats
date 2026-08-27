@@ -246,6 +246,30 @@ public static class SchemaMigrations
     private const string CreateTheRollupZoneTable =
         "CREATE TABLE IF NOT EXISTS rollup_zone (ZoneId TEXT NOT NULL)";
 
+    // What each deletion said about the rows it took. Issue #251.
+    //
+    // A deletion removes rows and leaves nothing behind, so a reader arriving
+    // afterwards sees a gap and cannot tell a window that aged out from plays
+    // somebody asked to stop counting. That difference decides whether a figure
+    // standing over those rows still holds, and it is knowable only at the
+    // moment of the deletion. This is where it is kept.
+    //
+    // Append-only and never read by row identity, so the key is the order the
+    // entries were written in and there is no other index. A read of this table
+    // is newest first over that key, which the primary key already orders.
+    //
+    // No moment. The store names no clock, and a moment read off the machine
+    // inside a deletion would be a second fact about the run rather than about
+    // the deletion, disagreeing with the row timestamps on a server whose clock
+    // has moved. What a later reader needs from this table is which class each
+    // deletion was and in what order, and the key answers the order.
+    private const string CreateTheDeletionsTable =
+        @"CREATE TABLE IF NOT EXISTS deletions (
+              Id INTEGER PRIMARY KEY,
+              Class INTEGER NOT NULL,
+              Rows INTEGER NOT NULL
+          )";
+
     /// <summary>
     /// Gets the steps, in the order they are applied.
     /// </summary>
@@ -310,6 +334,16 @@ public static class SchemaMigrations
     /// already holding plays is owed are what issue #253's rebuild is for: a step
     /// that folded them here would be reading every row on the file inside a
     /// migration, which is work no upgrade can bound.
+    /// </para>
+    /// <para>
+    /// The ninth is what each deletion said about the rows it removed, a table
+    /// created beside the others, so a store from any earlier build arrives with
+    /// every row it had and with this table empty. Empty is the honest state for
+    /// it: the deletions such a store has already performed were made by builds
+    /// that recorded no class, and a migration writing a class for them would be
+    /// inventing the answer this table exists to stop being guessed. That is
+    /// issue #251, and it is why the table lands before the first figure is
+    /// computed from the rows rather than with it.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<SchemaMigration> All { get; } =
@@ -377,6 +411,11 @@ public static class SchemaMigrations
                 CreateTheDailyRollupsTable,
                 CreateTheRollupZoneTable
             ]
+        },
+        new SchemaMigration
+        {
+            Version = 9,
+            Statements = [CreateTheDeletionsTable]
         }
     ];
 

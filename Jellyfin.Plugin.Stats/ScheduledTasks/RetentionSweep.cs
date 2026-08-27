@@ -96,7 +96,20 @@ public sealed class RetentionSweep
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var bitten = store.DeletePlaysStartedBefore(cutoffUtc, _bite);
+            // Retention, because what this sweep says is that the raw rows
+            // have aged out and not that the plays stop being counted. A figure
+            // computed while they were there stands, which is what the longer
+            // aggregate window exists for: the daily sweep at the default
+            // ninety days would otherwise invalidate aggregates about three
+            // hundred days before their own expiry, on every installation
+            // running defaults, and take that setting out of service without
+            // anybody deciding to remove it.
+            //
+            // It stays retention whatever the sweep happens to remove. A cutoff
+            // that takes the last rows of an account somebody deleted this
+            // morning is still the window doing its work, and reading the class
+            // off which rows went is what issue #251 exists to refuse.
+            var bitten = store.DeletePlaysStartedBefore(cutoffUtc, DeletionClass.Retention, _bite);
             if (bitten == 0)
             {
                 break;

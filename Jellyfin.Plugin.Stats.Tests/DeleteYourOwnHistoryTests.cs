@@ -189,9 +189,9 @@ public class DeleteYourOwnHistoryTests
         /// </summary>
         public IReadOnlyList<(DateTime From, DateTime To)> Windows => _windows;
 
-        public int DeletePlaysFor(Guid userId, int limit) => Bite(limit);
+        public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => Bite(limit);
 
-        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit)
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit)
         {
             if (_rowsLeft > 0)
             {
@@ -234,7 +234,9 @@ public class DeleteYourOwnHistoryTests
 
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
-        public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+        public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
         public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
 

@@ -82,11 +82,13 @@ public sealed class PlaysHeldInMemory : IPlayStore
 
     public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
-    public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+    public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
-    public int DeletePlaysFor(Guid userId, int limit) => throw NotPartOfThis();
+    public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
-    public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+    public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+    public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
     public void ReclaimFreedSpace() => throw NotPartOfThis();
 
