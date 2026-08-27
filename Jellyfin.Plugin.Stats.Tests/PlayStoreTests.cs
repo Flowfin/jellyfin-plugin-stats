@@ -263,7 +263,7 @@ public sealed class PlayStoreTests : IDisposable
 
         Assert.Equal(earliest, store.OldestPlayStartedUtc());
 
-        Assert.Equal(1, store.DeletePlaysStartedBefore(cutoff, 100));
+        Assert.Equal(1, store.DeletePlaysStartedBefore(cutoff, DeletionClass.Retention, 100));
 
         Assert.Equal(survivor, store.OldestPlayStartedUtc());
     }
@@ -281,7 +281,7 @@ public sealed class PlayStoreTests : IDisposable
         using var store = new SqlitePlayStore(_root);
         store.Add(APlay() with { StartedUtc = started, EndedUtc = started.AddMinutes(20) });
 
-        Assert.Equal(1, store.DeletePlaysStartedBefore(started.AddDays(1), 100));
+        Assert.Equal(1, store.DeletePlaysStartedBefore(started.AddDays(1), DeletionClass.Retention, 100));
 
         Assert.Null(store.OldestPlayStartedUtc());
     }

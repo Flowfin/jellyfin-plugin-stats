@@ -251,7 +251,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
         using var store = new SqlitePlayStore(_root);
 
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => store.DeletePlaysFor(Alice, March, March.AddHours(hours), 10));
+            () => store.DeletePlaysFor(Alice, March, March.AddHours(hours), DeletionClass.Corrective, 10));
     }
 
     /// <summary>
@@ -271,6 +271,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
             Alice,
             DateTime.SpecifyKind(March, start),
             DateTime.SpecifyKind(March.AddHours(1), end),
+            DeletionClass.Corrective,
             10));
     }
 
@@ -286,7 +287,7 @@ public sealed class OwnHistoryDeletionTests : IDisposable
         using var store = new SqlitePlayStore(_root);
 
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => store.DeletePlaysFor(Alice, March, March.AddHours(1), limit));
+            () => store.DeletePlaysFor(Alice, March, March.AddHours(1), DeletionClass.Corrective, limit));
     }
 
     /// <summary>
@@ -468,9 +469,9 @@ public sealed class OwnHistoryDeletionTests : IDisposable
         /// </summary>
         public bool Disposed { get; private set; }
 
-        public int DeletePlaysFor(Guid userId, int limit) => Bite(limit);
+        public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => Bite(limit);
 
-        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => Bite(limit);
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => Bite(limit);
 
         public void ReclaimFreedSpace() => Reclaims++;
 
@@ -501,7 +502,9 @@ public sealed class OwnHistoryDeletionTests : IDisposable
 
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
-        public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+        public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
         public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
 

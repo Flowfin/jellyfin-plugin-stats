@@ -183,10 +183,10 @@ public sealed class HowAPlayWasClosedTests : IDisposable
         // The list, not the length. What this case is about is that the column
         // arrived by appending, so every step before this one has to be exactly
         // where it was and the newest number moves each time another is
-        // appended. Eight is the day-by-day rollups of issue #252.
-        Assert.Equal(8, SchemaMigrations.Latest);
+        // appended. Nine is the record of what each deletion meant, issue #251.
+        Assert.Equal(9, SchemaMigrations.Latest);
         Assert.Equal(
-            new[] { 1, 2, 3, 4, 5, 6, 7, 8 },
+            new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 },
             SchemaMigrations.All.Select(step => step.Version));
 
         Directory.CreateDirectory(_root);

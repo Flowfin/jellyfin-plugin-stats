@@ -354,7 +354,7 @@ public sealed class UserDeletedTests : IDisposable
         /// </summary>
         public bool Disposed { get; private set; }
 
-        public int DeletePlaysFor(Guid userId, int limit)
+        public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit)
         {
             Deletions++;
 
@@ -393,7 +393,9 @@ public sealed class UserDeletedTests : IDisposable
 
         public long CountPlaysStartedBefore(DateTime cutoffUtc) => throw NotPartOfThis();
 
-        public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit) => throw NotPartOfThis();
+        public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
         public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
 
@@ -414,7 +416,7 @@ public sealed class UserDeletedTests : IDisposable
         /// </summary>
         public void ForgetConsentFor(Guid userId) => ConsentsForgotten++;
 
-        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
         private static NotSupportedException NotPartOfThis()
             => new("A deletion by identifier reads nothing and writes nothing, so this fake answers nothing else.");

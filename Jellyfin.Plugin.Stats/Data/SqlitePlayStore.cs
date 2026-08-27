@@ -278,6 +278,26 @@ public sealed class SqlitePlayStore : IPlayStore
               LIMIT $limit
           )";
 
+    // The two statements of the deletions table. Issue #251.
+    //
+    // Written after the rows have gone and only where some went, so an entry
+    // here stands for rows that are no longer in the file rather than for an
+    // intention. A caller bites until a bite comes back empty, so recording the
+    // empty one would put an entry saying nothing happened at the end of every
+    // deletion this plugin performs.
+    private const string RecordTheDeletion =
+        "INSERT INTO deletions (Class, Rows) VALUES ($class, $rows)";
+
+    // Newest first, which is descending over the key, because a reader asking
+    // this is asking about the deletions since whatever they last saw and a
+    // bound taken off an oldest-first answer is the wrong end of the table.
+    private const string SelectTheDeletions =
+        @"-- bound: LIMIT $limit
+          SELECT Class, Rows
+          FROM deletions
+          ORDER BY Id DESC
+          LIMIT $limit";
+
     // The consent table's three statements. The read is bounded by the key
     // being the primary key, which is a limit of one however many accounts the
     // server has.
@@ -826,9 +846,10 @@ public sealed class SqlitePlayStore : IPlayStore
     }
 
     /// <inheritdoc />
-    public int DeletePlaysStartedBefore(DateTime cutoffUtc, int limit)
+    public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        Declared(deletionClass);
 
         var cutoff = UtcTicks(cutoffUtc, nameof(cutoffUtc));
 
@@ -849,13 +870,14 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$cutoff", cutoff);
         command.Parameters.AddWithValue("$limit", limit);
 
-        return command.ExecuteNonQuery();
+        return Recorded(command.ExecuteNonQuery(), deletionClass);
     }
 
     /// <inheritdoc />
-    public int DeletePlaysFor(Guid userId, int limit)
+    public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        Declared(deletionClass);
 
         // The account's running play goes too, and it goes first. A caller
         // bites until this answers nought, so anything left to the last call
@@ -876,7 +898,7 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$userId", Text(userId));
         command.Parameters.AddWithValue("$limit", limit);
 
-        return command.ExecuteNonQuery();
+        return Recorded(command.ExecuteNonQuery(), deletionClass);
     }
 
     /// <inheritdoc />
@@ -886,9 +908,10 @@ public sealed class SqlitePlayStore : IPlayStore
     /// and a caller who swapped their two bounds would read that as their
     /// history having nothing in it and stop asking.
     /// </remarks>
-    public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, int limit)
+    public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        Declared(deletionClass);
 
         var from = UtcTicks(fromUtc, nameof(fromUtc));
         var to = UtcTicks(toUtc, nameof(toUtc));
@@ -916,7 +939,35 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$to", to);
         command.Parameters.AddWithValue("$limit", limit);
 
-        return command.ExecuteNonQuery();
+        return Recorded(command.ExecuteNonQuery(), deletionClass);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheDeletions;
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var recorded = new List<DeletionRecorded>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // Read back through the same closed set the write went through. A
+            // number the file holds that this build has no name for is a store
+            // written by a later build, which is refused at the migration
+            // rather than answered here, so anything that reaches this line is
+            // a value this build declared.
+            recorded.Add(new DeletionRecorded
+            {
+                Class = Declared((DeletionClass)reader.GetInt32(0)),
+                Rows = reader.GetInt32(1)
+            });
+        }
+
+        return recorded;
     }
 
     /// <inheritdoc />
@@ -1171,6 +1222,68 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$directStream", delivery.DirectStream);
         command.Parameters.AddWithValue("$transcode", delivery.Transcode);
         command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Refuses a deletion class this build has no name for, and hands back the
+    /// one it was given.
+    /// </summary>
+    /// <remarks>
+    /// The set has no member at nought, so a caller that passed
+    /// <c>default</c> arrives here rather than being recorded as a retention
+    /// deletion. That is the one shape the compiler cannot catch: the argument
+    /// is required, so omitting it does not build, and what is left is a number
+    /// standing where a choice was meant.
+    /// <para>
+    /// It refuses rather than defaulting, because the two classes say opposite
+    /// things about whether a figure over the removed rows still holds, and a
+    /// deletion recorded under the wrong one is not repairable afterwards: the
+    /// rows it was about are gone.
+    /// </para>
+    /// </remarks>
+    /// <param name="deletionClass">What the caller said the deletion means.</param>
+    /// <returns>The same class.</returns>
+    private static DeletionClass Declared(DeletionClass deletionClass)
+    {
+        if (deletionClass is not (DeletionClass.Retention or DeletionClass.Corrective))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(deletionClass),
+                deletionClass,
+                "A deletion says either that the rows aged out or that the plays stop being counted, and this is neither. The two move the figures over those rows in opposite directions, so there is no safe one to assume.");
+        }
+
+        return deletionClass;
+    }
+
+    /// <summary>
+    /// Writes down what a deletion that removed rows said about them, and hands
+    /// the count back to the caller.
+    /// </summary>
+    /// <remarks>
+    /// After the rows have gone, so an entry stands for rows that are no longer
+    /// in the file rather than for an intention, and only where some went: a
+    /// caller bites until a bite comes back empty, so recording the empty one
+    /// would end every deletion this plugin performs with an entry saying that
+    /// nothing happened.
+    /// </remarks>
+    /// <param name="rows">How many rows the statement removed.</param>
+    /// <param name="deletionClass">What the deletion said about them.</param>
+    /// <returns>The same count.</returns>
+    private int Recorded(int rows, DeletionClass deletionClass)
+    {
+        if (rows == 0)
+        {
+            return 0;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = RecordTheDeletion;
+        command.Parameters.AddWithValue("$class", (int)deletionClass);
+        command.Parameters.AddWithValue("$rows", rows);
+        command.ExecuteNonQuery();
+
+        return rows;
     }
 
     /// <summary>

@@ -125,7 +125,11 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
         var deleted = 0;
         while (true)
         {
-            var bitten = store.DeletePlaysFor(userId, _bite);
+            // Corrective. The account is gone, so its plays stop being
+            // counted rather than merely stopping being kept, and every figure
+            // that counted them has to move. That is the difference from the
+            // retention sweep, which removes rows of plays that still happened.
+            var bitten = store.DeletePlaysFor(userId, DeletionClass.Corrective, _bite);
             if (bitten == 0)
             {
                 break;

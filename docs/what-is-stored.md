@@ -217,6 +217,39 @@ days the store already has. What produces those is a rebuild from the play rows,
 which is #253 and is not built. Nothing reads this table yet either; the report
 that will is #254.
 
+## One row per deletion that removed something
+
+`deletions` holds what each deletion this plugin performed said about the rows
+it took, and nothing about the rows themselves.
+
+| column  | holds                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------ |
+| `Id`    | The order the entries were written in, which is the only order this table has. |
+| `Class` | What the deletion said: that the rows aged out of the retention window, or that the plays stop being counted.  |
+| `Rows`  | How many rows that call removed. Always more than nought.                                                      |
+
+The two classes are opposite statements about the same rows. Retention says this
+plugin's copy of them has aged out and every figure computed while they were
+there still stands; a deleted account, or somebody removing their own history,
+says those plays stop being counted, so a figure that counted them has to move.
+Nothing in the rows separates the two, and the rows are gone by the time anybody
+asks, which is why the answer is written here at the moment of the deletion
+rather than worked out afterwards.
+
+It holds no account, no item and no moment. What a later reader needs from it is
+which class each deletion was and in what order, so there is nothing here that
+says whose history was removed - an entry survives the rows it is about, and a
+column naming the person would outlive them too.
+
+There is no moment either. The store names no clock, so a timestamp here would be
+a fact about the machine the deletion ran on rather than about the deletion, and
+it would disagree with the rows on any server whose clock has moved.
+
+**This table is empty on a store that already held plays before it arrived.**
+The deletions such a store performed were made by builds that recorded no class,
+and filling them in would invent the answer this table exists to stop being
+guessed. Nothing reads the table yet; what will is the rebuild in #253.
+
 ## What is refused on purpose
 
 Three things a playback session carries are absent from the row and from the

@@ -266,7 +266,7 @@ public sealed class RetentionSweepTests : IDisposable
         var notUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Local);
 
         Assert.Throws<ArgumentException>(() => store.CountPlaysStartedBefore(notUtc));
-        Assert.Throws<ArgumentException>(() => store.DeletePlaysStartedBefore(notUtc, 1));
+        Assert.Throws<ArgumentException>(() => store.DeletePlaysStartedBefore(notUtc, DeletionClass.Retention, 1));
     }
 
     public void Dispose()

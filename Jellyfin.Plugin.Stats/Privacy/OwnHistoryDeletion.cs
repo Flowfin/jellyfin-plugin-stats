@@ -117,9 +117,15 @@ public sealed class OwnHistoryDeletion
             var gone = 0;
             while (true)
             {
+                // Corrective on both branches. A person removing part of their
+                // own history is saying those plays stop being counted, and the
+                // window they named does not change that: a fortnight that
+                // happens to sit inside the retention window is still somebody
+                // asking for it to stop counting, and answering the narrower
+                // call as retention would leave every figure over it standing.
                 var bitten = fromUtc.HasValue
-                    ? store.DeletePlaysFor(userId, fromUtc.Value, toUtc!.Value, _bite)
-                    : store.DeletePlaysFor(userId, _bite);
+                    ? store.DeletePlaysFor(userId, fromUtc.Value, toUtc!.Value, DeletionClass.Corrective, _bite)
+                    : store.DeletePlaysFor(userId, DeletionClass.Corrective, _bite);
 
                 if (bitten == 0)
                 {

@@ -150,7 +150,7 @@ public sealed class OpenPlayStoreTests : IDisposable
         store.NoteOpenPlay(ARunningPlay("play-1", Alice));
         store.NoteOpenPlay(ARunningPlay("play-2", Bob));
 
-        store.DeletePlaysFor(Alice, 100);
+        store.DeletePlaysFor(Alice, DeletionClass.Corrective, 100);
 
         Assert.Equal("play-2", Assert.Single(store.OpenPlays()).PlayKey);
     }
@@ -167,7 +167,7 @@ public sealed class OpenPlayStoreTests : IDisposable
         store.NoteOpenPlay(ARunningPlay("inside", Alice, startedUtc: March));
         store.NoteOpenPlay(ARunningPlay("outside", Alice, startedUtc: March.AddDays(1)));
 
-        store.DeletePlaysFor(Alice, March, March.AddHours(1), 100);
+        store.DeletePlaysFor(Alice, March, March.AddHours(1), DeletionClass.Corrective, 100);
 
         Assert.Equal("outside", Assert.Single(store.OpenPlays()).PlayKey);
     }
@@ -185,7 +185,7 @@ public sealed class OpenPlayStoreTests : IDisposable
         store.NoteOpenPlay(ARunningPlay("old", Alice, startedUtc: March));
         store.NoteOpenPlay(ARunningPlay("recent", Alice, startedUtc: March.AddDays(2)));
 
-        store.DeletePlaysStartedBefore(March.AddDays(1), 100);
+        store.DeletePlaysStartedBefore(March.AddDays(1), DeletionClass.Retention, 100);
 
         Assert.Equal("recent", Assert.Single(store.OpenPlays()).PlayKey);
     }
