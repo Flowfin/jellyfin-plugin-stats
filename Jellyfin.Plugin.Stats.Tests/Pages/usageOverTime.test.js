@@ -17,7 +17,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { usageOverTime } from '../../Jellyfin.Plugin.Stats/Pages/usageOverTime.js';
+import {
+    DELIVERY_IS_READ_AT_THE_START,
+    usageOverTime,
+} from '../../Jellyfin.Plugin.Stats/Pages/usageOverTime.js';
 
 /**
  * One day as the fold produces it, with the delivery figures filled in.
@@ -196,6 +199,48 @@ test('plays with no delivery method are counted in words rather than left in the
         /counts the plays known to have been re-encoded and not the plays that were/,
     );
     assert.match(usageOverTime(aWeek()), /reported how it delivered every play in the range/);
+});
+
+test('the caption says which moment the delivery figures speak about', () => {
+    /* Issue #158. A row holds the method the server reported when the play began
+     * and, beside it, the moment that method first changed, and these figures are
+     * folded from the first of the two. Both are true statements about different
+     * moments, and a reader given the lower line with nothing saying which moment
+     * it is about reads a disagreement into two figures that do not disagree.
+     *
+     * The sentence is asserted on both figures and in both delivery cases,
+     * because the reason a reader needs it does not depend on which figure they
+     * asked for or on whether the server happened to report every method. A
+     * caption that carried it only when something went unreported would leave the
+     * ordinary range - the one almost every reader meets - saying nothing. */
+    const some = usageOverTime({
+        state: 'ready',
+        zone: 'UTC',
+        plays: 10,
+        watchedMinutes: 200,
+        days: [day('2026-04-01', { plays: 10, watchedMinutes: 200, unknown: 4, transcode: 3 })],
+    });
+
+    for (const drawn of [
+        some,
+        usageOverTime(aWeek()),
+        usageOverTime(aWeek(), { figure: 'watchedMinutes' }),
+    ]) {
+        assert.ok(
+            drawn.includes(DELIVERY_IS_READ_AT_THE_START),
+            'The view drew a range without saying which moment its delivery figures are about.',
+        );
+    }
+});
+
+test('the sentence about the two moments names the start rather than the fold', () => {
+    /* The words are read here rather than only being carried through, so a later
+     * edit that turned them into a sentence about how a play was delivered over
+     * its whole course would fail beside the C# case that drives the fold. That
+     * case proves the figures follow the start; this one proves the view has not
+     * stopped saying so. */
+    assert.match(DELIVERY_IS_READ_AT_THE_START, /when it began/);
+    assert.match(DELIVERY_IS_READ_AT_THE_START, /re-encoded partway through/);
 });
 
 test('the total under the picture is the one the answer carries, not the sum of the readings', () => {
