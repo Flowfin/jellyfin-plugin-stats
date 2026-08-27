@@ -29,6 +29,18 @@
  * later turns this suite red rather than being counted as a view that is missing
  * its states, or worse, skipped.
  *
+ * The pages are asked something of their own, and it is the second condition of
+ * the same issue. A view telling the three apart proves nothing to a reader
+ * until something hands it one of the three, and what does that is the page
+ * module: it makes the request and turns what comes back into a state. Each of
+ * the two pages in the tree carries cases of its own for that, written by hand,
+ * which is exactly the position the views were in before this file existed. So
+ * the same treatment is given here - a page whose request fails must say so with
+ * the reason, and a page whose request answers nothing must say the view is
+ * empty, and neither may be drawn as the other. A third page written without
+ * either turns this suite red rather than shipping a store that would not open
+ * drawn as a server nobody has used.
+ *
  * The words for the three are not repeated in this file. Each expectation is the
  * drawing module's own output for that state, so a change to the wording moves
  * the views and this file together and neither goes stale against the other.
@@ -75,6 +87,35 @@ const BESIDE_THE_STATE = {
     'whyTheServerTranscodes.js': {},
     'yourYear.js': {},
 };
+
+/* What a page has to be asked, and what an answer holding nothing looks like to
+ * it.
+ *
+ * The question a page asks is its own - one takes a number of days and the
+ * moment to measure them back from, another takes an account - and so is the
+ * shape of an answer that carries no figures. Neither can be read off the
+ * module, so both are written here, and this is the second hand-written thing in
+ * this file.
+ *
+ * It cannot go stale in silence either. The case below asserts these keys are
+ * exactly the pages the directory holds, so a page added without an entry turns
+ * this suite red and is read by whoever adds it. A missing entry is a failure
+ * and never a skip. */
+const ASKED_OF_A_PAGE = {
+    'usageOverTimePage.js': {
+        asked: { days: 7, now: new Date('2026-03-14T12:00:00.000Z') },
+        answeringNothing: { rows: [], plays: 0, watched: '00:00:00', zoneId: 'Europe/Berlin' },
+    },
+    'yourYearPage.js': {
+        asked: { userId: '6f9619ff-8b86-d011-b42d-00c04fc964ff' },
+        answeringNothing: { held: [], keptFrom: null },
+    },
+};
+
+/* What a failure says when it reaches a reader. The words are the case's own and
+ * travel through the page, so a page that dropped the reason and drew a bare
+ * failure fails below rather than passing on the state alone. */
+const WHY_IT_COULD_NOT_ANSWER = 'The store could not be opened.';
 
 const loaded = await Promise.all(
     readdirSync(fileURLToPath(new URL(DIRECTORY, import.meta.url)))
@@ -226,5 +267,112 @@ test('every view refuses an answer that names no state', () => {
                 'forgot to say so would be drawn as figures nobody has.',
         );
         assert.throws(() => view(null), /state/, `${module.name} reads a missing answer as ready.`);
+    }
+});
+
+/**
+ * The function a page module is asked through.
+ *
+ * Derived rather than listed: a page makes its request and hands back markup
+ * through one exported function whose name ends in `Markup`, which is the shape
+ * both pages in the tree already have. A page that departs from it fails the
+ * case below rather than being quietly skipped.
+ *
+ * @param {{exports: object}} module The page module.
+ * @returns {Function|undefined} Its asking function, where it has one.
+ */
+function askingOf(module) {
+    const name = Object.keys(module.exports).find(
+        (key) => key.endsWith('Markup') && typeof module.exports[key] === 'function',
+    );
+
+    return name === undefined ? undefined : module.exports[name];
+}
+
+/**
+ * A dashboard client that answers every request with one body.
+ *
+ * @param {object} body What to answer with.
+ * @returns {{getUrl: Function, getJSON: Function}} The client.
+ */
+function aClientAnswering(body) {
+    return { getUrl: () => 'url', getJSON: () => Promise.resolve(body) };
+}
+
+/**
+ * A dashboard client whose every request fails.
+ *
+ * @returns {{getUrl: Function, getJSON: Function}} The client.
+ */
+function aClientThatCannotAnswer() {
+    return {
+        getUrl: () => 'url',
+        getJSON: () => Promise.reject(new Error(WHY_IT_COULD_NOT_ANSWER)),
+    };
+}
+
+test('every page that wires a view is one this file knows how to ask', () => {
+    assert.deepEqual(
+        Object.keys(ASKED_OF_A_PAGE).sort(),
+        pages.map((module) => module.name).sort(),
+        'A page was added or removed without this file moving. Until the list above matches the ' +
+            'directory, a page is being asked for nothing rather than for the two states only it ' +
+            'can produce.',
+    );
+});
+
+test('every page is asked through one function that hands back what was drawn', () => {
+    for (const module of pages) {
+        assert.equal(
+            typeof askingOf(module),
+            'function',
+            `${module.name} exports no function whose name ends in Markup, so nothing here can ` +
+                'ask it what it draws when a request fails, and it would be skipped rather than ' +
+                'checked.',
+        );
+    }
+});
+
+test('a page whose request fails says so, with the reason, and never that the view is empty', async () => {
+    for (const module of pages) {
+        const drawn = await askingOf(module)(
+            aClientThatCannotAnswer(),
+            ASKED_OF_A_PAGE[module.name].asked,
+        );
+
+        assert.ok(
+            drawn.includes(noticeBody('failed', WHY_IT_COULD_NOT_ANSWER)),
+            `${module.name} does not say the view could not be read, or does not carry the ` +
+                'reason it was given. A reader who is not told is left to find it in the log, ' +
+                'which is the one place this condition says they must not have to look.',
+        );
+
+        assert.ok(
+            !drawn.includes(noticeBody('empty', undefined)),
+            `${module.name} draws a failed request as a view with nothing in it. A store that ` +
+                'would not open and a server nobody has used are different facts, and drawing ' +
+                'them the same way destroys the difference before a reader can see it.',
+        );
+    }
+});
+
+test('a page whose request answers nothing says the view is empty and never that it failed', async () => {
+    for (const module of pages) {
+        const drawn = await askingOf(module)(
+            aClientAnswering(ASKED_OF_A_PAGE[module.name].answeringNothing),
+            ASKED_OF_A_PAGE[module.name].asked,
+        );
+
+        assert.ok(
+            drawn.includes(noticeBody('empty', undefined)),
+            `${module.name} does not say the view has nothing in it when the server answered ` +
+                'with no figures.',
+        );
+
+        assert.ok(
+            !drawn.includes(noticeBody('failed', WHY_IT_COULD_NOT_ANSWER)),
+            `${module.name} draws an answer holding nothing as a failure, which tells a reader ` +
+                'something is broken when what is true is that nothing was recorded.',
+        );
     }
 });
