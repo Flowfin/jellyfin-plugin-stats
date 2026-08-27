@@ -29,6 +29,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </remarks>
     public const string UsageOverTimePage = "Stats: usage over time";
 
+    /// <summary>
+    /// What the server calls the page a user opens their own wrap-up on.
+    /// </summary>
+    /// <remarks>
+    /// Named for the reason the page above is: the name is half of the only
+    /// address this view has, and the suite reads it back.
+    /// </remarks>
+    public const string YourYearPage = "Stats: your year";
+
     private readonly ILogger<Plugin> _logger;
 
     private bool _configurationMigrated;
@@ -209,6 +218,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = UsageOverTimePage,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.usageOverTime.html", GetType().Namespace)
+            },
+            new PluginPageInfo
+            {
+                Name = YourYearPage,
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.yourYear.html", GetType().Namespace)
             }
         ];
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Net.Mime;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Stats.Aggregation;
@@ -81,6 +82,7 @@ public sealed class YourYearController : ControllerBase
     public const int EarliestYearAnswered = 1970;
 
     private readonly HeldYears _years;
+    private readonly YearsAnAccountHas _held;
     private readonly IItemAccess _access;
     private readonly IAuthorizationContext _callers;
     private readonly Func<PluginConfiguration> _configuration;
@@ -90,28 +92,111 @@ public sealed class YourYearController : ControllerBase
     /// Initializes a new instance of the <see cref="YourYearController"/> class.
     /// </summary>
     /// <param name="years">Where a folded year is asked for.</param>
+    /// <param name="held">Reads which years an account has plays in, which is what the selector may offer.</param>
     /// <param name="access">What the library says about which items the caller may still see, asked while the request is served.</param>
     /// <param name="callers">What the server says about who made a request.</param>
     /// <param name="configuration">The current settings, read at the moment one is needed rather than held.</param>
     /// <param name="clock">Says which year the server is in, so a year that has not happened is refused rather than folded.</param>
     public YourYearController(
         HeldYears years,
+        YearsAnAccountHas held,
         IItemAccess access,
         IAuthorizationContext callers,
         Func<PluginConfiguration> configuration,
         TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(years);
+        ArgumentNullException.ThrowIfNull(held);
         ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(callers);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(clock);
 
         _years = years;
+        _held = held;
         _access = access;
         _callers = callers;
         _configuration = configuration;
         _clock = clock;
+    }
+
+    /// <summary>
+    /// Reads which years the calling account has plays in, and the day this
+    /// plugin still keeps rows from.
+    /// </summary>
+    /// <remarks>
+    /// The third condition of issue #67. A selector drawn from anything else
+    /// offers years the store holds nothing of this account's in: the list a
+    /// reader would otherwise reach for runs from the oldest row to the year the
+    /// server is in, and a quiet year in the middle of that span opens empty.
+    /// <para>
+    /// The day rows are kept from travels with the list because the two answer
+    /// one question between them. Inside the kept window a missing year is a
+    /// year the account recorded nothing in; before it, no year could be offered
+    /// whatever was recorded in one. A selector holding only the list cannot
+    /// tell a reader which of the two a gap is, and a page that worked the day
+    /// out from a setting and its own clock would be reading two machines where
+    /// the rows have one.
+    /// </para>
+    /// <para>
+    /// Nothing here says a swept year held anything. Whether this account
+    /// watched something in a year whose rows are gone is not a question this
+    /// tree can answer, and an answer that implied one would invent the history
+    /// it is apologising for.
+    /// </para>
+    /// <para>
+    /// It carries no bound, and the reason is the one the store's own read
+    /// carries: the answer is one number per year the account has watched
+    /// anything in, so it grows with how long they have been on the server and
+    /// not with how much they watched. A million rows over three years answer
+    /// with three numbers.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The account whose years are wanted, which has to be the account asking.</param>
+    /// <returns>The years, and the day rows are kept from.</returns>
+    /// <response code="200">The caller's own years.</response>
+    /// <response code="401">The request carried no authenticated caller.</response>
+    /// <response code="403">The request named an account other than the caller's.</response>
+    /// <response code="503">The plugin could not open its store, so it has no answer rather than an empty one.</response>
+    [HttpGet]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<YearsHeld>> GetYears([FromRoute] Guid userId)
+    {
+        var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
+
+        if (!CallerIdentity.AsksForTheirOwnRows(userId, caller))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var settings = _configuration();
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(settings.RollupTimeZone);
+
+        try
+        {
+            // The day is read from the same settings and the same clock the
+            // sweep measures its cutoff back from, so what a page is told the
+            // window is and what the sweep will delete next are one number
+            // rather than two that drift apart by whatever a page assumed.
+            var keptFrom = LocalDay.Of(
+                _clock.GetUtcNow().AddDays(-settings.PlayRowRetentionDays),
+                zone);
+
+            return Ok(new YearsHeld(
+                _held(userId, zone),
+                keptFrom.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        }
+        catch (StoreCouldNotBeOpenedException)
+        {
+            // The same translation the year below makes, and for the same
+            // reason: an account with no years and a plugin that cannot read
+            // any are different facts, and a selector handed an empty list for
+            // the second would tell somebody they have watched nothing ever.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
     }
 
     /// <summary>

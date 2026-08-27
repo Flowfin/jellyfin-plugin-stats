@@ -20,6 +20,7 @@ import {
     escapeText,
     hourGrid,
     lineSeries,
+    minutesIn,
     stateNotice,
 } from '../../Jellyfin.Plugin.Stats/Pages/charts.js';
 
@@ -285,3 +286,20 @@ function lineOf(drawn) {
     assert.ok(path, 'the drawing carries no series path');
     return path[1];
 }
+
+/* The duration a server writes on an answer, read here because every page that
+ * draws a watched time reads it through this module. A second reader is where
+ * two pages start disagreeing about what an hour is. */
+
+test('a duration is read in both the shapes the server writes', () => {
+    assert.equal(minutesIn('00:00:00'), 0);
+    assert.equal(minutesIn('01:20:00'), 80);
+    assert.equal(minutesIn('14.06:30:00'), 14 * 24 * 60 + 390);
+    assert.equal(minutesIn('00:01:30.5000000'), 2);
+});
+
+test('a duration in a shape a page cannot read is refused rather than guessed at', () => {
+    for (const span of ['', 'PT80M', '80', '1:2', null, 42]) {
+        assert.throws(() => minutesIn(span), /watched time/);
+    }
+});

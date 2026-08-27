@@ -445,6 +445,46 @@ const STATE_WORDS = {
 };
 
 /**
+ * Reads a duration the way the server writes one.
+ *
+ * The server writes a span as `hh:mm:ss`, with a day count and a full stop in
+ * front of it once it passes twenty-four hours, and a fractional part on the
+ * seconds where there is one. A page that read only the first shape would report
+ * a fortnight of watching as fourteen minutes.
+ *
+ * It sits here rather than in the page that first needed it, because two pages
+ * reading a duration two ways is two pages disagreeing about what an hour is,
+ * and every view in this directory already depends on this module.
+ *
+ * @param {string} span The duration as the server wrote it.
+ * @returns {number} The whole minutes in it.
+ */
+export function minutesIn(span) {
+    if (typeof span !== 'string') {
+        throw new Error(
+            'A watched time is read as the text the server wrote, and this answer carried ' +
+                'something else. Treating it as nought would draw a day somebody watched as a ' +
+                'day nobody did.',
+        );
+    }
+
+    const parts = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(span);
+
+    if (parts === null) {
+        throw new Error(
+            `A watched time of "${span}" is not a duration a page can read. It is refused ` +
+                'rather than guessed at, because every guess here is a figure about somebody.',
+        );
+    }
+
+    const days = parts[1] === undefined ? 0 : Number(parts[1]);
+
+    return Math.round(
+        days * 24 * 60 + Number(parts[2]) * 60 + Number(parts[3]) + Number(parts[4]) / 60,
+    );
+}
+
+/**
  * The drawing a view shows in place of figures it does not have.
  *
  * A caller with no data gets a drawing that says which of the three situations
