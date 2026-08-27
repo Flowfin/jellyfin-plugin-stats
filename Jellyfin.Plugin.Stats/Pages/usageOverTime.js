@@ -32,6 +32,13 @@
  * it was careful to leave out: three fields are taken off each day and three off
  * its delivery figures, and nothing else on either is looked at.
  *
+ * The delivery figures are about the moment a play began and the caption says
+ * so. A row carries the method the server reported at the start and, beside it,
+ * the moment that method first changed, and the fold behind this view reads the
+ * first of those two. A reader who is not told that compares the lower line
+ * against what the server was doing later and finds a disagreement that is not
+ * one, which is what issue #158 is about.
+ *
  * No document, no window, no network and no clock, the same as the drawing
  * module. docs/headless-tests.md.
  */
@@ -41,6 +48,15 @@ import { escapeText, lineSeries, stateNotice } from './charts.js';
 /* What an answer may say it is. Ready is the one that carries days; the other
  * three are the situations issue #64 asks every view to tell apart. */
 const STATES = ['ready', 'empty', 'loading', 'failed'];
+
+/* Which moment the delivery figures speak about, in the words a reader meets.
+ * It is exported rather than written inline because the fold it describes is C#
+ * and this is JavaScript, so nothing compiles the two together: a case in the C#
+ * suite reads this line back out of the tracked file and drives the fold beside
+ * it, and neither the sentence nor the behaviour can move without the other.
+ * Issue #158. */
+export const DELIVERY_IS_READ_AT_THE_START =
+    'The delivery figures read each play by the method the server reported when it began, so a play that started as a direct play and was re-encoded partway through is counted here as a direct play.';
 
 /* The two figures a range can be read by. Both are offered because they
  * disagree, and a view showing only one of them answers a question the reader
@@ -164,7 +180,7 @@ function caption(answer, figure, days, zone) {
             ? ' The server reported how it delivered every play in the range.'
             : ` The server reported no delivery method for ${unreported} of those plays, so the lower line counts the plays known to have been re-encoded and not the plays that were.`;
 
-    return `${counted} A play is counted on the day it started.${delivery}`;
+    return `${counted} A play is counted on the day it started.${delivery} ${DELIVERY_IS_READ_AT_THE_START}`;
 }
 
 /**

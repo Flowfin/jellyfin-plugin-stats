@@ -15,6 +15,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.Stats.Aggregation;
+using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Reports;
 using Xunit;
 
@@ -23,6 +25,8 @@ namespace Jellyfin.Plugin.Stats.Tests;
 public class UsageOverTimePageTests
 {
     private const string Module = "Jellyfin.Plugin.Stats/Pages/usageOverTimePage.js";
+
+    private const string View = "Jellyfin.Plugin.Stats/Pages/usageOverTime.js";
 
     /// <summary>
     /// The second condition of issue #57. The range control is bounded by the
@@ -74,6 +78,82 @@ public class UsageOverTimePageTests
     }
 
     /// <summary>
+    /// The second condition of issue #158. The answer that issue's decision
+    /// settled is written where a reader of a report meets it, and it is true of
+    /// the fold that produces the figures the reader is looking at.
+    /// </summary>
+    /// <remarks>
+    /// A row holds two accounts of how a play was delivered: the method the
+    /// server reported when it began, and the summary folded from every sample
+    /// that arrived while it ran. They can disagree, and neither is wrong. The
+    /// delivery figures under the range view come from the first of the two, so a
+    /// reader who is not told which moment they are about reads a disagreement
+    /// into figures that do not disagree - which is the defect that issue opened
+    /// on, met by somebody guessing.
+    /// <para>
+    /// Two halves are asserted together on purpose. The sentence being present is
+    /// the condition; the fold following the start is what makes the sentence
+    /// true. Either one alone would leave the other free to move: a sentence with
+    /// no behaviour behind it becomes a lie the day the fold changes, and a fold
+    /// nobody describes is the state this issue was opened against.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheViewSaysWhichMomentItsDeliveryFiguresSpeakAboutAndTheFoldAgrees()
+    {
+        var sentence = DeclaredIn<string>(View, "DELIVERY_IS_READ_AT_THE_START", @"'([^']+)'", value => value);
+
+        Assert.Contains("when it began", sentence, StringComparison.Ordinal);
+
+        var changedPartway = APlayThatBeganAsADirectPlayAndWasReEncodedLater();
+
+        Assert.NotNull(changedPartway.PlayMethodChangedUtc);
+        Assert.False(changedPartway.Transcode!.VideoWasDirect);
+
+        var shares = DeliveryMethodShares.Over(new[] { changedPartway });
+
+        Assert.Equal(1, shares.DirectPlay);
+        Assert.Equal(0, shares.Transcode);
+    }
+
+    /// <summary>
+    /// One play of the shape the sentence above describes to a reader.
+    /// </summary>
+    /// <returns>A play that began as a direct play and was re-encoded partway through.</returns>
+    private static PlayRecord APlayThatBeganAsADirectPlayAndWasReEncodedLater() => new()
+    {
+        SchemaVersion = 1,
+        UserId = Guid.Parse("6f9619ff-8b86-d011-b42d-00c04fc964ff"),
+        ItemId = Guid.Parse("11111111-2222-3333-4444-555555555555"),
+        ItemType = "Movie",
+        ParentId = null,
+        ItemName = "A film",
+        ItemRuntime = TimeSpan.FromMinutes(100),
+        ChannelName = null,
+        StartedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
+        EndedUtc = new DateTime(2026, 3, 14, 10, 40, 0, DateTimeKind.Utc),
+        WatchedDuration = TimeSpan.FromMinutes(100),
+        ReachedTheEnd = true,
+        ClientName = "Jellyfin Web",
+        DeviceId = "device-1",
+        DeviceName = "A browser",
+        PlayMethodAtStart = PlayMethod.DirectPlay,
+        PlayMethodChangedUtc = new DateTime(2026, 3, 14, 9, 1, 0, DateTimeKind.Utc),
+        ClosedBy = PlayClosedBy.AStopEvent,
+        Transcode = new TranscodeSummary
+        {
+            VideoCodec = "h264",
+            AudioCodec = "aac",
+            VideoWasDirect = false,
+            AudioWasDirect = false,
+            PeakBitrate = 8_000_000,
+            TypicalBitrate = 6_000_000,
+            HardwareAcceleration = null,
+            Reasons = new[] { "VideoCodecNotSupported" }
+        }
+    };
+
+    /// <summary>
     /// Reads a constant the page module declares.
     /// </summary>
     /// <typeparam name="T">What the constant holds.</typeparam>
@@ -82,10 +162,22 @@ public class UsageOverTimePageTests
     /// <param name="read">Turns the text into the value.</param>
     /// <returns>The value the module declares.</returns>
     private static T Declared<T>(string name, string shape, Func<string, T> read)
-    {
-        var module = File.ReadAllText(Module.Repositioned());
+        => DeclaredIn(Module, name, shape, read);
 
-        return read(Match(module, @"export const " + name + @" = " + shape + ";"));
+    /// <summary>
+    /// Reads a constant one of the page's modules declares.
+    /// </summary>
+    /// <typeparam name="T">What the constant holds.</typeparam>
+    /// <param name="module">The module, from the top of the repository.</param>
+    /// <param name="name">The constant's name in the module.</param>
+    /// <param name="shape">How its value is written there.</param>
+    /// <param name="read">Turns the text into the value.</param>
+    /// <returns>The value the module declares.</returns>
+    private static T DeclaredIn<T>(string module, string name, string shape, Func<string, T> read)
+    {
+        var text = File.ReadAllText(module.Repositioned());
+
+        return read(Match(text, @"export const " + name + @"\s*=\s*" + shape + ";"));
     }
 
     /// <summary>
