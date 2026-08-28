@@ -16,9 +16,9 @@ nobody.
 ## State of the work
 
 This repository holds the plan, the capture path and the build scaffolding.
-Plays are recorded and kept, nothing reads them back yet, and there is no
-release to install. Every section below says which parts are built and which
-are not, so nothing here reads as a promise about today.
+Plays are recorded and kept, nothing reads them back yet, and the 10.11 line
+has published its first release. Every section below says which parts are
+built and which are not, so nothing here reads as a promise about today.
 
 ## Which servers it runs on
 
@@ -60,15 +60,37 @@ of it a server has today and which are still open issues.
 
 ## Installing
 
-There is no release yet:
+The 10.11 line has published its first release, and the 12.0 line has not:
 
-    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
-    0
+    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq '.[].tag_name'
+    0.1.0.0-stable
 
-When there is one it will be distributed through this repository's own plugin
-manifest rather than the official catalogue, so installing means adding a
-repository URL to the server and then installing the plugin from it. One
-archive per server line, and the server picks the one matching its version.
+Distribution is through Flowfin's own plugin manifest rather than the official
+catalogue, so installing means adding one repository URL to the server's plugin
+repository list and then installing the plugin from the catalogue that URL
+serves. The address is
+
+    https://flowfin.dev/manifest.json
+
+and it is added once: one manifest carries every Flowfin plugin, so a server
+that has it for one of them already has it for this one. One archive per server
+line, and the server picks the one matching its version.
+
+What that address answers about this plugin, and the version a 10.11 server
+would take from it:
+
+    curl -s https://flowfin.dev/manifest.json \
+      | jq -r '.[] | select(.name == "Playback Statistics") | .versions[] | "\(.version) targetAbi \(.targetAbi)"'
+    0.1.0.0 targetAbi 10.11.0.0
+
+A 12.0 server finds nothing to install under that entry until the 12.0 line
+publishes, which is issue #80.
+
+Nobody has followed this route on a fresh server and written down what happened.
+The address answers, the entry names a release that exists, and the checksum it
+publishes is the one in the release's `.md5` - but an install is a thing a
+server does, and none of those three readings is one. That recording is what
+issue #81 is still open for, and this paragraph is not it.
 
 The two lines are told apart by the version number, because a catalogue admits
 one tag shape and a suffix cannot carry the difference. The 10.11 line's
