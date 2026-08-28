@@ -15,10 +15,12 @@ nobody.
 
 ## State of the work
 
-This repository holds the plan, the capture path and the build scaffolding.
-Plays are recorded and kept, nothing reads them back yet, and the 10.11 line
-has published its first release. Every section below says which parts are
-built and which are not, so nothing here reads as a promise about today.
+Plays are recorded, kept and read back. The capture path, the store, the
+aggregation over it and the actions that answer from it are built, and the
+settings page and two report pages are declared to the server. What is not built
+is the page a user opens about their own numbers, and the per-user reads behind
+it, which is issue #61. Every section below says which parts are built and which
+are not, so nothing here reads as a promise about today.
 
 ## Which servers it runs on
 
@@ -47,16 +49,38 @@ behind the schema without a red check.
 Those rows are written today. The subscription, the gate that decides whether a
 play is recorded, and the queue that opens the store are assembled in one place:
 
-    grep -nE 'new QueuedPlayWriter|new CaptureGate|AddSingleton<IPlaybackEventSink' Jellyfin.Plugin.Stats/PluginServiceRegistrator.cs
-    36:        serviceCollection.AddSingleton(provider => new QueuedPlayWriter(
-    44:        serviceCollection.AddSingleton<IFinishedPlaySink>(provider => new CaptureGate(
-    48:        serviceCollection.AddSingleton<IPlaybackEventSink, PlayTracker>();
+    grep -E 'new QueuedPlayWriter|new CaptureGate|AddSingleton<IPlaybackEventSink' Jellyfin.Plugin.Stats/PluginServiceRegistrator.cs
+            serviceCollection.AddSingleton(provider => new QueuedPlayWriter(
+            serviceCollection.AddSingleton<IPlaySink>(provider => new CaptureGate(
+            serviceCollection.AddSingleton<IPlaybackEventSink>(provider => provider.GetRequiredService<PlayTracker>());
 
-What is not built is the reading. The plugin serves no endpoint, so nothing
-hands a row back to anybody, and the sentence at the top of this file about a
-user reading their own history and everybody else reading aggregates that name
-nobody is a plan rather than a description. The document above says which parts
-of it a server has today and which are still open issues.
+They are read back too. Every action the plugin serves, matched by name rather
+than by line so this paste does not go stale the next time a method moves:
+
+    grep -oE 'ActionResult<[A-Za-z]+>> [A-Za-z]+' Jellyfin.Plugin.Stats/Api/*.cs
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<TopTitles>> GetTopTitles
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<BreakdownReport>> GetBreakdown
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<DailyUsage>> GetDailyUsage
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:ActionResult<ConsentState>> GetConsent
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:ActionResult<ConsentState>> SetConsent
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:ActionResult<PlaysDeleted>> DeleteMyPlays
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:ActionResult<YearsHeld>> GetYears
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:ActionResult<YearInReview>> GetYear
+
+The three on `AggregateReportsController` are the server-wide reports and name
+nobody. The other five answer about one account, and each of them asks whether
+the caller is that account before it reads anything:
+
+    grep -c 'CallerIdentity.AsksForTheirOwnRows' Jellyfin.Plugin.Stats/Api/Your*.cs
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:2
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:1
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:2
+
+What is still a plan rather than a description is the page a user opens about
+themselves. The plays, watched time, top items and completion the top of this
+file promises a user have no per-user read behind them: the five above answer a
+calendar year, which years an account has, and the consent and deletion
+controls. That page and those reads are issue #61.
 
 ## Installing
 
@@ -102,10 +126,23 @@ provisional one is the mistake this paragraph exists against.
 
 ## Configuration
 
-The plugin's settings page appears on the server dashboard under Plugins. Every
-field on it is still the upstream template's, so there is nothing on it worth
-setting; the real page is issue #65, and the reference for every setting is
-issue #78.
+The plugin's settings page appears on the server dashboard under Plugins, and
+the fields on it are this plugin's own rather than the upstream template's:
+
+    grep -oE 'id="[A-Z][A-Za-z]+"' Jellyfin.Plugin.Stats/Configuration/configPage.html | grep -v '^id="Stats'
+    id="CaptureEnabled"
+    id="PlayRowRetentionDays"
+    id="DailyAggregateRetentionDays"
+    id="RollupTimeZone"
+    id="ExcludedUserIds"
+    id="ExcludedItemTypes"
+    id="MaximumRangeDays"
+    id="MaximumRowsPerResponse"
+
+[The configuration reference](docs/configuration.md) is the account of each one:
+what it does, what it accepts, what it defaults to, and what changing it does
+not do. It is read there rather than repeated here, where the two could
+disagree.
 
 ## Building from source
 
