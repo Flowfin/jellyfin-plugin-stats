@@ -75,7 +75,11 @@ def call(base, method, path, body=None, token=None):
             raw = answer.read().decode("utf-8")
             return answer.status, (json.loads(raw) if raw.strip() else None)
     except urllib.error.HTTPError as failure:
-        return failure.code, failure.read().decode("utf-8", "replace")
+        # A body is truncated because a server that is still starting answers
+        # with a whole HTML page, and a page pasted into a log buries the one
+        # line that says what happened.
+        body = failure.read().decode("utf-8", "replace")
+        return failure.code, body[:400]
     except (OSError, http.client.HTTPException, ValueError) as failure:
         # A server that has bound its port and is not yet answering resets the
         # connection rather than refusing it, and the reset arrives as an
@@ -88,11 +92,19 @@ def call(base, method, path, body=None, token=None):
 
 
 def wait_for_the_server(base, seconds):
-    """Ask the public endpoint until it answers, and say how long it took."""
+    """Ask the public endpoint until the server has finished starting.
+
+    A 200 is not the condition. A server that has bound its port and is still
+    assembling itself answers this endpoint and serves its startup page from
+    the rest, so the first dispatch that got past the reset went straight on to
+    a wizard step that came back 503 with a page of HTML. What separates the
+    two states is whether the answer carries the server's version, so that is
+    what is waited for.
+    """
     started = time.monotonic()
     while time.monotonic() - started < seconds:
         status, answer = call(base, "GET", "/System/Info/Public")
-        if status == 200 and isinstance(answer, dict):
+        if status == 200 and isinstance(answer, dict) and answer.get("Version"):
             print(
                 "server answered after {0:.0f}s: version {1}, wizard completed {2}".format(
                     time.monotonic() - started,
