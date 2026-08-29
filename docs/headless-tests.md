@@ -35,6 +35,13 @@ assembly, finds the plugin type, and asserts its constructor shape and its
 identifier, together with the floor builds against the oldest supported server
 of each line.
 
+That refusal stands for every TEST and it is not the whole of what this
+document now says: one dispatched READING does install the packaged plugin into
+a real server, for a question the replacement above cannot reach. It is
+declared below rather than exempted here, and a reader who takes this paragraph
+for the last word on the subject would be reading it as it stood before that
+section existed.
+
 **Producing a real transcode to get real transcoding data.** It needs an
 installed encoder and hardware that differs from runner to runner. Replaced by
 fixtures carrying recorded transcoding fields, fed through a fake session.
@@ -84,6 +91,45 @@ That reach is why this document names the tools by description and not by their
 literal names: the lint reads this file too, and a policy that quoted the strings
 it refuses would be refused by its own rules. The literals live in the rule file,
 which is the one directory the scan does not read.
+
+## A reading that needs a server, and why it is not a test
+
+One job in this repository starts a real Jellyfin server, publishes a port on
+the runner it is on, installs the packaged plugin into it and asks it a
+question. Both of those are on the list above. This section is the departure,
+written where the rule is rather than in the file that takes it.
+
+**What it is.** A dispatched job, `Reading`, driving
+`tools/reading/settings-page-reading.py`. It answers one question that no
+in-process route here can reach: two properties of the plugin configuration
+have a getter and no setter and are kept out of the stored file, the settings
+page draws both, and nothing had observed that such a property arrives in what
+that page receives. What answers it is the server's own serialisation of its
+own configuration object, and the server is the thing under the question, so
+standing where a server stands is not available here. Issue #31 carries the
+argument.
+
+**Why it is not a test, in the sense the list above uses.** No trigger runs it,
+no ruleset names its context, and nothing merges or fails on it. Its output is
+text somebody pastes into an issue, and the register that holds it is the issue
+and not a green check. That is the same shape as the manual reading in the
+release checklist, one step further along: the runner takes it instead of a
+person, and it is still a reading.
+
+**What the distinction does not buy, and this is the half to read carefully.**
+It buys nothing for any test. A test that reached for a server or a port would
+be refused by this document exactly as before, and the replacements named above
+are still the answer for every one of them. A reading is also the weaker
+artefact: it proves the run it was taken in and nothing about the runs nobody
+dispatched, which is the opposite of what an invariant rule buys and is why
+this route is not the one anything else here moves to.
+
+**The costs, stated.** The job can rot between dispatches with nothing saying
+so. It reads an image from outside the run, pinned by digest so that at least
+the same bytes answer twice. And the port, published on the loopback address,
+is a resource shared with everything else on that runner - the reason the rule
+above gives for refusing one does not stop applying because this is a reading,
+it is paid.
 
 ## What is left to a person
 

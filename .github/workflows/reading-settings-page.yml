@@ -1,0 +1,124 @@
+# One reading of what the plugin settings page receives from a real server.
+#
+# THIS IS A READING AND NOT A TEST, and the distinction is the whole reason
+# this file may exist. docs/headless-tests.md says no test may need a running
+# Jellyfin server or a listening port, and this job needs both. It is run by
+# hand, it gates nothing, no ruleset names its context, and what it produces
+# is output somebody pastes into an issue. The departure and its bound are
+# written in that document rather than only here.
+#
+# What it settles is issue #31's last outstanding fact. Two properties of the
+# plugin configuration have a getter and no setter and are held out of the
+# stored file, and the settings page draws both. Nothing had ever observed
+# that such a property arrives in what the page receives, so the page half of
+# that issue's third condition was built rather than shown. A construction
+# nobody has watched work is what this run watches.
+#
+# It is dispatched rather than scheduled. A reading answers a question once,
+# and a job on a trigger would become a check that gates nothing while looking
+# like one. The cost is that it can rot unnoticed between dispatches, which is
+# stated here rather than left for whoever next runs it and finds it red.
+name: Reading
+
+on:
+  workflow_dispatch:
+
+# Deny by default; the job below reads the repository and nothing else.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  settings-page:
+    name: Read what the settings page receives
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the token is not kept in .git/config.
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          # The packaging tool builds both target frameworks out of one
+          # project, so it needs the SDK that can build the later one.
+          dotnet-version: '10.0.x'
+
+      # The same tool, at the same pin, reading the same manifest as the
+      # packaging job and the release. The reading is worth nothing if what
+      # the server loads is not what a user installs.
+      - name: Build the package a user would install
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
+        with:
+          dotnet-target: 'net9.0'
+          output: './artifacts/jellyfin-10.11'
+
+      - name: Install it the way a server does
+        run: |
+          set -euo pipefail
+          # A server unpacks the zip into a folder of its own under the plugin
+          # directory. The name is not read by anything; the meta.json inside
+          # the zip is what the server reads.
+          mkdir -p server/config/plugins/stats server/cache
+          zip=$(find artifacts/jellyfin-10.11 -name '*.zip' | head -n 1)
+          if [ -z "${zip}" ]; then
+            echo "The packaging step produced no zip, so there is nothing to install." >&2
+            exit 1
+          fi
+          unzip -o "${zip}" -d server/config/plugins/stats
+          ls -l server/config/plugins/stats
+          # The server writes as root inside the container and this job reads
+          # what it wrote afterwards.
+          chmod -R 777 server
+
+      # A real server, on the oldest line this plugin declares support for,
+      # pinned by digest for the same reason every action above is pinned by
+      # commit: a reading against an image that moved is a reading of
+      # something else.
+      #
+      # The port is published on the loopback address alone. It is a port on
+      # the runner either way, which is the departure this file declares; what
+      # the address buys is that nothing outside the runner can reach it.
+      - name: Start the server
+        run: |
+          set -euo pipefail
+          docker run --detach --name jellyfin \
+            --publish 127.0.0.1:8096:8096 \
+            --volume "${PWD}/server/config:/config" \
+            --volume "${PWD}/server/cache:/cache" \
+            jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db
+          docker ps
+
+      - name: Take the reading
+        run: |
+          set -euo pipefail
+          python3 tools/reading/settings-page-reading.py \
+            http://127.0.0.1:8096 \
+            "server/config/plugins/configurations/Playback Statistics.xml"
+
+      # Whatever happened above, the server's own account of it. A reading
+      # that failed is worth more with the log beside it than without, and a
+      # reading that passed is worth checking against the log for a plugin
+      # that did not load.
+      - name: What the server logged
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "== the plugin directory the server was given"
+          ls -lR server/config/plugins || true
+          echo "== the configuration directory the server wrote"
+          ls -l server/config/plugins/configurations || true
+          echo "== what the server said about this plugin"
+          docker logs jellyfin 2>&1 | grep -i -E "stat|plugin" | head -60 || true
+
+      - name: Stop the server
+        if: always()
+        run: docker rm --force jellyfin || true
