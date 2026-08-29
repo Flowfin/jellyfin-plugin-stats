@@ -1,4 +1,5 @@
-# Code scanning over this plugin's own C#.
+# Code scanning over this plugin's own source: its C#, the JavaScript its pages
+# ship, and the workflows in this directory.
 #
 # This workflow used to call jellyfin/jellyfin-meta-plugins/scan-codeql.yaml.
 # That analysis ran, but every setting on it lives in a repository nobody
@@ -7,6 +8,16 @@
 # obj/ and bin/, files that are not in this tree and that nobody reading the
 # report can edit. Writing the workflow here puts the configuration beside
 # the code it reads.
+#
+# ONE CONFIGURATION PRODUCES EVERY ANALYSIS THIS BRANCH STANDS ON, and that is
+# a property rather than a convenience. Code scanning's default setup covered
+# three languages here on 2026-08-28 and uploaded its C# under the category
+# this job uses, so it did not add coverage - it replaced the analysis this
+# branch stood on with one extracted without a build, and fifty-seven alerts
+# closed as fixed on the strength of a scan that compiled nothing. Two
+# configurations writing the same category is the shape that permits it, and
+# the repair is that no second configuration exists rather than that the two
+# are spelled apart. #273 carries the reading.
 #
 # The trigger filters keep the shape the replaced file reasoned out. The push
 # trigger skips documentation-only changes, because a push to master gates
@@ -40,10 +51,11 @@ concurrency:
 
 jobs:
   analyze:
-    # This name is the check context. Changing it removes a context rather
-    # than renaming one, so it is changed only together with whatever
-    # requires it.
-    name: Code scanning (csharp)
+    # This name is the check context, one per language. The csharp leg keeps
+    # the exact name it had before the other two arrived, because changing it
+    # removes a context rather than renaming one, and it is changed only
+    # together with whatever requires it.
+    name: Code scanning (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -52,6 +64,22 @@ jobs:
       security-events: write
       # What the uploader reads to find the workflow run it reports against.
       actions: read
+    strategy:
+      # One language failing to extract must not withdraw the other two
+      # analyses from the branch. A leg that does not upload leaves its own
+      # category standing at the previous run rather than emptying it.
+      fail-fast: false
+      matrix:
+        include:
+          # Compiled, and built by name below.
+          - language: csharp
+          # The drawing modules under Jellyfin.Plugin.Stats/Pages/ and the
+          # node suite beside them. Nothing is compiled, so no build step.
+          - language: javascript-typescript
+          # The workflows in this directory. zizmor audits them for the
+          # security shapes it knows; this reads them with CodeQL's own
+          # queries, which is a different set rather than a second copy.
+          - language: actions
 
     steps:
       - name: Checkout Repository
@@ -61,6 +89,8 @@ jobs:
           persist-credentials: false
 
       - name: Setup .NET
+        # Only the compiled language needs a toolchain.
+        if: matrix.language == 'csharp'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           # Both server lines the solution targets.
@@ -71,7 +101,7 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
-          languages: csharp
+          languages: ${{ matrix.language }}
           # The default pack finds security faults. This one adds the quality
           # queries beside them, which is what the other plugins run, and
           # comparing plugins is only meaningful if they run the same set.
@@ -80,6 +110,12 @@ jobs:
           # workflow lives here: the shared workflow it replaces has no way
           # to carry it. The generated sources under obj/ are not in the
           # tree, and nobody can change them.
+          #
+          # Nothing else is filtered out. The near misses under
+          # tools/invariants/ are tracked source that ships in this
+          # repository, and hiding them would be an analysis of part of the
+          # tree reported as an analysis of it - the failure this file's
+          # build step already refuses one shape of.
           config: |
             paths-ignore:
               - "**/obj/**"
@@ -91,6 +127,7 @@ jobs:
         # of part of the source reported as an analysis of it. A build that
         # fails stops the job instead of producing an analysis of whatever
         # did compile.
+        if: matrix.language == 'csharp'
         run: |
           set -euo pipefail
           dotnet restore Jellyfin.Plugin.Stats.sln
@@ -99,4 +136,6 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
-          category: "/language:csharp"
+          # One category per language, so the three uploads sit beside each
+          # other instead of the last one deciding what the branch stands on.
+          category: "/language:${{ matrix.language }}"
