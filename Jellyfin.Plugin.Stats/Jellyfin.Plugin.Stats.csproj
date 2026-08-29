@@ -196,12 +196,22 @@
                    Destination="$(IntermediateOutputPath)pages\yourYear.html" />
   </Target>
 
-  <Target Name="EmbedTheAssembledPages" AfterTargets="AssembleThePages;AssembleTheWrapUpPage">
+  <Target Name="AssembleTheSelfPage" BeforeTargets="PrepareForBuild"
+          Inputs="Pages\pages.targets;$(MSBuildProjectFullPath);Pages\yourStatistics.template.html;Pages\charts.js;Pages\yourStatistics.js;Pages\yourPrivacyChoices.js;Pages\yourStatisticsPage.js"
+          Outputs="$(IntermediateOutputPath)pages\yourStatistics.html">
+    <AssembleAPage Template="Pages\yourStatistics.template.html"
+                   Modules="Pages\charts.js;Pages\yourStatistics.js;Pages\yourPrivacyChoices.js;Pages\yourStatisticsPage.js"
+                   Destination="$(IntermediateOutputPath)pages\yourStatistics.html" />
+  </Target>
+
+  <Target Name="EmbedTheAssembledPages" AfterTargets="AssembleThePages;AssembleTheWrapUpPage;AssembleTheSelfPage">
     <ItemGroup>
       <EmbeddedResource Include="$(IntermediateOutputPath)pages\usageOverTime.html"
                         LogicalName="Jellyfin.Plugin.Stats.Pages.usageOverTime.html" />
       <EmbeddedResource Include="$(IntermediateOutputPath)pages\yourYear.html"
                         LogicalName="Jellyfin.Plugin.Stats.Pages.yourYear.html" />
+      <EmbeddedResource Include="$(IntermediateOutputPath)pages\yourStatistics.html"
+                        LogicalName="Jellyfin.Plugin.Stats.Pages.yourStatistics.html" />
     </ItemGroup>
   </Target>
 
