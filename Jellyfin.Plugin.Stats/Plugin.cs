@@ -38,6 +38,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </remarks>
     public const string YourYearPage = "Stats: your year";
 
+    /// <summary>
+    /// What the server calls the page a user opens their own figures and their
+    /// own choices on.
+    /// </summary>
+    /// <remarks>
+    /// Named for the reason the two pages above are: the name is half of the
+    /// only address this view has, and the suite reads it back.
+    /// </remarks>
+    public const string YourStatisticsPage = "Stats: your statistics";
+
     private readonly ILogger<Plugin> _logger;
 
     private bool _configurationMigrated;
@@ -223,6 +233,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = YourYearPage,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.yourYear.html", GetType().Namespace)
+            },
+            new PluginPageInfo
+            {
+                Name = YourStatisticsPage,
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.yourStatistics.html", GetType().Namespace)
             }
         ];
     }

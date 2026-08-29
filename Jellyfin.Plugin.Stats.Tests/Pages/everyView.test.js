@@ -85,6 +85,8 @@ const BESIDE_THE_STATE = {
     'usageByHourAndWeekday.js': {},
     'usageOverTime.js': {},
     'whyTheServerTranscodes.js': {},
+    'yourPrivacyChoices.js': {},
+    'yourStatistics.js': {},
     'yourYear.js': {},
 };
 
@@ -105,6 +107,33 @@ const ASKED_OF_A_PAGE = {
     'usageOverTimePage.js': {
         asked: { days: 7, now: new Date('2026-03-14T12:00:00.000Z') },
         answeringNothing: { rows: [], plays: 0, watched: '00:00:00', zoneId: 'Europe/Berlin' },
+    },
+    'yourStatisticsPage.js': {
+        asked: { userId: '6f9619ff-8b86-d011-b42d-00c04fc964ff' },
+        /* One body, and it carries the fields of two endpoints. The client
+         * above answers every request with the same object, and this page asks
+         * two: its figures and where the reader's answer about being named
+         * stands. The figures half reads no plays and says the view is empty,
+         * which is what this case is about; the consent half reads a whole
+         * answer and draws the controls, because a page that hid somebody's
+         * withdrawal control behind their figures having arrived would take it
+         * away at the moment it is most wanted. */
+        answeringNothing: {
+            window: 'last30Days',
+            zoneId: 'Europe/Berlin',
+            plays: 0,
+            watched: '00:00:00',
+            finished: 0,
+            abandoned: 0,
+            points: [],
+            topItems: [],
+            degraded: {},
+            answered: false,
+            agreed: false,
+            agreedToVersion: 0,
+            currentVersion: 1,
+            wording: 'What this server records about you.',
+        },
     },
     'yourYearPage.js': {
         asked: { userId: '6f9619ff-8b86-d011-b42d-00c04fc964ff' },

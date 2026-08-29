@@ -1,0 +1,31 @@
+<div
+    id="stats-your-statistics-page"
+    data-role="page"
+    class="page type-interior pluginConfigurationPage"
+>
+    <div data-role="content">
+        <div class="content-primary">
+            <h1>Your statistics</h1>
+
+            <p class="stats-page-about">
+                This page is about you. It is drawn from your own plays, on your own authority, and
+                nobody else's account can be asked for through it. Nothing on it is a total for the
+                server, so there is nothing here to work anybody else out of.
+            </p>
+
+            <div id="stats-your-statistics-view"></div>
+        </div>
+    </div>
+
+    <script id="stats-page-code"></script>
+
+    <script>
+        ApiClient.getCurrentUser().then(function (user) {
+            mountYourStatistics(
+                document.querySelector('#stats-your-statistics-page'),
+                ApiClient,
+                user.Id,
+            );
+        });
+    </script>
+</div>
