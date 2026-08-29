@@ -363,6 +363,67 @@ jobs:
             ${{ steps.jprm.outputs.artifact }}
             ${{ steps.jprm.outputs.artifact }}.meta.json
 
+  sbom:
+    name: Bill of materials for the release
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Reads the source and produces a document. No write scope: the release job is
+    # the only one that touches the release, for the reason stated on it.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The same commit the gate and the build jobs checked, for the same reason:
+          # a bill of materials read off a different tree than the archive is a list
+          # of what some other build contains.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          # The generator restores the project, which targets net9.0 and net10.0, so
+          # it needs the SDK that can build both. That is a wider restore than the
+          # build job's, and it is why this runs in a job of its own rather than
+          # beside the bytes that get released.
+          dotnet-version: "10.0.x"
+
+      # An exact version: a bill of materials that changes because its generator
+      # moved is a diff nobody can read. The same version .github/workflows/package.yml
+      # pins, so the document attached to a release and the one produced on every
+      # push are the same document rather than two.
+      - name: Install the bill of materials generator
+        run: dotnet tool install --global CycloneDX --version 6.2.0
+
+      - name: Generate the bill of materials
+        run: |
+          set -euo pipefail
+          dotnet CycloneDX Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj             --output sbom             --filename sbom.json             --output-format Json             --set-name Jellyfin.Plugin.Stats             --set-type Library
+
+      - name: Say what is in it
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          with open("sbom/sbom.json", encoding="utf-8") as handle:
+              bom = json.load(handle)
+          components = bom.get("components", [])
+          print("CycloneDX {0}, {1} components".format(bom["specVersion"], len(components)))
+          for component in sorted(components, key=lambda c: c.get("name", "")):
+              print("  {0} {1}".format(component.get("name"), component.get("version")))
+          PY
+
+      - name: Hand the bill of materials to the release job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sbom
+          retention-days: 30
+          if-no-files-found: error
+          path: sbom/sbom.json
+
   attest:
     name: Attest build provenance
     needs: build
@@ -391,7 +452,7 @@ jobs:
 
   release:
     name: Publish the release
-    needs: [build, attest]
+    needs: [build, attest, sbom]
     runs-on: ubuntu-latest
     # Generous, because this job builds nothing and the time it spends is asset
     # uploads on somebody else's network. A timeout that fires between creating the
@@ -407,6 +468,11 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifact
+
+      - name: Download the bill of materials
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sbom
 
       - name: Refuse to touch a release that already exists
         env:
@@ -461,6 +527,35 @@ jobs:
           # The bare filename, so the checksum line names the file a client downloads.
           md5sum "${zip}" > "${zip%.zip}.md5"
           sha256sum "${zip}" > "${zip%.zip}.sha256"
+          ls -l
+
+      - name: Name the bill of materials after the archive it describes
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # The generator writes one name for every project it is pointed at, so the
+          # document arrives here called sbom.json and says nothing about which
+          # release it belongs to. Named after the archive instead, so somebody who
+          # has downloaded both a year later can still tell that the two are a pair.
+          zips=(./*.zip)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one plugin archive, found ${#zips[@]}."
+            exit 1
+          fi
+
+          # if-no-files-found on the upload makes the generating job fail when it
+          # produced nothing, and this asks the same question again on this side of
+          # the download. A release whose archive arrives without its bill of
+          # materials is the release this route exists to stop shipping, so it is a
+          # failure here rather than an asset quietly missing from the list.
+          if [ ! -f ./sbom.json ]; then
+            echo "::error::No sbom.json was downloaded, so this release would carry an archive with nothing saying what is inside it. Not publishing a release short of an asset."
+            exit 1
+          fi
+
+          zip="${zips[0]#./}"
+          mv ./sbom.json "${zip%.zip}.cdx.json"
           ls -l
 
       - name: Create the release and upload the assets
