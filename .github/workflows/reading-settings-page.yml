@@ -97,12 +97,17 @@ jobs:
             jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db
           docker ps
 
+      # The stored file is named after the assembly rather than after the
+      # plugin, which the fourth dispatch of this reading established by
+      # looking at what the server had written. The path is given rather
+      # than searched for, and the driver fails when it cannot read it, so
+      # a name that moves takes the leg down rather than out.
       - name: Take the reading
         run: |
           set -euo pipefail
           python3 tools/reading/settings-page-reading.py \
             http://127.0.0.1:8096 \
-            "server/config/plugins/configurations/Playback Statistics.xml"
+            "server/config/plugins/configurations/Jellyfin.Plugin.Stats.xml"
 
       # Whatever happened above, the server's own account of it. A reading
       # that failed is worth more with the log beside it than without, and a
