@@ -27,6 +27,7 @@ Every request goes to the address given on the command line, which is a
 server this run started. Nothing here reads the network otherwise.
 """
 
+import http.client
 import json
 import sys
 import time
@@ -75,8 +76,15 @@ def call(base, method, path, body=None, token=None):
             return answer.status, (json.loads(raw) if raw.strip() else None)
     except urllib.error.HTTPError as failure:
         return failure.code, failure.read().decode("utf-8", "replace")
-    except urllib.error.URLError as failure:
-        return 0, str(failure.reason)
+    except (OSError, http.client.HTTPException, ValueError) as failure:
+        # A server that has bound its port and is not yet answering resets the
+        # connection rather than refusing it, and the reset arrives as an
+        # ordinary operating-system error rather than as the request library's
+        # own. Catching only the latter turned the wait below into a single
+        # attempt that raised, which is what the first dispatch of this reading
+        # did. Everything a failed request can raise is reported as status
+        # zero, so the caller decides whether to wait or to give up.
+        return 0, "{0}: {1}".format(type(failure).__name__, failure)
 
 
 def wait_for_the_server(base, seconds):
