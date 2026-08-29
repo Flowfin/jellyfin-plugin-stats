@@ -77,6 +77,45 @@ public sealed record DeliveryMethodShares
     public long Plays { get; }
 
     /// <summary>
+    /// The same four figures taken from counts somebody else has already made.
+    /// </summary>
+    /// <remarks>
+    /// This exists for the day-by-day rollups, which hold the four counts as
+    /// columns because they were folded from the rows on the write path. A
+    /// reader adding them up is making the same statement <see cref="Over"/>
+    /// makes and must not make it a second way: the shape is built here rather
+    /// than by a second record with the same four fields, so a report folded
+    /// from aggregates and one folded from rows are the same type and can be
+    /// compared figure by figure.
+    /// <para>
+    /// The number of plays is the sum of the four and is not taken separately.
+    /// A caller passing a fifth number would be able to hand back a breakdown
+    /// whose parts do not add up to its own total, which is the one thing this
+    /// shape promises they do.
+    /// </para>
+    /// </remarks>
+    /// <param name="unknown">Plays that started with no method reported.</param>
+    /// <param name="directPlay">Plays that started as a direct play.</param>
+    /// <param name="directStream">Plays that started as a direct stream.</param>
+    /// <param name="transcode">Plays that started as a transcode.</param>
+    /// <returns>The four figures and the number of plays they cover.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">One of the counts is negative.</exception>
+    public static DeliveryMethodShares Of(long unknown, long directPlay, long directStream, long transcode)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(unknown);
+        ArgumentOutOfRangeException.ThrowIfNegative(directPlay);
+        ArgumentOutOfRangeException.ThrowIfNegative(directStream);
+        ArgumentOutOfRangeException.ThrowIfNegative(transcode);
+
+        return new DeliveryMethodShares(
+            unknown,
+            directPlay,
+            directStream,
+            transcode,
+            unknown + directPlay + directStream + transcode);
+    }
+
+    /// <summary>
     /// Folds a sequence of plays into the four figures.
     /// </summary>
     /// <remarks>
