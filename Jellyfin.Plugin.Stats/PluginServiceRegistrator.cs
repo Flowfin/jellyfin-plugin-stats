@@ -137,19 +137,23 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
             (userId, year, zone, topCount) => ReadFromTheStore.Answering(OpenTheStore, store =>
 
                 // The oldest row comes from the same store and the same open as
-                // the plays, so what the answer says it covers and what it was
+                // the figures, so what the answer says it covers and what it was
                 // folded from are one reading rather than two that a sweep
                 // running in between could put out of step. It is asked over
                 // every account rather than over this one, because what a
                 // window is about is the days the store has lost and not the
                 // day this person started watching.
-                YearInReview.Over(
-                    store.PlaysFor(userId),
-                    userId,
-                    year,
-                    zone,
-                    topCount,
-                    store.OldestPlayStartedUtc())),
+                //
+                // The day-by-day rollups are what the totals are read off, and
+                // that read is bounded by days rather than by plays: one
+                // account's year costs the days it recorded on, times the item
+                // types, times the clients, and never the plays themselves.
+                // They are handed over only where the store keyed them in the
+                // zone this year is being read in, because a store states the
+                // zone it was first keyed in and not the one the setting names
+                // today, and days keyed in another zone are not the days this
+                // answer is about. Issue #254.
+                AYearFromTheStore.For(store, userId, year, zone, topCount)),
             provider.GetRequiredService<TimeProvider>()));
 
         // The one question the library is asked on the read path: may the
