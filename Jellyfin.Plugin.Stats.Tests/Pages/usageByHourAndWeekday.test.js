@@ -159,14 +159,11 @@ test('a view still waiting for its figures says so and draws no week', () => {
     assert.equal(countOf(drawn, '<rect'), 0);
 });
 
-test('a view whose figures could not be read says so, with the reason', () => {
-    const drawn = usageByHourAndWeekday({
-        state: 'failed',
-        reason: 'The store could not be opened.',
-    });
+test('a view whose figures could not be read says so and says who holds the reason', () => {
+    const drawn = usageByHourAndWeekday({ state: 'failed' });
 
-    assert.match(drawn, /Could not be read/);
-    assert.match(drawn, /The store could not be opened\./);
+    assert.match(drawn, /Statistics unavailable/);
+    assert.match(drawn, /operator has the details/);
     assert.equal(countOf(drawn, '<rect'), 0);
 });
 
@@ -179,7 +176,7 @@ test('a reader tells a failure from an empty view without opening the log', () =
      * store that would not open both have nothing to show, and drawn the same
      * way the second reads as the first. */
     assert.notEqual(nothing, broken);
-    assert.doesNotMatch(nothing, /Could not be read/);
+    assert.doesNotMatch(nothing, /Statistics unavailable/);
     assert.doesNotMatch(broken, /Nothing recorded/);
 });
 

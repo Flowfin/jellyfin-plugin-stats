@@ -154,6 +154,11 @@ export function forDrawing(year, years) {
  * different facts, and a view that drew both the same way has destroyed the
  * difference before anybody can see it. Issue #64.
  *
+ * What the failure was is not passed on. The reason this plugin knows names a
+ * file in the server's storage and reaches the operator on the settings page;
+ * a signed-in reader is told that the figures are unavailable and who holds the
+ * details, which is the disclosure decided on #64 on 2026-08-29.
+ *
  * @param {{getUrl: Function, getJSON: Function}} client The dashboard's own client, which is what puts the caller's credential on the request.
  * @param {{userId: string, year?: number}} asked Whose wrap-up, and which year if a reader chose one.
  * @returns {Promise<string>} The view.
@@ -164,7 +169,7 @@ export async function yourYearMarkup(client, asked) {
     try {
         years = await client.getJSON(client.getUrl(yearsPathFor(asked.userId)));
     } catch (failure) {
-        return yourYear({ state: 'failed', reason: reasonOf(failure) });
+        return yourYear({ state: 'failed' });
     }
 
     const held = years === null || typeof years !== 'object' ? undefined : years.held;
@@ -179,18 +184,8 @@ export async function yourYearMarkup(client, asked) {
 
         return yourYear(forDrawing(year, years));
     } catch (failure) {
-        return yourYear({ state: 'failed', reason: reasonOf(failure) });
+        return yourYear({ state: 'failed' });
     }
-}
-
-/**
- * What a failure is told to the reader as.
- *
- * @param {unknown} failure What was thrown.
- * @returns {string|undefined} The words, where there are any.
- */
-function reasonOf(failure) {
-    return failure instanceof Error ? failure.message : undefined;
 }
 
 /**

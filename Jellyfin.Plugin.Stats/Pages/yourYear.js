@@ -64,7 +64,7 @@ const HEADLINES = [
  * stated above the figures, or says which of the other three situations the view
  * is in.
  *
- * @param {{state: string, reason?: string, year?: number, zone?: string, years?: {held: ReadonlyArray<number>, keptFrom: string|null}, anythingRecorded?: boolean, plays?: number|null, watchedMinutes?: number|null, distinctItems?: number|null, finished?: number|null, abandoned?: number|null, topItems?: ReadonlyArray<{name: string|null, plays: number|null}>, coverage?: {wholeYear: boolean, firstDayCovered: string|null, lastDayCovered: string, daysCovered: number}}} answer The year, as the server folded it, or the state it is in instead.
+ * @param {{state: string, year?: number, zone?: string, years?: {held: ReadonlyArray<number>, keptFrom: string|null}, anythingRecorded?: boolean, plays?: number|null, watchedMinutes?: number|null, distinctItems?: number|null, finished?: number|null, abandoned?: number|null, topItems?: ReadonlyArray<{name: string|null, plays: number|null}>, coverage?: {wholeYear: boolean, firstDayCovered: string|null, lastDayCovered: string, daysCovered: number}}} answer The year, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function yourYear(answer) {
@@ -73,7 +73,7 @@ export function yourYear(answer) {
     if (state !== 'ready') {
         return (
             '<section class="stats-view stats-view-year">' +
-            stateNotice(state, { title: 'Your year', reason: answer.reason }) +
+            stateNotice(state, { title: 'Your year' }) +
             '</section>'
         );
     }

@@ -307,13 +307,13 @@ test('each of the four situations is drawn as itself', () => {
     const ready = usageOverTime(aWeek());
     const empty = usageOverTime({ state: 'empty' });
     const loading = usageOverTime({ state: 'loading' });
-    const failed = usageOverTime({ state: 'failed', reason: 'The store could not be opened.' });
+    const failed = usageOverTime({ state: 'failed' });
 
     assert.match(ready, /<title>2026-01-05: 2<\/title>/);
     assert.match(empty, /Nothing recorded yet/);
     assert.match(loading, /Still loading/);
-    assert.match(failed, /Could not be read/);
-    assert.match(failed, /The store could not be opened\./);
+    assert.match(failed, /Statistics unavailable/);
+    assert.match(failed, /operator has the details/);
 
     /* The four are told apart by what they say and not only by being different
      * strings, so a view that drew the same empty frame for all of them fails

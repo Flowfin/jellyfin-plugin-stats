@@ -147,7 +147,7 @@ const REASONS = {
  * for each beneath the picture, or says which of the other three situations the
  * view is in.
  *
- * @param {{state: string, reason?: string, plays?: number, playsWithAReason?: number, watchedMinutes?: number, rows?: ReadonlyArray<{reason: string, plays: number, watchedMinutes?: number}>, acceleration?: ReadonlyArray<{type: string|null, plays: number, watchedMinutes?: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
+ * @param {{state: string, plays?: number, playsWithAReason?: number, watchedMinutes?: number, rows?: ReadonlyArray<{reason: string, plays: number, watchedMinutes?: number}>, acceleration?: ReadonlyArray<{type: string|null, plays: number, watchedMinutes?: number}>}} answer The breakdown, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function whyTheServerTranscodes(answer) {
@@ -156,7 +156,7 @@ export function whyTheServerTranscodes(answer) {
     if (state !== 'ready') {
         return (
             '<figure class="stats-view stats-view-reasons">' +
-            stateNotice(state, { title: TITLE, reason: answer.reason }) +
+            stateNotice(state, { title: TITLE }) +
             '</figure>'
         );
     }

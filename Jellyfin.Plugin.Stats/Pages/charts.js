@@ -438,8 +438,8 @@ const STATE_WORDS = {
         className: 'stats-chart-loading',
     },
     failed: {
-        heading: 'Could not be read',
-        sentence: 'The figures for this view could not be read.',
+        heading: 'Statistics unavailable',
+        sentence: 'These figures could not be read. The server operator has the details of why.',
         className: 'stats-chart-failed',
     },
 };
@@ -493,12 +493,23 @@ export function minutesIn(span) {
  * and the last of those is the one a reader would otherwise only find in the
  * log.
  *
- * A reason is drawn where one is given and the notice stands without one. What
- * turns a failure into words a reader understands is decided where the failure
- * is known rather than here; this draws what it is handed.
+ * The words for a state are this module's and a caller adds nothing to them.
+ * That is the disclosure decided on #64 on 2026-08-29 rather than a shape this
+ * module happens to have: the only reason this plugin knows for a failure names
+ * a file in the server's own storage, the endpoints answer a store that will not
+ * open with a bare 503 carrying no reason at all, and a reader who is not the
+ * operator can do nothing with a storage path but learn where the server keeps
+ * things. So the failed notice says that the figures are unavailable and that
+ * the operator has the details, and nothing else. The operator reads the reason
+ * itself on the settings page, which is where the repair happens.
+ *
+ * A caller handing a reason is refused rather than ignored. Ignoring it would
+ * let a page pass a server's words in and pass every check while nothing drew
+ * them, so the next reader of that page would believe the reason reaches
+ * somebody. Refusing puts the decision in front of whoever writes the line.
  *
  * @param {string} state One of empty, loading or failed.
- * @param {{title?: string, reason?: string}} [options] What the drawing is, and why it failed.
+ * @param {{title?: string}} [options] What the drawing is.
  * @returns {string} The drawing.
  */
 export function stateNotice(state, options = {}) {
@@ -510,20 +521,23 @@ export function stateNotice(state, options = {}) {
         );
     }
 
+    if (options.reason !== undefined) {
+        throw new Error(
+            'A state notice is drawn in the words this module holds, and it carries no reason ' +
+                'from its caller. What a failure here can name is a file in the server storage, ' +
+                'which the operator reads on the settings page and nobody else reads at all. ' +
+                'Issue #64.',
+        );
+    }
+
     const words = STATE_WORDS[state];
-    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
-    const description = reason === '' ? words.sentence : `${words.sentence} ${reason}`;
     const middle = HEIGHT / 2;
 
     return (
-        open(options.title ?? words.heading, description) +
+        open(options.title ?? words.heading, words.sentence) +
         `<text class="${words.className}" x="${coordinate(WIDTH / 2)}" ` +
-        `y="${coordinate(reason === '' ? middle : middle - 10)}" text-anchor="middle">` +
+        `y="${coordinate(middle)}" text-anchor="middle">` +
         `${escapeText(words.heading)}</text>` +
-        (reason === ''
-            ? ''
-            : `<text class="${words.className}-reason" x="${coordinate(WIDTH / 2)}" ` +
-              `y="${coordinate(middle + 12)}" text-anchor="middle">${escapeText(reason)}</text>`) +
         '</svg>'
     );
 }

@@ -58,14 +58,10 @@ import { stateNotice } from '../../Jellyfin.Plugin.Stats/Pages/charts.js';
 
 const DIRECTORY = '../../Jellyfin.Plugin.Stats/Pages/';
 
-/* The three a view is asked for, and a reason on the one that carries one. A
- * failure is the state a reader would otherwise only find in the log, so it is
- * the one asserted with the words that travel on it. */
-const STATES = [
-    { state: 'empty', reason: undefined },
-    { state: 'loading', reason: undefined },
-    { state: 'failed', reason: 'The store could not be opened.' },
-];
+/* The three a view is asked for. None of them carries a reason: the words for a
+ * state are the drawing module's own, decided on #64 on 2026-08-29, and a view
+ * handing one in is refused rather than drawn. */
+const STATES = ['empty', 'loading', 'failed'];
 
 /* What an answer has to carry beside its state, per view.
  *
@@ -112,10 +108,11 @@ const ASKED_OF_A_PAGE = {
     },
 };
 
-/* What a failure says when it reaches a reader. The words are the case's own and
- * travel through the page, so a page that dropped the reason and drew a bare
- * failure fails below rather than passing on the state alone. */
-const WHY_IT_COULD_NOT_ANSWER = 'The store could not be opened.';
+/* What the request fails with inside the page. It is the case's own words and
+ * they are deliberately recognisable, because what the case below asserts is
+ * that they do NOT reach the reader: a page that passed the words it was given
+ * through to the drawing has disclosed whatever the server put in them. */
+const WHY_IT_COULD_NOT_ANSWER = 'The store at D:\jellyfin\stats.db could not be opened.';
 
 const loaded = await Promise.all(
     readdirSync(fileURLToPath(new URL(DIRECTORY, import.meta.url)))
@@ -143,11 +140,10 @@ const views = loaded.filter((module) => !drawing.includes(module) && !pages.incl
  * rather than spelled out here.
  *
  * @param {string} state One of the three.
- * @param {string|undefined} reason What to say about a failure.
  * @returns {string} The body of the notice.
  */
-function noticeBody(state, reason) {
-    const notice = stateNotice(state, reason === undefined ? {} : { reason });
+function noticeBody(state) {
+    const notice = stateNotice(state);
     const at = notice.indexOf('<text class="stats-chart-');
 
     assert.notEqual(
@@ -174,11 +170,11 @@ function viewOf(module) {
  * An answer that says it is in one of the three situations and nothing more.
  *
  * @param {{name: string}} module The view it is for.
- * @param {{state: string, reason: string|undefined}} situation Which situation.
+ * @param {string} state Which situation.
  * @returns {object} The answer.
  */
-function answerFor(module, situation) {
-    return { ...BESIDE_THE_STATE[module.name], state: situation.state, reason: situation.reason };
+function answerFor(module, state) {
+    return { ...BESIDE_THE_STATE[module.name], state };
 }
 
 test('the page directory holds one drawing module, its views, and the pages that wire them', () => {
@@ -229,12 +225,12 @@ test('every view says which of the three situations it is in', () => {
     for (const module of views) {
         const view = viewOf(module);
 
-        for (const situation of STATES) {
-            const markup = view(answerFor(module, situation));
+        for (const state of STATES) {
+            const markup = view(answerFor(module, state));
 
             assert.ok(
-                markup.includes(noticeBody(situation.state, situation.reason)),
-                `${module.name} does not say it is in the ${situation.state} state. A view that ` +
+                markup.includes(noticeBody(state)),
+                `${module.name} does not say it is in the ${state} state. A view that ` +
                     'draws an empty frame instead reads as a quiet server, which is the ' +
                     'confusion the three states exist to end.',
             );
@@ -245,7 +241,7 @@ test('every view says which of the three situations it is in', () => {
 test('every view tells the three apart rather than drawing one frame for all of them', () => {
     for (const module of views) {
         const view = viewOf(module);
-        const drawn = STATES.map((situation) => view(answerFor(module, situation)));
+        const drawn = STATES.map((state) => view(answerFor(module, state)));
 
         assert.equal(
             new Set(drawn).size,
@@ -333,7 +329,7 @@ test('every page is asked through one function that hands back what was drawn', 
     }
 });
 
-test('a page whose request fails says so, with the reason, and never that the view is empty', async () => {
+test('a page whose request fails says so and never that the view is empty', async () => {
     for (const module of pages) {
         const drawn = await askingOf(module)(
             aClientThatCannotAnswer(),
@@ -341,17 +337,61 @@ test('a page whose request fails says so, with the reason, and never that the vi
         );
 
         assert.ok(
-            drawn.includes(noticeBody('failed', WHY_IT_COULD_NOT_ANSWER)),
-            `${module.name} does not say the view could not be read, or does not carry the ` +
-                'reason it was given. A reader who is not told is left to find it in the log, ' +
-                'which is the one place this condition says they must not have to look.',
+            drawn.includes(noticeBody('failed')),
+            `${module.name} does not say the view could not be read. A reader who is not told ` +
+                'is left to find it in the log, which is the one place this condition says they ' +
+                'must not have to look.',
         );
 
         assert.ok(
-            !drawn.includes(noticeBody('empty', undefined)),
+            !drawn.includes(noticeBody('empty')),
             `${module.name} draws a failed request as a view with nothing in it. A store that ` +
                 'would not open and a server nobody has used are different facts, and drawing ' +
                 'them the same way destroys the difference before a reader can see it.',
+        );
+    }
+});
+
+test('a page whose request fails passes none of what it failed with to the reader', async () => {
+    for (const module of pages) {
+        const drawn = await askingOf(module)(
+            aClientThatCannotAnswer(),
+            ASKED_OF_A_PAGE[module.name].asked,
+        );
+
+        assert.ok(
+            !drawn.includes(WHY_IT_COULD_NOT_ANSWER),
+            `${module.name} draws the words its request failed with. What this plugin knows ` +
+                'about a failure names a file in the server storage, it reaches the operator ' +
+                'on the settings page, and a signed-in reader who cannot repair a store learns ' +
+                'only where the server keeps things from it. Issue #64.',
+        );
+
+        for (const fragment of ['D:', 'jellyfin', 'stats.db']) {
+            assert.ok(
+                !drawn.includes(fragment),
+                `${module.name} draws "${fragment}", which came out of the failure rather than ` +
+                    'out of the words this plugin chose for a failed view.',
+            );
+        }
+    }
+});
+
+test('the drawing refuses a reason rather than dropping one it was handed', () => {
+    assert.throws(
+        () => stateNotice('failed', { reason: WHY_IT_COULD_NOT_ANSWER }),
+        /reason/,
+        'A page can hand the drawing the words a server gave and be told nothing. Silently ' +
+            'dropping them would leave the next reader of that page believing a reason reaches ' +
+            'somebody, which is the belief this decision is against.',
+    );
+
+    for (const state of STATES) {
+        assert.throws(
+            () => stateNotice(state, { title: 'Anything', reason: 'Anything else' }),
+            /reason/,
+            `The ${state} notice takes a reason. The words for a state belong to the drawing ` +
+                'module, and a caller adds nothing to them.',
         );
     }
 });
@@ -364,13 +404,13 @@ test('a page whose request answers nothing says the view is empty and never that
         );
 
         assert.ok(
-            drawn.includes(noticeBody('empty', undefined)),
+            drawn.includes(noticeBody('empty')),
             `${module.name} does not say the view has nothing in it when the server answered ` +
                 'with no figures.',
         );
 
         assert.ok(
-            !drawn.includes(noticeBody('failed', WHY_IT_COULD_NOT_ANSWER)),
+            !drawn.includes(noticeBody('failed')),
             `${module.name} draws an answer holding nothing as a failure, which tells a reader ` +
                 'something is broken when what is true is that nothing was recorded.',
         );

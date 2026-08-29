@@ -133,13 +133,20 @@ test('an account the store holds no years for is drawn as empty and never as a f
 test('a request that fails is drawn as a failure and never as a year with nothing in it', async () => {
     const client = {
         getUrl: (path) => path,
-        getJSON: () => Promise.reject(new Error('the store is away')),
+        getJSON: () => Promise.reject(new Error('D:\jellyfin\stats.db is away')),
     };
 
     const markup = await yourYearMarkup(client, { userId: ALICE });
 
-    assert.equal(markup.includes('the store is away'), true);
     assert.equal(markup.includes('stats-chart-failed'), true);
+    assert.equal(markup.includes('stats-chart-empty'), false);
+
+    /* And carries nothing out of the failure. The reason this plugin knows
+     * names a file in the server storage; it reaches the operator on the
+     * settings page and reaches a reader of this page not at all. Issue #64. */
+    assert.equal(markup.includes('D:'), false);
+    assert.equal(markup.includes('stats.db'), false);
+    assert.equal(markup.includes('is away'), false);
 });
 
 test('a year that fails after the years were read is still a failure', async () => {
@@ -153,7 +160,8 @@ test('a year that fails after the years were read is still a failure', async () 
 
     const markup = await yourYearMarkup(client, { userId: ALICE });
 
-    assert.equal(markup.includes('the year could not be folded'), true);
+    assert.equal(markup.includes('stats-chart-failed'), true);
+    assert.equal(markup.includes('the year could not be folded'), false);
 });
 
 test('the wrap-up that is drawn carries the years the selector offers', async () => {

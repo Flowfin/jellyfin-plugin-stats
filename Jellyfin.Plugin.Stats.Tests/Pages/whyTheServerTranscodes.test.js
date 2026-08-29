@@ -316,16 +316,13 @@ test('each of the four situations is drawn as itself', () => {
     const ready4 = whyTheServerTranscodes(ready([row('ContainerNotSupported', 1)]));
     const empty = whyTheServerTranscodes({ state: 'empty' });
     const loading = whyTheServerTranscodes({ state: 'loading' });
-    const failed = whyTheServerTranscodes({
-        state: 'failed',
-        reason: 'The store could not be opened.',
-    });
+    const failed = whyTheServerTranscodes({ state: 'failed' });
 
     assert.equal(new Set([ready4, empty, loading, failed]).size, 4);
     assert.match(empty, /Nothing recorded yet/);
     assert.match(loading, /Still loading/);
-    assert.match(failed, /Could not be read/);
-    assert.match(failed, /The store could not be opened\./);
+    assert.match(failed, /Statistics unavailable/);
+    assert.match(failed, /operator has the details/);
 });
 
 test('an answer that names no state is refused rather than drawn as ready', () => {

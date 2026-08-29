@@ -115,32 +115,43 @@ test('the three states a view can be in are told apart on sight', () => {
      * it landed and stop being so the first time the wording was tidied. */
     assert.match(nothing, /Nothing recorded yet/);
     assert.match(waiting, /Still loading/);
-    assert.match(broken, /Could not be read/);
+    assert.match(broken, /Statistics unavailable/);
 
     assert.match(nothing, /class="stats-chart-empty"/);
     assert.match(waiting, /class="stats-chart-loading"/);
     assert.match(broken, /class="stats-chart-failed"/);
 
     assert.doesNotMatch(broken, /Nothing recorded/);
-    assert.doesNotMatch(nothing, /Could not be read/);
+    assert.doesNotMatch(nothing, /Statistics unavailable/);
 });
 
-test('a failure that came with a reason draws it, and one that did not still stands', () => {
-    const withReason = stateNotice('failed', { reason: 'The store could not be opened.' });
-    const without = stateNotice('failed');
+test('a failure says the figures are unavailable and who holds the reason', () => {
+    const broken = stateNotice('failed');
 
-    assert.match(withReason, /The store could not be opened\./);
-    assert.match(withReason, /class="stats-chart-failed-reason"/);
-
-    assert.match(without, /Could not be read/);
-    assert.doesNotMatch(without, /stats-chart-failed-reason/);
+    /* The two halves the disclosure decided on #64 asks for, and no third. A
+     * reader is told the figures are not there and told where the reason lives,
+     * so a failure is still not something they have to find in the log. */
+    assert.match(broken, /Statistics unavailable/);
+    assert.match(broken, /operator has the details/);
 });
 
-test('a reason arrives as text and never as markup', () => {
-    const drawn = stateNotice('failed', { reason: '<script>alert(1)</script>' });
+test('a reason handed in by a caller is refused rather than drawn or dropped', () => {
+    /* The reason this plugin knows names a file in the server storage. It goes
+     * to the operator on the settings page, where the repair happens, and to
+     * nobody else. Refusing rather than ignoring puts that in front of whoever
+     * writes the line instead of leaving them believing it reached somebody.
+     * Issue #64. */
+    assert.throws(
+        () => stateNotice('failed', { reason: 'D:\jellyfin\stats.db is locked.' }),
+        /reason/,
+    );
+    assert.throws(() => stateNotice('empty', { reason: 'anything' }), /reason/);
+    assert.throws(() => stateNotice('loading', { title: 'A view', reason: 'anything' }), /reason/);
 
-    assert.doesNotMatch(drawn, /<script>/);
-    assert.match(drawn, /&lt;script&gt;/);
+    const drawn = stateNotice('failed');
+
+    assert.doesNotMatch(drawn, /stats-chart-failed-reason/);
+    assert.doesNotMatch(drawn, /jellyfin/);
 });
 
 test('a state this module does not know is refused rather than drawn blank', () => {

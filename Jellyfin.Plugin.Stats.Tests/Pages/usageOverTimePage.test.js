@@ -149,13 +149,21 @@ test('the days are asked for in one request and never one per day', async () => 
 test('a request that fails is drawn as a failure and never as an empty range', async () => {
     const client = {
         getUrl: () => 'url',
-        getJSON: () => Promise.reject(new Error('the store is away')),
+        getJSON: () => Promise.reject(new Error('D:\jellyfin\stats.db is away')),
     };
 
     const markup = await usageOverTimeMarkup(client, { days: 30, now: NOON });
 
-    assert.equal(markup.includes('the store is away'), true);
     assert.equal(markup.includes('stats-chart-failed'), true);
+    assert.equal(markup.includes('stats-chart-empty'), false);
+
+    /* And says nothing about why. The words a request fails with are the ones
+     * nearest to hand and they are not this plugin's to give out: the reason it
+     * knows names a file in the server storage, which the operator reads on the
+     * settings page and a signed-in reader can do nothing with. Issue #64. */
+    assert.equal(markup.includes('D:'), false);
+    assert.equal(markup.includes('stats.db'), false);
+    assert.equal(markup.includes('is away'), false);
 });
 
 test('the page states the bound rather than meeting it', () => {
