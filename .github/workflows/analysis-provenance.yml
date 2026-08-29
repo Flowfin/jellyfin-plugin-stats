@@ -1,0 +1,93 @@
+# Refuse a code-scanning analysis this branch stands on that this tree did not
+# produce.
+#
+# On 2026-08-28 a configuration outside this tree uploaded a C# analysis under
+# the category `scan-codeql.yaml` already writes. It had extracted without a
+# build, it reported nothing, and 57 alerts closed as `fixed` against it while
+# every site they name stood untouched in the source. #273 records the incident
+# and #277 is the gap it left: which configuration produced an analysis is a
+# fact the security tab holds and nothing here read.
+#
+# This reads it. The judge is a separate file with its own fixtures, and the
+# first step below runs them - on pull requests as well, where the reading step
+# does not, so a change that stops this refusing reds the pull request that made
+# it rather than being found the next time somebody empties the tab.
+#
+# It reads and never writes. The token is granted read on the repository and on
+# the security events and nothing else, and no step pushes, comments or opens
+# anything. No merge waits for it: the analyses at a head are a fact about a
+# branch rather than about a change, and a context on the merge path would be
+# asking a pull request to answer for the state of master.
+name: Analysis provenance
+
+on:
+  schedule:
+    # Daily, because the incident this exists for was not a change anybody
+    # pushed - a setting was turned on and the next scheduled scan carried it.
+    # A weekly read would leave a branch standing on a foreign analysis for up
+    # to a week.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Read-only. contents to check the judge out, security-events to read what the
+# branch stands on.
+permissions:
+  contents: read
+  security-events: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provenance:
+    name: An analysis came from this tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only the judge is needed, and nothing here pushes, so the history
+          # is not fetched and the token is not persisted.
+          persist-credentials: false
+
+      # First, because a judge that has stopped refusing reports nothing and
+      # passes, which reads exactly like a branch nothing is wrong with. This
+      # is the same reason the invariant lint self-tests before it scans.
+      - name: The judge still refuses what it names
+        run: python3 .github/workflows/analysis-provenance.py --self-test
+
+      - name: Read what the branch stands on
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROVENANCE_REPO: ${{ github.repository }}
+          # The branch the repository declares as its default, rather than a
+          # name written here, so a rename is followed instead of watched
+          # wrongly. An empty value is refused: this API answers a request
+          # carrying no ref with every ref there is, which would be a different
+          # question answered quietly.
+          PROVENANCE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROVENANCE_BRANCH}" ]; then
+            echo "::error::The event carried no default branch name, so there is nothing to read analyses for." >&2
+            exit 1
+          fi
+          echo "Reading ${PROVENANCE_REPO} on ${PROVENANCE_BRANCH}."
+          gh api --paginate \
+            "repos/${PROVENANCE_REPO}/code-scanning/analyses?ref=refs/heads/${PROVENANCE_BRANCH}&per_page=100" \
+            --jq '.[] | {id: .id, category: .category, key: .analysis_key, results: .results_count, sha: .commit_sha, created: .created_at}' \
+            > analyses.json
+          echo "$(wc -l < analyses.json) analysis upload(s) to judge"
+
+      - name: Refuse one this tree did not produce
+        if: github.event_name != 'pull_request'
+        env:
+          PROVENANCE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 .github/workflows/analysis-provenance.py
