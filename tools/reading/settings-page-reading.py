@@ -130,6 +130,12 @@ def finish_the_wizard(base):
                 "PreferredMetadataLanguage": "en",
             },
         ),
+        # Asking for the first user is what creates one. The wizard's own
+        # client reads this before it writes, and the write answers 404
+        # without it, because naming a user it cannot find is what that route
+        # reports as not found. The third dispatch of this reading stopped
+        # exactly here.
+        ("GET", "/Startup/User", None),
         ("POST", "/Startup/User", {"Name": ACCOUNT, "Password": SECRET}),
         (
             "POST",
