@@ -10,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -49,13 +50,24 @@ public class AuthorizationMatrixTests
     /// GET    /Stats/Reports/Top                     | nobody's       | 401       | 403              | 403                       | 200
     /// GET    /Stats/Reports/Breakdown               | nobody's       | 401       | 403              | 403                       | 200
     /// GET    /Stats/Reports/Usage                   | nobody's       | 401       | 403              | 403                       | 200
+    /// GET    /Stats/Reports/Year/{year}              | nobody's       | 401       | 403              | 403                       | 200
+    /// GET    /Stats/Users/{userId}/Statistics/{window} | their own    | 401       | 200              | 200                       | 200
+    /// GET    /Stats/Users/{userId}/Statistics/{window} | somebody else's| 401     | 403              | 403                       | 403
     /// </code>
-    /// The last three rows are the ones whose answer is not about a person, and
-    /// they are the only rows so far with a 200 in the administrator cell
-    /// alone. Who may ask for an aggregate view was decided on issue #55
+    /// The four rows asking for nobody's are the ones whose answer is not about
+    /// a person, and they are the only rows with a 200 in the administrator
+    /// cell alone. Who may ask for an aggregate view was decided on issue #55
     /// on 2026-08-24 and the answer is an administrator only, on least
     /// privilege; the two ordinary cells are that decision and not a rule about
     /// whose rows are whose, which is why the row asks for nobody's.
+    /// The year in review is one of the four and is the only aggregate that can
+    /// name a person. What puts an account on it is that account's own recorded
+    /// consent and nothing an administrator can do, so who may ASK it is this
+    /// table's question and what it may SAY about somebody is the consent rows'.
+    /// The last two rows are the opposite reading of the four above them. They
+    /// are entirely about one person, so the administrator cell is a 403 where
+    /// every aggregate row's is a 200, and elevation is not a route to them.
+    /// Issue #274.
     /// The two consent rows about somebody else's answer are the first
     /// condition of issue #42. An administrator cannot set a person's consent
     /// for them and cannot read what they said, and a consent an administrator
@@ -269,6 +281,193 @@ public class AuthorizationMatrixTests
         /// </remarks>
         NobodysInParticular
     }
+
+    /// <summary>
+    /// The table a person reads says the same thing as the rows the suite runs.
+    /// </summary>
+    /// <remarks>
+    /// The block above is the only part of this file anybody reads on purpose,
+    /// and `docs/what-is-stored.md` sends a reader here for who may reach one
+    /// person's history. Until this case existed nothing compared it with the
+    /// rows underneath it, and it had already fallen two endpoints behind: the
+    /// server year in review and the self statistics route both arrived with
+    /// rows and without lines, and every route stayed green because the walks
+    /// below read the rows and never the prose. Issue #303.
+    /// <para>
+    /// The comparison is on the method, whose rows the request asks for, the
+    /// four codes, and the literal segments of the path in order. A placeholder
+    /// in the block stands for whatever a row puts there, so
+    /// <c>{year}</c> matches a row asking for 2025 without this case holding a
+    /// list of the values rows happen to use.
+    /// </para>
+    /// <para>
+    /// WHAT IT CANNOT SEE, because a reader of the block should know what the
+    /// green means. Two rows can agree on every field it compares - the two
+    /// year routes do - so a line moved from one to the other passes. The
+    /// prose under the block is not read at all, so the sentences counting the
+    /// rows are held by nobody. Both are narrower than the drift this exists
+    /// against, which is a row with no line and a line with no row.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheTableSaysTheSameThingAsTheRowsUnderneathIt()
+    {
+        var documented = TheDocumentedRows();
+
+        Assert.Equal(Matrix.Count, documented.Count);
+
+        var left = Matrix.ToList();
+
+        foreach (var line in documented)
+        {
+            var found = left.FindIndex(row => Documents(line, row));
+
+            Assert.True(
+                found >= 0,
+                "The table names `" + line.Method + " " + line.Path + "` for " + line.WhoseText
+                + " answering " + line.Codes + ", and no row left in the suite says that.");
+
+            left.RemoveAt(found);
+        }
+
+        Assert.Empty(left);
+    }
+
+    /// <summary>
+    /// Whether one line of the table describes one row of the suite.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    /// <param name="row">The row.</param>
+    /// <returns>Whether they say the same thing.</returns>
+    private static bool Documents(DocumentedRow line, Row row)
+    {
+        if (line.Method != row.Method
+            || line.Whose != row.RowsAskedFor
+            || line.Codes != Codes(row))
+        {
+            return false;
+        }
+
+        var served = row.Path.Split('?')[0];
+        var at = 0;
+
+        foreach (var segment in line.Path.Split('/'))
+        {
+            if (segment.Length == 0 || segment.StartsWith('{'))
+            {
+                continue;
+            }
+
+            at = served.IndexOf(segment, at, StringComparison.Ordinal);
+
+            if (at < 0)
+            {
+                return false;
+            }
+
+            at += segment.Length;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The four codes of one row, as the table writes them.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <returns>The codes.</returns>
+    private static string Codes(Row row) => string.Format(
+        CultureInfo.InvariantCulture,
+        "{0} {1} {2} {3}",
+        row.Anonymous,
+        row.Someone,
+        row.SomeoneElse,
+        row.Administrator);
+
+    /// <summary>
+    /// The lines of the table in this file's own documentation.
+    /// </summary>
+    /// <remarks>
+    /// Read out of the source rather than out of a copy, because a copy is the
+    /// thing this case exists to refuse.
+    /// </remarks>
+    /// <returns>The lines, without the heading.</returns>
+    private static IReadOnlyList<DocumentedRow> TheDocumentedRows()
+    {
+        var source = File.ReadAllText("Jellyfin.Plugin.Stats.Tests/AuthorizationMatrixTests.cs".Repositioned());
+        var from = source.IndexOf("/// <code>", StringComparison.Ordinal);
+
+        Assert.True(from >= 0, "The table is no longer in a code block, so nothing here can find it.");
+
+        var to = source.IndexOf("/// </code>", from, StringComparison.Ordinal);
+
+        Assert.True(to > from, "The table's code block is not closed.");
+
+        var lines = new List<DocumentedRow>();
+
+        foreach (var line in source[from..to].Split('\n'))
+        {
+            var text = line.Trim();
+
+            if (!text.StartsWith("/// ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var cells = text[4..].Split('|');
+
+            if (cells.Length != 6 || cells[0].TrimStart().StartsWith("endpoint", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var endpoint = cells[0].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            Assert.True(endpoint.Length == 2, "A line of the table names " + endpoint.Length + " things where a method and a path were expected.");
+
+            lines.Add(new DocumentedRow(
+                endpoint[0],
+                endpoint[1],
+                cells[1].Trim(),
+                WhoseRowsOf(cells[1].Trim()),
+                string.Join(' ', cells[2..].Select(cell => cell.Trim()))));
+        }
+
+        Assert.NotEmpty(lines);
+
+        return lines;
+    }
+
+    /// <summary>
+    /// The account a line of the table says the request names.
+    /// </summary>
+    /// <param name="whose">What the cell says.</param>
+    /// <returns>Which account.</returns>
+    private static WhoseRows WhoseRowsOf(string whose) => whose switch
+    {
+        "their own" => WhoseRows.TheCallersOwn,
+        "somebody else's" => WhoseRows.SomebodyElses,
+        "nobody's" => WhoseRows.NobodysInParticular,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(whose),
+            whose,
+            "The table asks for rows in words this case has no meaning for, so it cannot compare the line."),
+    };
+
+    /// <summary>
+    /// One line of the table in this file's own documentation.
+    /// </summary>
+    /// <param name="Method">The method it names.</param>
+    /// <param name="Path">The path it names, with placeholders where a row puts a value.</param>
+    /// <param name="WhoseText">What its second cell says, kept for the failure message.</param>
+    /// <param name="Whose">Which account that cell means.</param>
+    /// <param name="Codes">Its four codes, in the order the table writes them.</param>
+    private sealed record DocumentedRow(
+        string Method,
+        string Path,
+        string WhoseText,
+        WhoseRows Whose,
+        string Codes);
 
     /// <summary>
     /// Gets the table crossed with the four callers, one case per cell.
