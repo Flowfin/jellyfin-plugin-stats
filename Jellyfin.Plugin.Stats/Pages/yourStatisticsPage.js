@@ -291,7 +291,7 @@ async function figuresFor(client, userId, chosen) {
 
         return yourStatistics(forDrawing(answer));
     } catch (failure) {
-        return yourStatistics({ state: 'failed', reason: reasonOf(failure) });
+        return yourStatistics({ state: 'failed' });
     }
 }
 
@@ -308,18 +308,8 @@ async function choicesFor(client, userId) {
 
         return yourPrivacyChoices(choicesForDrawing(answer));
     } catch (failure) {
-        return yourPrivacyChoices({ state: 'failed', reason: reasonOf(failure) });
+        return yourPrivacyChoices({ state: 'failed' });
     }
-}
-
-/**
- * What a failure is told to the reader as.
- *
- * @param {unknown} failure What was thrown.
- * @returns {string|undefined} The words, where there are any.
- */
-function reasonOf(failure) {
-    return failure instanceof Error ? failure.message : undefined;
 }
 
 /**

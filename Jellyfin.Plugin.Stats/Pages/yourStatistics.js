@@ -71,7 +71,7 @@ export function yourStatistics(answer) {
     if (state !== 'ready') {
         return (
             '<section class="stats-view stats-view-your-statistics">' +
-            stateNotice(state, { title: 'Your statistics', reason: answer.reason }) +
+            stateNotice(state, { title: 'Your statistics' }) +
             '</section>'
         );
     }
