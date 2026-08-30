@@ -53,16 +53,26 @@ namespace Jellyfin.Plugin.Stats.Aggregation;
 /// </remarks>
 public sealed record YearInReview
 {
+    /// <summary>
+    /// The words a year folded entirely out of play rows says about itself.
+    /// </summary>
+    private static readonly YearSources EverythingOffTheRows = new()
+    {
+        Totals = YearSources.Plays,
+        Detail = YearSources.Plays,
+    };
+
     private readonly IReadOnlyList<TitleRow> _rankedItems;
     private readonly IReadOnlyList<TitleRow> _rankedSeries;
     private readonly int _topCount;
 
-    private YearInReview(int year, string zoneId, YearCoverage coverage)
+    private YearInReview(int year, string zoneId, YearCoverage coverage, YearSources sources, bool anythingRecorded = false)
     {
         Year = year;
         ZoneId = zoneId;
         Coverage = coverage;
-        AnythingRecorded = false;
+        Sources = sources;
+        AnythingRecorded = anythingRecorded;
         TopItems = Array.Empty<TitleRow>();
         TopSeries = Array.Empty<TitleRow>();
         _rankedItems = Array.Empty<TitleRow>();
@@ -74,15 +84,16 @@ public sealed record YearInReview
         int year,
         string zoneId,
         YearCoverage coverage,
-        long plays,
-        TimeSpan watched,
-        long distinctItems,
-        TimeSpan longestPlay,
-        DailyUsageRow busiestDay,
-        MonthlyUsageRow busiestMonth,
-        long finished,
-        long abandoned,
-        DeliveryMethodShares delivery,
+        YearSources sources,
+        long? plays,
+        TimeSpan? watched,
+        long? distinctItems,
+        TimeSpan? longestPlay,
+        DailyUsageRow? busiestDay,
+        MonthlyUsageRow? busiestMonth,
+        long? finished,
+        long? abandoned,
+        DeliveryMethodShares? delivery,
         IReadOnlyList<TitleRow> rankedItems,
         IReadOnlyList<TitleRow> rankedSeries,
         int topCount)
@@ -90,6 +101,7 @@ public sealed record YearInReview
         Year = year;
         ZoneId = zoneId;
         Coverage = coverage;
+        Sources = sources;
         AnythingRecorded = true;
         Plays = plays;
         Watched = watched;
@@ -123,6 +135,7 @@ public sealed record YearInReview
         Year = folded.Year;
         ZoneId = folded.ZoneId;
         Coverage = folded.Coverage;
+        Sources = folded.Sources;
         AnythingRecorded = folded.AnythingRecorded;
         Plays = folded.Plays;
         Watched = folded.Watched;
@@ -165,6 +178,19 @@ public sealed record YearInReview
     /// year might have held, which is the second condition of issue #69.
     /// </remarks>
     public YearCoverage Coverage { get; }
+
+    /// <summary>
+    /// Gets where each group of figures here came from, and which of them could
+    /// not be taken at all.
+    /// </summary>
+    /// <remarks>
+    /// A year is folded from two sources with different reach, so a reader
+    /// handed one set of figures and one window cannot tell which of them the
+    /// raw rows still support. This is the second statement that says so, and it
+    /// is on the answer rather than known only by whoever wrote the fold,
+    /// because it is a response a page reads. Issues #254 and #66.
+    /// </remarks>
+    public YearSources Sources { get; }
 
     /// <summary>
     /// Gets a value indicating whether that person had any plays in that year.
@@ -364,7 +390,8 @@ public sealed record YearInReview
             return new YearInReview(
                 year,
                 zone.Id,
-                YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliestPlay: null));
+                YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliestPlay: null),
+                EverythingOffTheRows);
         }
 
         var days = DailyUsage.Over(theirs, zone);
@@ -379,6 +406,7 @@ public sealed record YearInReview
             year,
             zone.Id,
             YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliest),
+            EverythingOffTheRows,
             theirs.Count,
             watched,
             items.Count,
@@ -391,6 +419,101 @@ public sealed record YearInReview
             RankedOf(items),
             RankedOf(series),
             topCount);
+    }
+
+    /// <summary>
+    /// Folds one person's calendar year from the day-by-day rollups and from
+    /// bounded windows of their play rows.
+    /// </summary>
+    /// <remarks>
+    /// This is the shape a report uses. The overload above walks a sequence
+    /// somebody else chose and is what the two-ways cases compare against; this
+    /// one issues the reads itself and is bounded in both of the ways a year has
+    /// to be bounded.
+    /// <para>
+    /// WHAT COMES FROM WHERE IS NOT A CHOICE. A rollup carries only what a
+    /// rebuild can produce again from the rows, so it holds the plays, the
+    /// watched time, the completions and the four delivery counts and holds
+    /// nothing that names an item. The distinct items, the longest single play
+    /// and the two top lists are therefore read from the play rows and the rest
+    /// is read from the aggregates, and the answer says so in
+    /// <see cref="Sources"/> rather than leaving a reader to work out which of
+    /// its figures the raw rows still support.
+    /// </para>
+    /// <para>
+    /// THE ROLLUPS ARE USED ONLY WHERE THEIR DAYS MEAN WHAT THIS YEAR MEANS. A
+    /// store states the zone it was first keyed in and not the one the setting
+    /// names today, so a store keyed in another zone holds days that are not the
+    /// days this year is being read in. The caller passes null for the rollups
+    /// in that case and the totals are folded from the same windows as the rest,
+    /// which the answer also says.
+    /// </para>
+    /// <para>
+    /// THE PLAY ROWS ARE READ MONTH BY MONTH AND NEVER AS ONE YEAR. A year is a
+    /// range the caller cannot shorten, so a bound that refused the whole
+    /// wrap-up for holding too many plays would be a permanent refusal of
+    /// somebody's own history rather than one they could retry over a shorter
+    /// range. Twelve bounded reads take its place, and a window that is still
+    /// over the bound degrades exactly the figures it would have fed, with the
+    /// reason beside them. A year with one honest gap beats a year refused.
+    /// Issues #254 and #66.
+    /// </para>
+    /// </remarks>
+    /// <param name="rollups">
+    /// This account's rollups for the year, or null where the store has keyed
+    /// none or keyed them in another zone. Rows for other accounts, other days
+    /// and other years are filtered here rather than trusted to have been
+    /// filtered, for the reason the overload above filters its plays.
+    /// </param>
+    /// <param name="readWindow">
+    /// Reads the plays that started in one half-open window of UTC, or throws
+    /// where the window holds more than the bound allows. It is called once per
+    /// month of the year.
+    /// </param>
+    /// <param name="userId">Whose year this is.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year's days and its boundaries are read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <param name="oldestPlayStartedUtc">When the oldest row anywhere in the store started, in UTC, or null where the store holds none.</param>
+    /// <returns>The year, with each group of figures saying where it came from.</returns>
+    /// <exception cref="ArgumentException">A play carries a start that is not in UTC, or the oldest stored start is not.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The top list bound is not a positive number.</exception>
+    public static YearInReview Over(
+        IReadOnlyList<DailyRollup>? rollups,
+        ReadPlaysInAWindow readWindow,
+        Guid userId,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
+    {
+        ArgumentNullException.ThrowIfNull(readWindow);
+        ArgumentNullException.ThrowIfNull(zone);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
+
+        var theirRollups = TheirsInTheYear(rollups, userId, year);
+        var rows = ReadTheYearAMonthAtATime(readWindow, userId, year, zone);
+
+        if (rows.Refusal is string refusal)
+        {
+            return WhatTheAggregatesAloneSay(
+                theirRollups,
+                rollups is null,
+                refusal,
+                year,
+                zone,
+                topCount,
+                oldestPlayStartedUtc);
+        }
+
+        var fromRows = Over(rows.Plays, userId, year, zone, topCount, oldestPlayStartedUtc);
+
+        if (rollups is null)
+        {
+            return fromRows;
+        }
+
+        return WhatTheTwoSourcesSay(theirRollups, fromRows, year, zone, topCount, oldestPlayStartedUtc);
     }
 
     /// <summary>
@@ -438,6 +561,275 @@ public sealed record YearInReview
             this,
             Shown(_rankedItems, userId, access, _topCount),
             Shown(_rankedSeries, userId, access, _topCount));
+    }
+
+    /// <summary>
+    /// This account's rollups that fall inside the year, and none of anybody
+    /// else's. The filtering is done here rather than trusted to whoever read
+    /// them, which is the rule the play fold above keeps and for the same
+    /// reason: the reads that exist answer a question near enough to this one
+    /// that one careless call would tell a person about somebody else's year.
+    /// </summary>
+    private static List<DailyRollup> TheirsInTheYear(IReadOnlyList<DailyRollup>? rollups, Guid userId, int year)
+    {
+        var theirs = new List<DailyRollup>();
+
+        if (rollups is null)
+        {
+            return theirs;
+        }
+
+        foreach (var rollup in rollups)
+        {
+            if (rollup.UserId == userId && rollup.Day.Year == year)
+            {
+                theirs.Add(rollup);
+            }
+        }
+
+        return theirs;
+    }
+
+    /// <summary>
+    /// The year's play rows, read as twelve windows rather than as one year.
+    /// </summary>
+    /// <remarks>
+    /// Each month is a half-open window between two local midnights, so two
+    /// months laid end to end read each row once and a row on a boundary belongs
+    /// to exactly one of them. The months are local rather than a twelfth of the
+    /// year each, because that is what the figures are about, and the boundaries
+    /// come from <see cref="LocalDay"/> so a zone that moves its clocks moves
+    /// them here too.
+    /// <para>
+    /// The first window that refuses ends the walk. Every figure these rows feed
+    /// is a figure over the whole year - the distinct items, the longest play
+    /// and the two top lists - so a partial read cannot answer any of them, and
+    /// reading the remaining months would spend the reads to produce numbers
+    /// that would then have to be thrown away.
+    /// </para>
+    /// </remarks>
+    private static (List<PlayRecord> Plays, string? Refusal) ReadTheYearAMonthAtATime(
+        ReadPlaysInAWindow readWindow,
+        Guid userId,
+        int year,
+        TimeZoneInfo zone)
+    {
+        var plays = new List<PlayRecord>();
+
+        for (var month = 1; month <= 12; month++)
+        {
+            var from = LocalDay.StartOf(new DateOnly(year, month, 1), zone);
+            var to = LocalDay.StartOf(
+                month == 12 ? new DateOnly(year + 1, 1, 1) : new DateOnly(year, month + 1, 1),
+                zone);
+
+            var window = readWindow(from, to);
+
+            if (window.OverTheBound is string because)
+            {
+                return (plays, because);
+            }
+
+            foreach (var play in window.Plays)
+            {
+                if (play.UserId == userId)
+                {
+                    plays.Add(play);
+                }
+            }
+        }
+
+        return (plays, null);
+    }
+
+    /// <summary>
+    /// The year as the aggregates alone can say it, where the play rows could
+    /// not be read.
+    /// </summary>
+    /// <remarks>
+    /// Everything the rollups carry stands and the four figures only a row
+    /// carries are absent with the reason beside them. Where there are no
+    /// rollups either, nothing stands: the answer says that something was
+    /// recorded and that none of it could be computed, which is a third
+    /// statement beside a quiet year and a full one, and it is the honest one.
+    /// A set of noughts here would read as a year somebody spent not watching.
+    /// </remarks>
+    private static YearInReview WhatTheAggregatesAloneSay(
+        List<DailyRollup> theirs,
+        bool noRollups,
+        string refusal,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
+    {
+        if (noRollups || theirs.Count == 0)
+        {
+            return new YearInReview(
+                year,
+                zone.Id,
+                YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliestPlay: null),
+                new YearSources
+                {
+                    Totals = YearSources.NotComputed,
+                    Detail = YearSources.NotComputed,
+                    NotComputedBecause = refusal,
+                },
+                anythingRecorded: true);
+        }
+
+        return FoldedFrom(
+            theirs,
+            year,
+            zone,
+            topCount,
+            oldestPlayStartedUtc,
+            new YearSources
+            {
+                Totals = YearSources.Aggregates,
+                Detail = YearSources.NotComputed,
+                NotComputedBecause = refusal,
+            },
+            distinctItems: null,
+            longestPlay: null,
+            rankedItems: Array.Empty<TitleRow>(),
+            rankedSeries: Array.Empty<TitleRow>());
+    }
+
+    /// <summary>
+    /// The year with its totals off the aggregates and its item figures off the
+    /// rows that were read.
+    /// </summary>
+    /// <remarks>
+    /// Where the aggregates hold the year and the rows for it are gone, the
+    /// totals stand and the four figures a row carries are reported as not
+    /// computed with that as the reason. That is the state a retention sweep
+    /// produces on purpose, and an answer that simply left them absent would be
+    /// indistinguishable from a year in which nothing nameable was watched.
+    /// </remarks>
+    private static YearInReview WhatTheTwoSourcesSay(
+        List<DailyRollup> theirs,
+        YearInReview fromRows,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
+    {
+        if (theirs.Count == 0)
+        {
+            // Nothing was rolled up for this account in this year, so whatever
+            // the rows said is the whole answer and it says it came off them.
+            return fromRows;
+        }
+
+        if (!fromRows.AnythingRecorded)
+        {
+            return FoldedFrom(
+                theirs,
+                year,
+                zone,
+                topCount,
+                oldestPlayStartedUtc,
+                new YearSources
+                {
+                    Totals = YearSources.Aggregates,
+                    Detail = YearSources.NotComputed,
+                    NotComputedBecause =
+                        "The play rows this year's item figures are read from are no longer in the store, so the day-by-day aggregates are all that is left of it.",
+                },
+                distinctItems: null,
+                longestPlay: null,
+                rankedItems: Array.Empty<TitleRow>(),
+                rankedSeries: Array.Empty<TitleRow>());
+        }
+
+        return FoldedFrom(
+            theirs,
+            year,
+            zone,
+            topCount,
+            oldestPlayStartedUtc,
+            new YearSources
+            {
+                Totals = YearSources.Aggregates,
+                Detail = YearSources.Plays,
+            },
+            fromRows.DistinctItems,
+            fromRows.LongestPlay,
+            fromRows._rankedItems,
+            fromRows._rankedSeries);
+    }
+
+    /// <summary>
+    /// The figures a rollup carries, added up into a year.
+    /// </summary>
+    /// <remarks>
+    /// The days are built from the rollup rows and then read by the same two
+    /// folds the play route uses, so the busiest day and the busiest month here
+    /// and there are one definition rather than two that could disagree about
+    /// where a day ends. The rows for one day are added together first, because
+    /// a rollup is one day for one kind of item on one client and a day is all
+    /// of them.
+    /// </remarks>
+    private static YearInReview FoldedFrom(
+        List<DailyRollup> theirs,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc,
+        YearSources sources,
+        long? distinctItems,
+        TimeSpan? longestPlay,
+        IReadOnlyList<TitleRow> rankedItems,
+        IReadOnlyList<TitleRow> rankedSeries)
+    {
+        var perDay = new Dictionary<DateOnly, DayTally>();
+        var everyDay = new DayTally();
+        long plays = 0;
+        long completed = 0;
+        var watched = TimeSpan.Zero;
+
+        foreach (var rollup in theirs)
+        {
+            plays += rollup.Plays;
+            completed += rollup.Completed;
+            watched += rollup.Watched;
+            everyDay.Add(rollup);
+
+            if (!perDay.TryGetValue(rollup.Day, out var tally))
+            {
+                tally = new DayTally();
+                perDay[rollup.Day] = tally;
+            }
+
+            tally.Add(rollup);
+        }
+
+        var days = new List<DailyUsageRow>(perDay.Count);
+        foreach (var pair in perDay)
+        {
+            days.Add(pair.Value.AsRow(pair.Key));
+        }
+
+        days.Sort(static (left, right) => left.Day.CompareTo(right.Day));
+
+        return new YearInReview(
+            year,
+            zone.Id,
+            YearCoverage.Of(year, oldestPlayStartedUtc, zone, days[0].Day),
+            sources,
+            plays,
+            watched,
+            distinctItems,
+            longestPlay,
+            BusiestOf(days, static row => row.Watched),
+            BusiestOf(MonthsOf(days), static row => row.Watched),
+            completed,
+            plays - completed,
+            everyDay.AsShares(),
+            rankedItems,
+            rankedSeries,
+            topCount);
     }
 
     /// <summary>
@@ -622,6 +1014,32 @@ public sealed record YearInReview
         }
 
         return new DateTimeOffset(play.StartedUtc);
+    }
+
+    /// <summary>
+    /// The rollup rows of one day added together.
+    /// </summary>
+    private sealed class DayTally
+    {
+        private long _unknown;
+        private long _directPlay;
+        private long _directStream;
+        private long _transcode;
+        private TimeSpan _watched;
+
+        public void Add(DailyRollup rollup)
+        {
+            _unknown += rollup.UnknownMethod;
+            _directPlay += rollup.DirectPlay;
+            _directStream += rollup.DirectStream;
+            _transcode += rollup.Transcode;
+            _watched += rollup.Watched;
+        }
+
+        public DeliveryMethodShares AsShares()
+            => DeliveryMethodShares.Of(_unknown, _directPlay, _directStream, _transcode);
+
+        public DailyUsageRow AsRow(DateOnly day) => new(day, _watched, AsShares());
     }
 
     /// <summary>
