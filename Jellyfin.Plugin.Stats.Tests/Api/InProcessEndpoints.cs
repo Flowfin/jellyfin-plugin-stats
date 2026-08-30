@@ -273,7 +273,13 @@ public sealed class InProcessEndpoints : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
-        public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+        // The oldest row on a store holding none, which is the second read an
+        // aggregate route takes and is admitted for the same reason as the
+        // range above: a matrix cell about who may ask has to reach the answer
+        // rather than a failure. Null is what an empty store honestly holds,
+        // and it is what makes the answer's window say it covers no part of the
+        // year rather than claiming the whole of it.
+        public DateTime? OldestPlayStartedUtc() => null;
 
         public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();
 

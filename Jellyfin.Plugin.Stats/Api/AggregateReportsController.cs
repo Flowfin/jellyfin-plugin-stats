@@ -358,6 +358,77 @@ public sealed class AggregateReportsController : ControllerBase
     }
 
     /// <summary>
+    /// The server's wrap-up for one calendar year.
+    /// </summary>
+    /// <remarks>
+    /// The same figures a person's own year answers with, folded over every play
+    /// on the server, beside the client and transcode-reason breakdowns and the
+    /// one shape here that may carry an account.
+    /// <para>
+    /// WHAT NAMES ANYBODY ON THIS RESPONSE IS THAT ACCOUNT'S OWN RECORDED
+    /// CONSENT AND NOTHING ELSE. Every figure outside the leaderboard is folded
+    /// without a key for who watched, so an account that has not agreed appears
+    /// nowhere on this answer under any spelling - not as an identifier, not as
+    /// a name, and not as a row of its own inside the group everybody who has
+    /// not agreed was folded into. That the administrator asking is an
+    /// administrator gives them no way to see it: this route reads the same
+    /// register the account's own endpoint writes, and an administrator cannot
+    /// write it. Issues #68 and #42.
+    /// </para>
+    /// <para>
+    /// The year is a route value and never a range, so nothing a caller sends
+    /// decides how much of the store is read: the year is walked in twelve
+    /// windows, each under the same cap every other shape here reads under, and
+    /// a window over the cap costs the figures rather than the answer.
+    /// </para>
+    /// <para>
+    /// The zone is the one named in the settings, read while the request is
+    /// served, for the reason the daily usage route gives.
+    /// </para>
+    /// </remarks>
+    /// <param name="year">The calendar year.</param>
+    /// <returns>The server's year.</returns>
+    /// <response code="200">The year, naming only the accounts that agreed to be named.</response>
+    /// <response code="400">The year is not one this plugin can read a calendar year for.</response>
+    /// <response code="401">The request carried no authenticated caller.</response>
+    /// <response code="403">The caller is not an administrator.</response>
+    /// <response code="503">The plugin could not open its store, so it has no answer rather than an empty one.</response>
+    [HttpGet("Year/{year:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<ServerYearInReview>> GetServerYear([FromRoute] int year)
+    {
+        var caller = await _callers.GetAuthorizationInfo(HttpContext).ConfigureAwait(false);
+
+        if (!CallerIdentity.IsAnAdministrator(caller))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (year < 1 || year > 9999)
+        {
+            // A year outside what a calendar year can be is refused here rather
+            // than reaching the fold, where it would arrive as an exception from
+            // building a date and be answered as a fault of the server.
+            return BadRequest();
+        }
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+
+        try
+        {
+            return Ok(_reports.ServerYearFor(year, zone, TopListLength));
+        }
+        catch (StoreCouldNotBeOpenedException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>
     /// Reads the range off the request, where it is one this plugin will answer
     /// over.
     /// </summary>
