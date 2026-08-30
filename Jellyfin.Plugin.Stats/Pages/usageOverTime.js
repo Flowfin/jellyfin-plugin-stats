@@ -83,7 +83,7 @@ const FIGURES = {
  * and the zone the days were read in written beneath both, or says which of the
  * other three situations the view is in.
  *
- * @param {{state: string, reason?: string, zone?: string, plays?: number, watchedMinutes?: number, days?: ReadonlyArray<{day: string, watchedMinutes: number|null, delivery: {plays: number|null, unknown: number, transcode: number}}>}} answer The range, as the server folded it, or the state it is in instead.
+ * @param {{state: string, zone?: string, plays?: number, watchedMinutes?: number, days?: ReadonlyArray<{day: string, watchedMinutes: number|null, delivery: {plays: number|null, unknown: number, transcode: number}}>}} answer The range, as the server folded it, or the state it is in instead.
  * @param {{figure?: string}} [options] Which of the two figures to draw.
  * @returns {string} The view.
  */
@@ -106,7 +106,7 @@ export function usageOverTime(answer, options = {}) {
     if (state !== 'ready') {
         return (
             '<figure class="stats-view stats-view-range">' +
-            stateNotice(state, { title: figure.title, reason: answer.reason }) +
+            stateNotice(state, { title: figure.title }) +
             '</figure>'
         );
     }

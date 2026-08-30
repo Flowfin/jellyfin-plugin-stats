@@ -83,7 +83,7 @@ const DIMENSIONS = {
  * plays of theirs the server re-encoded, or says which of the other three
  * situations the view is in.
  *
- * @param {{state: string, reason?: string, dimension?: string, plays?: number, rows?: ReadonlyArray<{name: string|null, delivery: {plays: number, unknown: number, transcode: number}}>, combined?: {plays: number, unknown: number, transcode: number}|null}} answer The breakdown, as the server folded it, or the state it is in instead.
+ * @param {{state: string, dimension?: string, plays?: number, rows?: ReadonlyArray<{name: string|null, delivery: {plays: number, unknown: number, transcode: number}}>, combined?: {plays: number, unknown: number, transcode: number}|null}} answer The breakdown, as the server folded it, or the state it is in instead.
  * @returns {string} The view.
  */
 export function clientsAndDevices(answer) {
@@ -93,7 +93,7 @@ export function clientsAndDevices(answer) {
     if (state !== 'ready') {
         return (
             '<figure class="stats-view stats-view-breakdown">' +
-            stateNotice(state, { title: dimension.plays, reason: answer.reason }) +
+            stateNotice(state, { title: dimension.plays }) +
             '</figure>'
         );
     }

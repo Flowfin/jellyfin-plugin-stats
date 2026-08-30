@@ -60,7 +60,7 @@ const FIGURES = {
  * Draws a week, with the zone its hours were counted in written under it, or
  * says which of the other three situations the view is in.
  *
- * @param {{state: string, reason?: string, zone?: string, cells?: ReadonlyArray<{weekday: number, hour: number, plays: number|null, watchedMinutes: number|null}>}} answer The week, as the server counted it, or the state it is in instead.
+ * @param {{state: string, zone?: string, cells?: ReadonlyArray<{weekday: number, hour: number, plays: number|null, watchedMinutes: number|null}>}} answer The week, as the server counted it, or the state it is in instead.
  * @param {{figure?: string}} [options] Which of the two figures to draw.
  * @returns {string} The view.
  */
@@ -83,7 +83,7 @@ export function usageByHourAndWeekday(answer, options = {}) {
     if (state !== 'ready') {
         return (
             '<figure class="stats-view stats-view-week">' +
-            stateNotice(state, { title: figure.title, reason: answer.reason }) +
+            stateNotice(state, { title: figure.title }) +
             '</figure>'
         );
     }

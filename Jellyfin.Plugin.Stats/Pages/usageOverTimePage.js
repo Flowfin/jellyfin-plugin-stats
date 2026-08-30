@@ -168,10 +168,11 @@ export async function usageOverTimeMarkup(client, asked) {
 
         return usageOverTime(forDrawing(answer), { figure: asked.figure });
     } catch (failure) {
-        return usageOverTime(
-            { state: 'failed', reason: failure instanceof Error ? failure.message : undefined },
-            { figure: asked.figure },
-        );
+        /* The words the request failed with are not passed on. What a caller may
+         * be told about a failure here is decided on #64 and is the same for
+         * every failure: the figures are unavailable and the operator has the
+         * details. Issue #64. */
+        return usageOverTime({ state: 'failed' }, { figure: asked.figure });
     }
 }
 
