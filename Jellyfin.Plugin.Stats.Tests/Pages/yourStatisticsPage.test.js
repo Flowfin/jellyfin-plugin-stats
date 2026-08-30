@@ -286,8 +286,14 @@ test('a figures request that fails leaves the controls on the page', async () =>
     const drawn = await yourStatisticsMarkup(client, { userId: CALLER });
 
     assert.ok(
-        drawn.includes('The store could not be opened.'),
-        'The figures half does not say why it could not be read.',
+        drawn.includes('Statistics unavailable'),
+        'The figures half does not say that it could not be read.',
+    );
+    assert.ok(
+        !drawn.includes('The store could not be opened.'),
+        'The words the request failed with reached the reader. What a failure here can name is a ' +
+            'file in the server storage, which the operator reads on the settings page and nobody ' +
+            'else reads at all.',
     );
     assert.ok(
         drawn.includes('stats-view-your-choices-delete-control'),
