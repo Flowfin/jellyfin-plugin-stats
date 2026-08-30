@@ -8,8 +8,9 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.Stats.ScheduledTasks;
 
 /// <summary>
-/// Deletes the play rows belonging to accounts the server does not have any
-/// more, and gives the space they were using back to the file system.
+/// Deletes what the store still holds about accounts the server does not have
+/// any more - their play rows and their consent record - and gives the space
+/// those were using back to the file system.
 /// </summary>
 /// <remarks>
 /// The deletion that runs when an account is removed only fires while this
@@ -24,6 +25,17 @@ namespace Jellyfin.Plugin.Stats.ScheduledTasks;
 /// the accounts the server has and deleting everything else, is a set
 /// difference computed from a list that is authoritative only while it is
 /// complete.
+/// </para>
+/// <para>
+/// WHICH IDENTIFIERS THE STORE HOLDS IS TWO QUESTIONS AND NOT ONE. The plays
+/// name an account and so does a consent record, and neither set contains the
+/// other: an account that answered the question and watched nothing, or whose
+/// rows have aged out under retention, is in the second and not the first. A
+/// sweep walking only the first leaves the record of somebody the server no
+/// longer has, which is personal detail about a departed person kept by a
+/// plugin whose documentation says how to remove it - and a standing agreement
+/// nobody can withdraw, because the endpoint that withdraws one refuses every
+/// caller but the account itself. Issue #296.
 /// </para>
 /// <para>
 /// EVERY LOOKUP IS MADE BEFORE THE FIRST DELETION. An identifier the server
@@ -90,8 +102,8 @@ public sealed class UnknownUserSweep
     }
 
     /// <summary>
-    /// Deletes every row whose user the server no longer has, then reclaims the
-    /// space where anything went.
+    /// Deletes every row and every consent record whose account the server no
+    /// longer has, then reclaims the space where anything went.
     /// </summary>
     /// <remarks>
     /// A server with no accounts at all is not guarded against, and that is a
@@ -105,7 +117,7 @@ public sealed class UnknownUserSweep
     /// </remarks>
     /// <param name="progress">Told how far through the sweep is, from nothing to a hundred.</param>
     /// <param name="cancellationToken">Checked between lookups and between bites.</param>
-    /// <returns>How many rows were deleted.</returns>
+    /// <returns>How many PLAY ROWS were deleted. A consent record is one removal whatever it held and is not a row, so it is not counted here and a run that removed only records answers nought.</returns>
     public long Run(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
@@ -114,8 +126,28 @@ public sealed class UnknownUserSweep
 
         progress.Report(0);
 
+        // Two sets, because the store holds an account in two places and they
+        // are not the same set. An account that answered the consent question
+        // and then watched nothing, or whose rows have since aged out under
+        // retention, holds a record and no plays: walking the plays alone never
+        // reaches it, and its record outlives the account it is about. Issue
+        // #296.
+        var withConsent = store.UserIdsWithConsent();
+
+        var holdsARecord = new HashSet<Guid>(withConsent);
+
+        var everyAccountTheStoreHolds = new List<Guid>(store.UserIdsWithPlays());
+        var seen = new HashSet<Guid>(everyAccountTheStoreHolds);
+        foreach (var userId in withConsent)
+        {
+            if (seen.Add(userId))
+            {
+                everyAccountTheStoreHolds.Add(userId);
+            }
+        }
+
         var gone = new List<Guid>();
-        foreach (var userId in store.UserIdsWithPlays())
+        foreach (var userId in everyAccountTheStoreHolds)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -126,6 +158,7 @@ public sealed class UnknownUserSweep
         }
 
         long deleted = 0;
+        var recordsForgotten = 0;
         for (var i = 0; i < gone.Count; i++)
         {
             while (true)
@@ -148,6 +181,17 @@ public sealed class UnknownUserSweep
                 deleted += bitten;
             }
 
+            // Only where the store said this account holds one, so the sweep
+            // issues no removal against a table that has nothing to remove and
+            // the count below says what actually went. What is NOT done is
+            // asking the store again: the set was read in the same open, before
+            // the first deletion, like every other lookup this sweep makes.
+            if (holdsARecord.Contains(gone[i]))
+            {
+                store.ForgetConsentFor(gone[i]);
+                recordsForgotten++;
+            }
+
             // Named here rather than once at the end, because this sweep knows
             // exactly which accounts it took rows from and a held year for an
             // account the server no longer has is the same figure about a
@@ -163,8 +207,10 @@ public sealed class UnknownUserSweep
 
         // Skipped where nothing was deleted, because a rewrite of the file to
         // reclaim no pages is that whole cost for no reason, and this task
-        // finds nothing on almost every run it ever makes.
-        if (deleted > 0)
+        // finds nothing on almost every run it ever makes. A record that went
+        // freed pages as surely as a row did, so it counts here even though it
+        // is not what the return value is about.
+        if (deleted > 0 || recordsForgotten > 0)
         {
             store.ReclaimFreedSpace();
         }

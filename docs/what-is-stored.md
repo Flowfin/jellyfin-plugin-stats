@@ -173,6 +173,12 @@ along with their rows, because an account the server no longer has has nobody
 left to have answered. A person deleting their own history keeps their answer:
 they are still here, and the answer is still theirs.
 
+The daily task described below covers the deletion this plugin did not see. It
+reaches an account holding a record and no plays as well as one holding both,
+because a record is a place the store names an account and the plays are
+another, and the two sets are not the same one: an account that answered the
+question and then watched nothing is only in the first.
+
 ## One row per day, account, kind of item and client
 
 `daily_rollups` holds the day-by-day account of what was played, folded as the
@@ -365,8 +371,9 @@ using back to the file so the bytes are gone from it rather than sitting in a
 page nothing points at. What it cannot cover is a user deleted while this plugin
 was not loaded, because a plugin that is not running hears nothing.
 
-A daily task covers that one. It reads the accounts the store still holds rows
-for, asks the server about each of them, and deletes the rows of the ones the
+A daily task covers that one. It reads every account the store still names -
+those it holds rows for and those it holds a consent record for - asks the
+server about each of them, and deletes the rows and the record of the ones the
 server does not have any more, then gives that space back the same way. It is in
 the server's scheduled task list as "Delete playback statistics belonging to
 accounts the server no longer has", so an administrator can also run it by hand,

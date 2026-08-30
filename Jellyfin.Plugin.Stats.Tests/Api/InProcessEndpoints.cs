@@ -277,6 +277,8 @@ public sealed class InProcessEndpoints : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
+        public IReadOnlyList<Guid> UserIdsWithConsent() => throw NotPartOfThis();
+
         // Null is what a store holding no rows honestly holds, and it is the
         // second read an answer over a window takes - the server year takes it
         // as well as the personal figures do. It is admitted for the same reason
