@@ -168,6 +168,15 @@ Only the account itself writes this. An administrator cannot set it and cannot
 read it, which is one of the rows in the authorization matrix named above, and a
 consent an administrator could record is not consent.
 
+What an administrator does learn from it is the thing agreeing is for. The
+server-wide year in review names the accounts that agreed and folds everybody
+else into one group carrying no identifier, so an account named there has
+agreed, and an account not named there has either not agreed or has no play in
+the year. That is the only shape in this plugin that puts an account on a
+server-wide answer. The record is read while the answer is folded rather than
+kept beside it, so a withdrawal takes the account off the next request rather
+than the next fold.
+
 The record goes when the account does. Deleting a user takes what that user said
 along with their rows, because an account the server no longer has has nobody
 left to have answered. A person deleting their own history keeps their answer:
@@ -221,7 +230,19 @@ day keyed in two zones is a file nothing can read as a day.
 is filled as rows are written, so an upgrade brings the table and none of the
 days the store already has. What produces those is a rebuild, which reads the
 play rows a page at a time and folds them again from scratch, throwing away every
-row here first. Nothing reads this table yet; the report that will is #254.
+row here first.
+
+Two answers read this table. An account's own calendar year folds from it, and
+so do that account's own figures over the last thirty days, the last twelve
+months and all time. Both read it once per request and bound the read by days
+rather than by plays, so a window holding more rows than the bound allows is a
+figure that could not be taken rather than one taken from part of the store. The
+server-wide year is not one of the two: it folds the play rows of the year
+directly.
+
+On a store upgraded from a build that did not have this table, those two answers
+read a table holding none of the days the store already had, until a rebuild
+fills them.
 
 The rebuild is what makes this table derived rather than authoritative. A table
 that cannot be produced again from the rows underneath it is the only copy of
@@ -300,25 +321,53 @@ which fires on a near miss of its own. Neither table carries any of them.
 
 ## Who can read it
 
-Two routes reach the store from outside the server process, and both of them
-serve one account itself:
+Two kinds of route reach the store from outside the server process, and which
+kind a route is decides who may ask it.
 
+Six serve one account itself, and refuse a request naming any account other than
+the one that made it:
+
+- `GET /Stats/Users/{userId}/Years` answers which calendar years that account
+  has plays in.
 - `GET /Stats/Users/{userId}/Years/{year}` answers with that account's own
   calendar year.
+- `GET /Stats/Users/{userId}/Statistics/{window}` answers with that account's
+  own plays, watched time, top items and completion over one of three windows:
+  the last thirty days, the last twelve months, or all time.
+- `GET /Stats/Users/{userId}/Consent` answers with what that account has said
+  about being named.
+- `PUT /Stats/Users/{userId}/Consent` records what that account is saying now.
 - `DELETE /Stats/Users/{userId}/Plays` removes that account's own plays, all of
   them or those that started inside a window the request names.
 
-Both refuse a request naming any account other than the one that made it, and an
-administrator is refused by the same line as anybody else. There is no elevated
-route to one person's history here, which is the whole of what this plugin has
-to say about who may reach it, and it is a table rather than a sentence:
+An administrator is refused by the same line as anybody else on all six. There
+is no elevated route to one person's history here.
+
+Four answer about nobody in particular and are served to an administrator alone,
+which is least privilege rather than a statement about whose rows are whose:
+
+- `GET /Stats/Reports/Top` answers with the most played titles over a range.
+- `GET /Stats/Reports/Breakdown` answers with a range grouped by one dimension.
+- `GET /Stats/Reports/Usage` answers with a range day by day.
+- `GET /Stats/Reports/Year/{year}` answers with the server's year in review.
+
+The last of those is the one place an aggregate names a person, and the only
+thing that puts an account on it is that account's own recorded consent, as the
+consent table above says.
+
+Who may ask what is a table rather than a sentence:
 `Jellyfin.Plugin.Stats.Tests/AuthorizationMatrixTests.cs` carries every endpoint
 crossed with four callers, refuses an endpoint that has no row in it, and
-refuses one that has stopped carrying an authorization attribute.
+refuses one that has stopped carrying an authorization attribute. The list above
+is not held to that table by anything, and it went stale once already: when the
+self statistics route and the two year routes landed, this section still said
+two routes existed.
 
-No page in this plugin sends either request. The settings page reads settings
-and shows no stored row, so a person reaching either route today addresses it by
-hand.
+Three pages this plugin adds to the server's interface send some of these
+requests. Two are a person's own - one showing the figures above with the
+consent and deletion controls beside them, one showing their year - and one is
+an administrator's view of usage over time. The settings page reads settings and
+shows no stored row.
 
 The year answer is cut to what the account asking may still see. Every label in
 it comes off the row that was written when the play happened, and the library is
@@ -329,6 +378,15 @@ reader cannot see; an item the library no longer holds is named, because a play
 of something that has since been deleted is still that account's own play and
 there is no access question left to ask about it. The rows are untouched by any
 of this: what changes is the answer, per request, and never the store.
+
+**That cut is on the year answer and on no other.** The statistics answer above
+carries a top list too, built from the same play rows, and the library is not
+asked about the items it names. So an account that played an item it may no
+longer see is told the item's name there and is not told it in its own year, and
+the two answers about the same rows disagree. Nothing about this reaches another
+account: it is that account's own play either way. It is written here because it
+is a difference between two routes a reader would expect to behave alike, and
+issue #299 is where it is held.
 
 Beyond those two, the readers of this data are whoever can read the file. That is
 the server's own account and anyone with access to the server data directory or
@@ -388,22 +446,17 @@ A statistics plugin is usually expected to offer these, and this one does not.
 They are absences rather than controls, and none of them should be read as
 partly present.
 
-Consent is recorded and nothing reads it yet. An account can say whether it may
-be named and read back what it said, and the record is the table above; what
-does not exist is any view that would show one person's plays as theirs, so
-there is nothing yet for an agreement to permit or a withdrawal to stop. Issue
-#42 stays open on that half.
+Nobody can stop their own plays being recorded. Every play that gets past the
+four controls above is written whatever the account said about consent, which is
+what the wording a person is shown tells them: agreeing decides whether a
+server-wide answer may name them, and it decides nothing about whether the rows
+exist. The controls that stop a row being written are an administrator's, and a
+person asking for their own rows to stop being kept is asking somebody else to
+change a setting.
 
-Every play that gets past the four controls above is recorded whatever the
-account said, which is what the wording tells the person reading it.
-
-A signed in user cannot export their own history. Reading their own year and
-deleting their own plays are the two routes named above; there is no endpoint
-that hands somebody a copy of their rows to keep.
-
-Nor is there a page for any of it. The two routes exist and nothing in the
-server's interface offers them, so what a person can do about their own history
-today they can do only by addressing the route themselves.
+A signed in user cannot export their own history. The self routes named above
+read it and one of them deletes it; none of them hands somebody a copy of their
+rows to keep.
 
 Nothing reports what the sweep for forgotten accounts removed. The count goes to
 the server's task list as the run's own result and to nothing that keeps it, and
@@ -417,6 +470,13 @@ Until the rest of those land, what an administrator can do about one person's
 data is to delete their account, exclude them from future capture, shorten the
 retention window for everybody, or delete the store file. Only the first of
 those is about one person and it takes their account with it.
+
+What is written here is what the tree said when this document was last read
+against it, and nothing refuses a paragraph that has gone stale since. This
+section understated a control once already: it said the consent record was read
+by nothing while a server-wide answer was folding it, which is the direction a
+reader cannot catch, because somebody looking for a control a document denies
+does not look. Issue #297 is where that was repaired and where the reading is.
 
 ## What this document does not cover
 
