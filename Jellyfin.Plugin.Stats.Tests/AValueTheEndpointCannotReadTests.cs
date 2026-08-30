@@ -223,7 +223,16 @@ public class AValueTheEndpointCannotReadTests
             // it maps through a ClosedSet<T> whose members come from an
             // enumeration the account is absent from, so a request cannot ask
             // to be shown people whatever it writes here.
-            "dimension"
+            "dimension",
+
+            // Which stretch of time a person's own figures are read over. It is
+            // the same case again and admitted for the same reason: three names
+            // mapped through a ClosedSet<T>, refused before the store is opened,
+            // and never reaching the store as anything but a member of an
+            // enumeration this build declares. It is NOT a range, which is the
+            // shape that would let a caller decide how much of the store one
+            // request reads. Issue #274.
+            "window"
         };
 
         var taken = typeof(YourYearController).Assembly
