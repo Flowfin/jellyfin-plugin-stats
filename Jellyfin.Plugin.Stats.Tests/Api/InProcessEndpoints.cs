@@ -259,10 +259,14 @@ public sealed class InProcessEndpoints : IDisposable
 
         public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();
 
-        // A rollup this store never kept. The same refusal as the reads above
-        // and for the same reason: answering with none would let a caller that
-        // asked about days pass through a fake that has none.
-        public TimeZoneInfo? RollupZone => throw NotPartOfThis();
+        // A rollup this store never kept, and null is the honest answer rather
+        // than a refusal. It used to throw, on the ground that answering with
+        // none would let a caller that asked about days pass through a fake that
+        // has none. The personal figures route made that reading wrong: a store
+        // that has never keyed a rollup is a state it answers in full, from the
+        // rows instead, so a throw here is a fake refusing a question the real
+        // store answers. Issue #274.
+        public TimeZoneInfo? RollupZone => null;
 
         public IEnumerable<DailyRollup> AllRollups() => throw NotPartOfThis();
 
@@ -273,7 +277,9 @@ public sealed class InProcessEndpoints : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
-        public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+        // Null is what a store holding no rows honestly holds, and it is the
+        // second read an answer over a window takes.
+        public DateTime? OldestPlayStartedUtc() => null;
 
         public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();
 
