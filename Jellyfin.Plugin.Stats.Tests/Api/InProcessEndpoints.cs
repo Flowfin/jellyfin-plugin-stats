@@ -278,7 +278,12 @@ public sealed class InProcessEndpoints : IDisposable
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
         // Null is what a store holding no rows honestly holds, and it is the
-        // second read an answer over a window takes.
+        // second read an answer over a window takes - the server year takes it
+        // as well as the personal figures do. It is admitted for the same reason
+        // as the range above: a matrix cell about who may ask has to reach the
+        // answer rather than a failure, and null is what makes that answer's
+        // window say it covers no part of the year rather than claiming the
+        // whole of it.
         public DateTime? OldestPlayStartedUtc() => null;
 
         public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();

@@ -333,6 +333,60 @@ public sealed record YearInReview
         TimeZoneInfo zone,
         int topCount,
         DateTime? oldestPlayStartedUtc)
+        => FoldRows(plays, userId, year, zone, topCount, oldestPlayStartedUtc);
+
+    /// <summary>
+    /// Folds every account's plays for one calendar year into one wrap-up.
+    /// </summary>
+    /// <remarks>
+    /// The same fold as the overload above with the account filter taken off,
+    /// and it is a second entry point rather than that one accepting a null
+    /// account. A caller passing an empty identifier to a shape that filters
+    /// gets an empty year, and passing it to a shape that does not gets the
+    /// whole server, so the difference between one person's year and everybody's
+    /// is a choice made at the call rather than a value that can arrive by
+    /// accident. Issue #68.
+    /// <para>
+    /// What it answers names items, series and days and never an account: the
+    /// fold keeps no key for who watched, so there is nothing on the result for
+    /// a reader to attribute to a person. Who watched is a separate shape with a
+    /// rule of its own, which is <see cref="ConsentedLeaderboard"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="plays">The plays to fold. Any year and any account; the year is chosen here.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year's days and its boundaries are read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <param name="oldestPlayStartedUtc">When the oldest row anywhere in the store started, in UTC, or null where the store holds none.</param>
+    /// <returns>The year, or an answer saying there was nothing in it.</returns>
+    /// <exception cref="ArgumentException">A play carries a start that is not in UTC, or the oldest stored start is not.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The top list bound is not a positive number.</exception>
+    public static YearInReview OverEveryone(
+        IEnumerable<PlayRecord> plays,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
+        => FoldRows(plays, whose: null, year, zone, topCount, oldestPlayStartedUtc);
+
+    /// <summary>
+    /// The fold both entry points above are, over one account or over every
+    /// account.
+    /// </summary>
+    /// <param name="plays">The plays to fold.</param>
+    /// <param name="whose">The account to keep, or null to keep every account.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year is read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <param name="oldestPlayStartedUtc">When the oldest row anywhere in the store started.</param>
+    /// <returns>The year.</returns>
+    private static YearInReview FoldRows(
+        IEnumerable<PlayRecord> plays,
+        Guid? whose,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
     {
         ArgumentNullException.ThrowIfNull(plays);
         ArgumentNullException.ThrowIfNull(zone);
@@ -348,7 +402,7 @@ public sealed record YearInReview
 
         foreach (var play in plays)
         {
-            if (play.UserId != userId)
+            if (whose is Guid thisAccount && play.UserId != thisAccount)
             {
                 continue;
             }
@@ -486,13 +540,115 @@ public sealed record YearInReview
         TimeZoneInfo zone,
         int topCount,
         DateTime? oldestPlayStartedUtc)
+        => FoldTwoSources(rollups, readWindow, userId, year, zone, topCount, oldestPlayStartedUtc);
+
+    /// <summary>
+    /// Every account's year, folded from a read of the year that either came
+    /// back with the rows or with the reason there are too many of them.
+    /// </summary>
+    /// <remarks>
+    /// A refused read is answered as a year that WAS recorded and none of which
+    /// could be computed, which is the third statement a person's year already
+    /// has beside a quiet year and a full one. A set of noughts here would read
+    /// as a year nobody watched anything in, and there is no aggregate to fall
+    /// back on: the rollups are keyed by account and a server-wide figure summed
+    /// out of them is the sum issue #68's third condition asserts against rather
+    /// than the fold it asserts about.
+    /// </remarks>
+    /// <param name="window">The year's rows, or the reason a window refused.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year's days and its boundaries are read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <param name="oldestPlayStartedUtc">When the oldest row anywhere in the store started, in UTC, or null where the store holds none.</param>
+    /// <returns>The year.</returns>
+    /// <exception cref="ArgumentException">A play carries a start that is not in UTC, or the oldest stored start is not.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The top list bound is not a positive number.</exception>
+    public static YearInReview OverEveryone(
+        WindowOfPlays window,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(zone);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
+
+        if (window.OverTheBound is not string because)
+        {
+            return FoldRows(window.Plays, whose: null, year, zone, topCount, oldestPlayStartedUtc);
+        }
+
+        return new YearInReview(
+            year,
+            zone.Id,
+            YearCoverage.Of(year, oldestPlayStartedUtc, zone, earliestPlay: null),
+            new YearSources
+            {
+                Totals = YearSources.NotComputed,
+                Detail = YearSources.NotComputed,
+                NotComputedBecause = because,
+            },
+            anythingRecorded: true);
+    }
+
+    /// <summary>
+    /// Every account's plays for one calendar year, read a month at a time, or
+    /// the reason one of those months could not be read.
+    /// </summary>
+    /// <remarks>
+    /// The rows themselves rather than a fold of them, because a server-wide
+    /// wrap-up folds the same year three ways - the figures, the breakdowns
+    /// beside them and the leaderboard - and the three have to be folded from
+    /// ONE read. A deletion running between two reads takes rows out of the
+    /// second that the first counted, and the answer would then disagree with
+    /// itself for a reason that is not an error in any of the three folds.
+    /// Issue #68.
+    /// <para>
+    /// The rollups are not offered for this and could not be. A rollup is keyed
+    /// by account, so a server-wide fold from them would be a sum over the
+    /// accounts the table happens to hold, and issue #68's third condition is
+    /// that the server figure is NOT that sum: a total defined as the sum over
+    /// the per-account answers proves the addition and never the fold. The bound
+    /// is the same one a person's year is read under - twelve windows between
+    /// local midnights, each under the cap the query layer applies.
+    /// </para>
+    /// </remarks>
+    /// <param name="readWindow">Reads the plays that started in one half-open window of UTC. Called once per month.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year's boundaries are read in.</param>
+    /// <returns>The year's rows, or the reason a window held more than a read may hold.</returns>
+    /// <exception cref="ArgumentException">A play carries a start that is not in UTC.</exception>
+    public static WindowOfPlays EveryonesPlaysInTheYear(
+        ReadPlaysInAWindow readWindow,
+        int year,
+        TimeZoneInfo zone)
+    {
+        ArgumentNullException.ThrowIfNull(readWindow);
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var rows = ReadTheYearAMonthAtATime(readWindow, whose: null, year, zone);
+
+        return rows.Refusal is string because
+            ? WindowOfPlays.TooManyToRead(because)
+            : WindowOfPlays.Holding(rows.Plays);
+    }
+
+    private static YearInReview FoldTwoSources(
+        IReadOnlyList<DailyRollup>? rollups,
+        ReadPlaysInAWindow readWindow,
+        Guid? whose,
+        int year,
+        TimeZoneInfo zone,
+        int topCount,
+        DateTime? oldestPlayStartedUtc)
     {
         ArgumentNullException.ThrowIfNull(readWindow);
         ArgumentNullException.ThrowIfNull(zone);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
 
-        var theirRollups = TheirsInTheYear(rollups, userId, year);
-        var rows = ReadTheYearAMonthAtATime(readWindow, userId, year, zone);
+        var theirRollups = TheirsInTheYear(rollups, whose, year);
+        var rows = ReadTheYearAMonthAtATime(readWindow, whose, year, zone);
 
         if (rows.Refusal is string refusal)
         {
@@ -506,7 +662,7 @@ public sealed record YearInReview
                 oldestPlayStartedUtc);
         }
 
-        var fromRows = Over(rows.Plays, userId, year, zone, topCount, oldestPlayStartedUtc);
+        var fromRows = FoldRows(rows.Plays, whose, year, zone, topCount, oldestPlayStartedUtc);
 
         if (rollups is null)
         {
@@ -570,7 +726,7 @@ public sealed record YearInReview
     /// reason: the reads that exist answer a question near enough to this one
     /// that one careless call would tell a person about somebody else's year.
     /// </summary>
-    private static List<DailyRollup> TheirsInTheYear(IReadOnlyList<DailyRollup>? rollups, Guid userId, int year)
+    private static List<DailyRollup> TheirsInTheYear(IReadOnlyList<DailyRollup>? rollups, Guid? whose, int year)
     {
         var theirs = new List<DailyRollup>();
 
@@ -581,7 +737,7 @@ public sealed record YearInReview
 
         foreach (var rollup in rollups)
         {
-            if (rollup.UserId == userId && rollup.Day.Year == year)
+            if ((whose is not Guid thisAccount || rollup.UserId == thisAccount) && rollup.Day.Year == year)
             {
                 theirs.Add(rollup);
             }
@@ -610,7 +766,7 @@ public sealed record YearInReview
     /// </remarks>
     private static (List<PlayRecord> Plays, string? Refusal) ReadTheYearAMonthAtATime(
         ReadPlaysInAWindow readWindow,
-        Guid userId,
+        Guid? whose,
         int year,
         TimeZoneInfo zone)
     {
@@ -632,7 +788,7 @@ public sealed record YearInReview
 
             foreach (var play in window.Plays)
             {
-                if (play.UserId == userId)
+                if (whose is not Guid thisAccount || play.UserId == thisAccount)
                 {
                     plays.Add(play);
                 }
