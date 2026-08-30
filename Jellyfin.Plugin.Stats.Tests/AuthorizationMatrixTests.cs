@@ -211,6 +211,15 @@ public class AuthorizationMatrixTests
             Anonymous: 401,
             Someone: 403,
             SomeoneElse: 403,
+            Administrator: 200),
+        new Row(
+            Action: "AggregateReportsController.GetServerYear",
+            Method: "GET",
+            Path: "/Stats/Reports/Year/2026",
+            RowsAskedFor: WhoseRows.NobodysInParticular,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
             Administrator: 200)
     ];
 

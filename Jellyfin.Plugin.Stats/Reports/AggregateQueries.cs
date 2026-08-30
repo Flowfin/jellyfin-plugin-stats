@@ -625,6 +625,134 @@ public sealed class AggregateQueries
     }
 
     /// <summary>
+    /// The sixth shape: the whole server's year, naming no account except the
+    /// ones that agreed to be named.
+    /// </summary>
+    /// <remarks>
+    /// One open and one read of the rows, folded three ways. A deletion running
+    /// between two reads takes rows out of the second that the first counted, so
+    /// a wrap-up whose figures, breakdowns and leaderboard came from separate
+    /// reads would disagree with itself for a reason that is not an error in any
+    /// of the three. Issue #68's third condition is an agreement between figures,
+    /// and an agreement asserted across two readings of a moving store asserts
+    /// nothing.
+    /// <para>
+    /// The bound is the year read in twelve windows between local midnights,
+    /// each under the cap every other shape here reads under. A window over the
+    /// cap costs the figures it would have fed and not the wrap-up, which is the
+    /// rule issue #66 settled for a person's year and which holds here for the
+    /// same reason: a year is a range the caller cannot shorten.
+    /// </para>
+    /// <para>
+    /// The consent register is read inside this open and never kept. Issue #42's
+    /// second condition asks that a withdrawal remove an account from every
+    /// by-user view on the next request with no cache in between, and this is
+    /// the only by-user view the plugin has.
+    /// </para>
+    /// </remarks>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year's days and its boundaries are read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <returns>The server's year.</returns>
+    /// <exception cref="ArgumentNullException">No zone was given.</exception>
+    /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    public ServerYearInReview ServerYearFor(int year, TimeZoneInfo zone, int topCount)
+    {
+        ArgumentNullException.ThrowIfNull(zone);
+
+        return ReadFromTheStore.Answering(_openStore, store => AServerYearOver(store, year, zone, topCount));
+    }
+
+    /// <summary>
+    /// The server's year, over a store somebody else opened.
+    /// </summary>
+    /// <param name="store">The open store.</param>
+    /// <param name="year">The calendar year, read in the zone below.</param>
+    /// <param name="zone">The zone the year is read in.</param>
+    /// <param name="topCount">How many rows each top list may hold.</param>
+    /// <returns>The server's year.</returns>
+    /// <exception cref="ArgumentNullException">No store or no zone was given.</exception>
+    public static ServerYearInReview AServerYearOver(
+        IPlayStore store,
+        int year,
+        TimeZoneInfo zone,
+        int topCount)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var window = YearInReview.EveryonesPlaysInTheYear(
+            (from, to) => APlayWindow(store, from, to),
+            year,
+            zone);
+
+        var figures = YearInReview.OverEveryone(window, year, zone, topCount, store.OldestPlayStartedUtc());
+
+        if (window.OverTheBound is not null)
+        {
+            // A refused window comes back holding no rows, and folding the three
+            // shapes below over them would answer a year nobody could read with
+            // a breakdown of nought plays and a leaderboard nobody is on. Every
+            // one of them is absent instead, and the figures carry the reason.
+            // An unknown answered as a nought is the failure issue #64's third
+            // condition is against, met here at the shape that would produce it.
+            return new ServerYearInReview(figures, null, null, null);
+        }
+
+        // What is NOT done here is reading the year a second time. One read is
+        // what makes the four agree.
+        var plays = window.Plays;
+
+        return new ServerYearInReview(
+            figures,
+            ClientsBehindTheYear(plays),
+            TranscodeReasonBreakdown.Over(plays),
+            ConsentedLeaderboard.Over(
+                plays,
+                userId => store.ConsentFor(userId)?.Agreed == true,
+                FewestAccountsBehindARow));
+    }
+
+    /// <summary>
+    /// The client breakdown for a year, under the same rule the fourth shape
+    /// applies to a range.
+    /// </summary>
+    /// <remarks>
+    /// It is this method and not <see cref="Breakdown"/> because the rows are
+    /// already read: calling that shape would open the store a second time and
+    /// read the year again, which is the thing this wrap-up exists not to do.
+    /// The rule itself is not restated - the same helper counts the accounts and
+    /// the same constant decides.
+    /// </remarks>
+    /// <param name="plays">The year's rows.</param>
+    /// <returns>The breakdown, or null where answering it would name somebody.</returns>
+    private static DimensionBreakdown? ClientsBehindTheYear(IReadOnlyList<PlayRecord> plays)
+    {
+        var accounts = AccountsBehindEachGroup(plays, PlayDimension.Client);
+
+        var folding = new List<string>();
+        var behindTheFold = new HashSet<Guid>();
+
+        foreach (var (key, behind) in accounts)
+        {
+            if (behind.Count >= FewestAccountsBehindARow)
+            {
+                continue;
+            }
+
+            folding.Add(key);
+            behindTheFold.UnionWith(behind);
+        }
+
+        if (folding.Count > 0 && behindTheFold.Count < FewestAccountsBehindARow)
+        {
+            return null;
+        }
+
+        return DimensionBreakdown.Over(plays, PlayDimension.Client, folding);
+    }
+
+    /// <summary>
     /// This account's rollups for the year, where the store keyed them in the
     /// zone the year is being read in, and null where it did not.
     /// </summary>
