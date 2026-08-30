@@ -117,6 +117,14 @@ export function playsPathFor(userId) {
  * are different facts, and this is the page where confusing them is a statement
  * about somebody's own history. Issue #64.
  *
+ * A figure the fold could not take is a third thing again: absent from the
+ * answer with its reason beside it in `degraded`, which is an answer rather
+ * than a failure. It is passed through and the drawing puts the reason under
+ * the words that figure would have been drawn under. Refusing it here would
+ * draw the whole view as unreadable and take the reader's other figures and
+ * their series away with it, which is the refused page the ruling of #66
+ * exists against.
+ *
  * @param {object} answer The body the endpoint returned.
  * @returns {object} The answer in the shape the drawing reads.
  */
@@ -138,11 +146,21 @@ export function forDrawing(answer) {
         );
     }
 
-    if (!Number.isInteger(answer.plays)) {
+    /* A figure the fold could not take is absent from the answer and named in
+     * `degraded` with the reason beside it, which is the ruling of #66 and what
+     * the drawing already reads. So an absent figure is refused only where
+     * nothing names it: with a reason it is the answer, and the reader meets the
+     * reason under the words the figure would have been drawn under. Issue #61.
+     */
+    const cut =
+        answer.degraded !== null && typeof answer.degraded === 'object' ? answer.degraded : {};
+
+    if (!Number.isInteger(answer.plays) && typeof cut.plays !== 'string') {
         throw new Error(
             'The plays over the window are read as a whole number, and this answer carries ' +
-                'none. They fold from the daily rollups and are bounded by days rather than by ' +
-                'plays, so an answer without them is an answer that did not come from the fold.',
+                'none and no reason for carrying none. They fold from the daily rollups and are ' +
+                'bounded by days rather than by plays, so an answer without them and without a ' +
+                'reason is an answer that did not come from the fold.',
         );
     }
 
@@ -291,7 +309,7 @@ async function figuresFor(client, userId, chosen) {
 
         return yourStatistics(forDrawing(answer));
     } catch (failure) {
-        return yourStatistics({ state: 'failed', reason: reasonOf(failure) });
+        return yourStatistics({ state: 'failed' });
     }
 }
 
@@ -308,18 +326,8 @@ async function choicesFor(client, userId) {
 
         return yourPrivacyChoices(choicesForDrawing(answer));
     } catch (failure) {
-        return yourPrivacyChoices({ state: 'failed', reason: reasonOf(failure) });
+        return yourPrivacyChoices({ state: 'failed' });
     }
-}
-
-/**
- * What a failure is told to the reader as.
- *
- * @param {unknown} failure What was thrown.
- * @returns {string|undefined} The words, where there are any.
- */
-function reasonOf(failure) {
-    return failure instanceof Error ? failure.message : undefined;
 }
 
 /**

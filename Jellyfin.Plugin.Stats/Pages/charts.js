@@ -521,7 +521,13 @@ export function stateNotice(state, options = {}) {
         );
     }
 
-    if (options.reason !== undefined) {
+    // The KEY is refused and not only a key carrying something. A caller that
+    // hands in `reason: undefined` reads to the next person as a caller whose
+    // reason reaches somebody, and it walks through a test that can only see
+    // what was drawn: the view drops the undefined, the page goes on building
+    // one, and the two halves are wrong only together. That is the shape that
+    // reached `master` once already. Issues #64 and #289.
+    if (Object.prototype.hasOwnProperty.call(options, 'reason')) {
         throw new Error(
             'A state notice is drawn in the words this module holds, and it carries no reason ' +
                 'from its caller. What a failure here can name is a file in the server storage, ' +

@@ -79,7 +79,7 @@ export function yourPrivacyChoices(answer) {
     if (state !== 'ready') {
         return (
             '<section class="stats-view stats-view-your-choices">' +
-            stateNotice(state, { title: 'Your choices', reason: answer.reason }) +
+            stateNotice(state, { title: 'Your choices' }) +
             '</section>'
         );
     }

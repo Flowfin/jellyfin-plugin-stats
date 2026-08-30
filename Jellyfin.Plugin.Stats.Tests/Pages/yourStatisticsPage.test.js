@@ -257,6 +257,72 @@ test('an answer carrying no plays at all is refused rather than read as nought',
     );
 });
 
+/* What the fold says when it could not take a figure. It is the wording the
+ * server's own fold carries for that case, and it names no file, which is what
+ * keeps this fixture inside the disclosure #64 settled. */
+const COULD_NOT_BE_TAKEN =
+    'The figures for this window could not be read from either the stored days or the rows.';
+
+/**
+ * What the endpoint answers for a window whose figures the fold could not take:
+ * the figures absent, the reasons beside them, and the window and the zone
+ * still answered.
+ *
+ * @returns {object} The body.
+ */
+function figuresTheFoldCouldNotTake() {
+    return figuresBody({
+        plays: null,
+        watched: null,
+        finished: null,
+        abandoned: null,
+        points: [],
+        topItems: [],
+        degraded: {
+            plays: COULD_NOT_BE_TAKEN,
+            watched: COULD_NOT_BE_TAKEN,
+            completion: COULD_NOT_BE_TAKEN,
+        },
+    });
+}
+
+test('an answer whose plays the fold could not take is read rather than refused', () => {
+    const drawing = forDrawing(figuresTheFoldCouldNotTake());
+
+    assert.equal(
+        drawing.state,
+        'ready',
+        'A window the server answered is read as a state the page could not reach. The answer ' +
+            'carries the window, the zone and the reason each figure is missing, and a reader ' +
+            'shown none of it is told their own history could not be read.',
+    );
+    assert.equal(drawing.plays, null, 'An absent figure was filled in rather than passed on.');
+    assert.equal(drawing.degraded.plays, COULD_NOT_BE_TAKEN);
+});
+
+test('a figure the fold could not take is drawn with its reason and never as a failed view', async () => {
+    const client = aClientFor(CALLER, figuresTheFoldCouldNotTake());
+
+    const drawn = await yourStatisticsMarkup(client, { userId: CALLER });
+
+    assert.ok(
+        drawn.includes(COULD_NOT_BE_TAKEN),
+        'The reason the server gave for a figure it could not take is not on the page, so the ' +
+            'reader meets a gap instead of the sentence that explains it.',
+    );
+    assert.ok(
+        !drawn.includes('Statistics unavailable'),
+        'A window the server answered is drawn as one it could not answer. That is the refused ' +
+            'page the ruling of #66 exists against: one figure the fold could not take takes ' +
+            'the window, the zone and every other figure away with it.',
+    );
+    assert.ok(
+        drawn.includes('stats-view-your-statistics-window-choice'),
+        'The reader loses the control that picks another window, which is the one thing that ' +
+            'could get them a figure the fold can take.',
+    );
+});
+
 test('an answer with no zone is refused rather than drawn under one the page chose', () => {
     assert.throws(() => forDrawing(figuresBody({ zoneId: '' })), /zone/);
 });
@@ -286,8 +352,14 @@ test('a figures request that fails leaves the controls on the page', async () =>
     const drawn = await yourStatisticsMarkup(client, { userId: CALLER });
 
     assert.ok(
-        drawn.includes('The store could not be opened.'),
-        'The figures half does not say why it could not be read.',
+        drawn.includes('Statistics unavailable'),
+        'The figures half does not say that it could not be read.',
+    );
+    assert.ok(
+        !drawn.includes('The store could not be opened.'),
+        'The words the request failed with reached the reader. What a failure here can name is a ' +
+            'file in the server storage, which the operator reads on the settings page and nobody ' +
+            'else reads at all.',
     );
     assert.ok(
         drawn.includes('stats-view-your-choices-delete-control'),
