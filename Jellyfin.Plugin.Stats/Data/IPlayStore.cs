@@ -572,6 +572,33 @@ public interface IPlayStore : IDisposable
     ConsentRecord? ConsentFor(Guid userId);
 
     /// <summary>
+    /// Reads back each account the store holds a consent record for, once.
+    /// </summary>
+    /// <remarks>
+    /// The consent table's answer to the question <see cref="UserIdsWithPlays"/>
+    /// answers over the plays, and it exists because the two sets are not the
+    /// same one. An account can hold a record and no plays - it answered the
+    /// question and then watched nothing, or its rows aged out under retention -
+    /// so a reconciliation walking only the accounts with plays never reaches
+    /// it, and the record outlives the account. Issue #296.
+    /// <para>
+    /// One entry per account, like the read over the plays and for the same
+    /// reason: the table is keyed by the account, so it holds one row each and
+    /// the answer grows with the people on a server rather than with how long
+    /// it has been recording.
+    /// </para>
+    /// <para>
+    /// A list rather than a walk, again for the reason that one carries. The
+    /// caller asks the server about every identifier this returns and then
+    /// deletes against the same store, and a reader left open over the table
+    /// while deletions run against it is a reader whose remaining rows are
+    /// whatever the deletions left.
+    /// </para>
+    /// </remarks>
+    /// <returns>Each account holding a record, once, in a stable order, and empty where the store holds none.</returns>
+    IReadOnlyList<Guid> UserIdsWithConsent();
+
+    /// <summary>
     /// Writes what one account has said, replacing whatever it said before.
     /// </summary>
     /// <remarks>

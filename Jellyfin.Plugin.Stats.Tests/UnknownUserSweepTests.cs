@@ -245,6 +245,30 @@ public sealed class UnknownUserSweepTests : IDisposable
     }
 
     /// <summary>
+    /// The third condition of issue #296. A run whose only removal was a
+    /// consent record still gives the space back, because a record that went
+    /// freed pages exactly as a row would have.
+    /// <para>
+    /// The store here holds no rows for the departed account, which is the case
+    /// the sweep could not reach at all before, so the reported count is nought
+    /// and the reclaim cannot be read off it. That is the whole point of the
+    /// case: a reclaim conditioned on the count alone skips the one run where
+    /// this task removed something the count is not about.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ARunThatOnlyForgotARecordStillGivesTheSpaceBack()
+    {
+        var store = new CountingPlayStore(Removed, rows: 0, holdsConsent: true);
+
+        var deleted = ASweepOver(store, TheServerHaving(Ada)).Run(new IgnoredProgress(), CancellationToken.None);
+
+        Assert.Equal(0, deleted);
+        Assert.Equal(1, store.Forgotten);
+        Assert.Equal(1, store.Reclaims);
+    }
+
+    /// <summary>
     /// A cancelled sweep stops. It is checked between lookups and between
     /// bites, so a first run on a store holding years of rows for accounts that
     /// are gone is a run an administrator can stop.
@@ -289,6 +313,108 @@ public sealed class UnknownUserSweepTests : IDisposable
         Assert.Equal(
             new[] { Ada, Removed }.OrderBy(id => id.ToString("N"), StringComparer.Ordinal),
             reading.UserIdsWithPlays());
+    }
+
+    /// <summary>
+    /// The first condition of issue #296. A consent record is personal detail
+    /// about the account it names, so it goes with that account's rows when the
+    /// server no longer has it, and the record of an account the server still
+    /// has is untouched by the same run.
+    /// <para>
+    /// Both halves are in one store on purpose, for the reason the case above
+    /// gives about rows: a sweep that removed every record would pass a case
+    /// asserting only the removal, and a sweep that removed none would pass a
+    /// case asserting only the survivor.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheConsentRecordOfAnAccountTheServerNoLongerHasGoesWithItsRows()
+    {
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayBy(Ada));
+            store.Add(APlayBy(Removed));
+            store.RecordConsent(AnAgreementBy(Ada));
+            store.RecordConsent(AnAgreementBy(Removed));
+        }
+
+        var deleted = ASweep(TheServerHaving(Ada, Bo)).Run(new IgnoredProgress(), CancellationToken.None);
+
+        using var after = new SqlitePlayStore(_root);
+
+        Assert.Equal(1, deleted);
+        Assert.Null(after.ConsentFor(Removed));
+        Assert.NotNull(after.ConsentFor(Ada));
+        Assert.Single(after.AllPlays());
+    }
+
+    /// <summary>
+    /// The second condition of issue #296, and the half a sweep keyed off the
+    /// plays cannot reach at all. An account that answered the question and
+    /// watched nothing - or whose rows have since aged out under retention -
+    /// holds a record and no plays, so the set the sweep used to walk does not
+    /// contain it and its record outlived the account for as long as the store
+    /// existed.
+    /// <para>
+    /// The count is asserted at nought as well, because what left the store is
+    /// not a row and the number this task reports is about rows. A run that
+    /// counted the record would report a deletion that no reading of the plays
+    /// could account for.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AnAccountHoldingARecordAndNoPlaysIsReachedAsWell()
+    {
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayBy(Ada));
+            store.RecordConsent(AnAgreementBy(Removed));
+        }
+
+        var deleted = ASweep(TheServerHaving(Ada, Bo)).Run(new IgnoredProgress(), CancellationToken.None);
+
+        using var after = new SqlitePlayStore(_root);
+
+        Assert.Equal(0, deleted);
+        Assert.Null(after.ConsentFor(Removed));
+        Assert.Single(after.AllPlays());
+    }
+
+    /// <summary>
+    /// The store names each account holding a record once, in a stable order,
+    /// which is what lets the sweep hold the whole set while it deletes against
+    /// the same store. The table is keyed by the account, so the case that would
+    /// make this interesting - one account twice - cannot be written; what it
+    /// asserts instead is the order and the whole set.
+    /// </summary>
+    [Fact]
+    public void TheStoreNamesEachAccountHoldingARecordOnce()
+    {
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.RecordConsent(AnAgreementBy(Ada));
+            store.RecordConsent(AnAgreementBy(Removed));
+            store.RecordConsent(AnAgreementBy(Ada));
+        }
+
+        using var reading = new SqlitePlayStore(_root);
+
+        Assert.Equal(
+            new[] { Ada, Removed }.OrderBy(id => id.ToString("N"), StringComparer.Ordinal),
+            reading.UserIdsWithConsent());
+    }
+
+    /// <summary>
+    /// A store with no consent records names nobody there either. The sweep
+    /// reads this on every run it ever makes, and on almost all of them it is
+    /// this answer.
+    /// </summary>
+    [Fact]
+    public void AStoreHoldingNoRecordsNamesNobodyEither()
+    {
+        using var store = new SqlitePlayStore(_root);
+
+        Assert.Empty(store.UserIdsWithConsent());
     }
 
     /// <summary>
@@ -437,6 +563,25 @@ public sealed class UnknownUserSweepTests : IDisposable
         };
     }
 
+    /// <summary>
+    /// An agreement by one account, at the one wording version this fixture
+    /// needs. What the record says is not what these cases are about - a
+    /// withdrawal is a record too - so it is the shorter of the two to write.
+    /// </summary>
+    /// <param name="userId">Whose agreement.</param>
+    /// <returns>The record.</returns>
+    private static ConsentRecord AnAgreementBy(Guid userId)
+    {
+        return new ConsentRecord
+        {
+            UserId = userId,
+            Agreed = true,
+            AgreedUtc = new DateTime(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc),
+            WithdrawnUtc = null,
+            WordingVersion = 1
+        };
+    }
+
     private UnknownUserSweep ASweep(IUserManager users, int bite = UnknownUserSweep.DefaultBite)
         => new(() => new SqlitePlayStore(_root), users, bite);
 
@@ -472,13 +617,20 @@ public sealed class UnknownUserSweepTests : IDisposable
     private sealed class CountingPlayStore : IPlayStore
     {
         private readonly Guid _userId;
+        private readonly bool _holdsConsent;
         private int _rowsLeft;
 
-        public CountingPlayStore(Guid userId, int rows)
+        public CountingPlayStore(Guid userId, int rows, bool holdsConsent = false)
         {
             _userId = userId;
             _rowsLeft = rows;
+            _holdsConsent = holdsConsent;
         }
+
+        /// <summary>
+        /// Gets how many consent records this store was asked to forget.
+        /// </summary>
+        public int Forgotten { get; private set; }
 
         /// <summary>
         /// Gets how many times a deletion was asked for, including the last one
@@ -497,6 +649,9 @@ public sealed class UnknownUserSweepTests : IDisposable
         public bool Disposed { get; private set; }
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => new[] { _userId };
+
+        public IReadOnlyList<Guid> UserIdsWithConsent()
+            => _holdsConsent ? new[] { _userId } : Array.Empty<Guid>();
 
         public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit)
         {
@@ -556,7 +711,7 @@ public sealed class UnknownUserSweepTests : IDisposable
 
         public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
 
-        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+        public void ForgetConsentFor(Guid userId) => Forgotten++;
 
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 

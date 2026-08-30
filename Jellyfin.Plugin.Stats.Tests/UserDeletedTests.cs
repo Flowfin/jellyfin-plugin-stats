@@ -390,6 +390,8 @@ public sealed class UserDeletedTests : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
 
+        public IReadOnlyList<Guid> UserIdsWithConsent() => throw NotPartOfThis();
+
         public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
 
         public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();

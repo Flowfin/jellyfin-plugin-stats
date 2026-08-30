@@ -541,6 +541,8 @@ public sealed class AYearReadFromRollupsTests : IDisposable
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => _behind.UserIdsWithPlays();
 
+        public IReadOnlyList<Guid> UserIdsWithConsent() => _behind.UserIdsWithConsent();
+
         public DateTime? OldestPlayStartedUtc() => _behind.OldestPlayStartedUtc();
 
         public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone)
@@ -715,6 +717,8 @@ public sealed class AYearReadFromRollupsTests : IDisposable
         }
 
         public IReadOnlyList<Guid> UserIdsWithPlays() => _behind.UserIdsWithPlays();
+
+        public IReadOnlyList<Guid> UserIdsWithConsent() => _behind.UserIdsWithConsent();
 
         public DateTime? OldestPlayStartedUtc() => _behind.OldestPlayStartedUtc();
 

@@ -322,6 +322,17 @@ public sealed class SqlitePlayStore : IPlayStore
     private const string ForgetTheConsentOfAUser =
         "DELETE FROM consents WHERE UserId = $userId";
 
+    // One row per account, like the read over the plays, and unbounded for the
+    // same reason: the table is keyed by the account. DISTINCT is not needed
+    // where the key already makes each account appear once, and the order is
+    // the column's own so two runs over an unchanged file answer in the same
+    // order.
+    private const string SelectTheUsersWithConsent =
+        @"-- unbounded: one row per account
+          SELECT UserId
+          FROM consents
+          ORDER BY UserId";
+
     // What turns freed pages back into free disk. It rewrites the file, so it
     // wants room for a second copy and it cannot run inside a transaction;
     // neither is a problem where it is called, once, at the end of a sweep.
@@ -1257,6 +1268,25 @@ public sealed class SqlitePlayStore : IPlayStore
         command.Parameters.AddWithValue("$wordingVersion", consent.WordingVersion);
 
         command.ExecuteNonQuery();
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<Guid> UserIdsWithConsent()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = SelectTheUsersWithConsent;
+
+        var users = new List<Guid>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // Read back the way every other read here reads an identifier, so
+            // a value that came out of this list is a value the removal and the
+            // per-account read will both match.
+            users.Add(Guid.ParseExact(reader.GetString(0), "N"));
+        }
+
+        return users;
     }
 
     /// <inheritdoc />
