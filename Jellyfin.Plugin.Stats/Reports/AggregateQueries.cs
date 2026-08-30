@@ -100,6 +100,30 @@ public sealed class AggregateQueries
     /// </remarks>
     public const int MostRollupRowsAYearMayHold = 366 * 64;
 
+    /// <summary>
+    /// How many windows of play rows one personal figure may be read over.
+    /// </summary>
+    /// <remarks>
+    /// The top items are the one figure a rollup cannot carry, so they read the
+    /// rows, and the rows are read a month at a time under the cap every other
+    /// shape reads under. Bounded reads with no bound on how many of them there
+    /// are is not a bounded answer, so a window reaching further back than this
+    /// says the figure was not taken rather than issuing the reads.
+    /// </remarks>
+    public const int MostWindowsAPersonalFigureIsReadOver = 24;
+
+    /// <summary>
+    /// How many rollup rows one personal window may bring back.
+    /// </summary>
+    /// <remarks>
+    /// A rollup is one day, one kind of item and one client, so a window costs
+    /// its days times the kinds times the clients. A window over the bound is
+    /// answered as no rollups rather than as the ones that fitted: a truncated
+    /// fold is a figure wrong by whatever it did not read with nothing on it
+    /// saying so.
+    /// </remarks>
+    public const int MostRollupRowsAPersonalWindowMayHold = 366 * 2 * 64;
+
     private readonly Func<IPlayStore> _openStore;
 
     /// <summary>
@@ -750,6 +774,232 @@ public sealed class AggregateQueries
         }
 
         return DimensionBreakdown.Over(plays, PlayDimension.Client, folding);
+    }
+
+    /// <summary>
+    /// The seventh shape: one account's own figures over one of three windows.
+    /// </summary>
+    /// <remarks>
+    /// The only shape here that is entirely about one account, and the only one
+    /// an ordinary caller may ask. It is served to that account alone, which the
+    /// authorization matrix asserts, and nothing on it names anybody else.
+    /// <para>
+    /// One open, and every read inside it. The headline figures and the series
+    /// fold from the rollups, bounded by days rather than by plays; the top
+    /// items are the one figure a rollup cannot carry and read the play rows a
+    /// month at a time under the same cap the other shapes read under. A figure
+    /// that could not be taken is absent with its reason and never nought.
+    /// Issue #274.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">Whose figures.</param>
+    /// <param name="window">Which window.</param>
+    /// <param name="zone">The zone the window's days are read in.</param>
+    /// <param name="now">The moment the window ends at, read off a clock the caller was given.</param>
+    /// <param name="topCount">How many rows the top list may hold.</param>
+    /// <returns>The figures.</returns>
+    /// <exception cref="ArgumentNullException">No zone was given.</exception>
+    /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
+    public OwnFigures FiguresFor(
+        Guid userId,
+        PersonalWindow window,
+        TimeZoneInfo zone,
+        DateTimeOffset now,
+        int topCount)
+    {
+        ArgumentNullException.ThrowIfNull(zone);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
+
+        return ReadFromTheStore.Answering(
+            _openStore,
+            store => TheirFiguresOver(store, userId, window, zone, now, topCount));
+    }
+
+    /// <summary>
+    /// One account's own figures, over a store somebody else opened.
+    /// </summary>
+    /// <param name="store">The open store.</param>
+    /// <param name="userId">Whose figures.</param>
+    /// <param name="window">Which window.</param>
+    /// <param name="zone">The zone the window is read in.</param>
+    /// <param name="now">The moment the window ends at.</param>
+    /// <param name="topCount">How many rows the top list may hold.</param>
+    /// <returns>The figures.</returns>
+    /// <exception cref="ArgumentNullException">No store or no zone was given.</exception>
+    public static OwnFigures TheirFiguresOver(
+        IPlayStore store,
+        Guid userId,
+        PersonalWindow window,
+        TimeZoneInfo zone,
+        DateTimeOffset now,
+        int topCount)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var today = LocalDay.Of(now, zone);
+        var dayAfter = today.AddDays(1);
+        var firstDay = FirstDayOf(window, today, store.OldestPlayStartedUtc(), zone);
+
+        var rollups = RollupsForTheWindow(store, userId, firstDay, dayAfter, zone);
+        var rows = TheirRowsOverTheWindow(store, userId, firstDay, dayAfter, zone);
+
+        return OwnFiguresFold.Over(
+            NameOf(window),
+            window,
+            zone,
+            firstDay,
+            dayAfter,
+            rollups,
+            rows.Rows,
+            rows.Because,
+            topCount);
+    }
+
+    /// <summary>
+    /// The first day of a window, in the zone it is read in.
+    /// </summary>
+    /// <remarks>
+    /// The thirty days and the twelve months are counted back from today, so the
+    /// window a reader is shown is the window they would count themselves. All
+    /// time starts at the oldest row the STORE holds over every account rather
+    /// than at this account's own first play, for the reason a year's coverage is
+    /// read that way: a window read off one person's rows reports a quiet start
+    /// as a retention cut.
+    /// </remarks>
+    /// <param name="window">Which window.</param>
+    /// <param name="today">Today, in the zone.</param>
+    /// <param name="oldestPlayStartedUtc">When the oldest row anywhere in the store started.</param>
+    /// <param name="zone">The zone.</param>
+    /// <returns>The first day.</returns>
+    private static DateOnly FirstDayOf(
+        PersonalWindow window,
+        DateOnly today,
+        DateTime? oldestPlayStartedUtc,
+        TimeZoneInfo zone)
+        => window switch
+        {
+            PersonalWindow.Last30Days => today.AddDays(-29),
+            PersonalWindow.Last12Months => new DateOnly(today.Year, today.Month, 1).AddMonths(-11),
+            _ => oldestPlayStartedUtc is DateTime oldest
+                ? LocalDay.Of(new DateTimeOffset(DateTime.SpecifyKind(oldest, DateTimeKind.Utc)), zone)
+                : today,
+        };
+
+    /// <summary>
+    /// What this window is called in the words a request names it with.
+    /// </summary>
+    /// <param name="window">Which window.</param>
+    /// <returns>The name.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The window is not one this build knows.</exception>
+    private static string NameOf(PersonalWindow window)
+        => window switch
+        {
+            PersonalWindow.Last30Days => "last30Days",
+            PersonalWindow.Last12Months => "last12Months",
+            PersonalWindow.AllTime => "allTime",
+            _ => throw new ArgumentOutOfRangeException(nameof(window)),
+        };
+
+    /// <summary>
+    /// This account's rollups for the window, or null with the reason none may
+    /// be used.
+    /// </summary>
+    /// <param name="store">The open store.</param>
+    /// <param name="userId">The account.</param>
+    /// <param name="firstDay">The first day of the window.</param>
+    /// <param name="dayAfter">The first day after it.</param>
+    /// <param name="zone">The zone the window is read in.</param>
+    /// <returns>The rollups, or null where none may be used.</returns>
+    private static IReadOnlyList<DailyRollup>? RollupsForTheWindow(
+        IPlayStore store,
+        Guid userId,
+        DateOnly firstDay,
+        DateOnly dayAfter,
+        TimeZoneInfo zone)
+    {
+        // A store keyed in another zone holds days that are not the days this
+        // window is about, so handing them over would report figures against
+        // somebody else's midnights. Null carries no reason because it costs the
+        // caller nothing: the rows answer the same figures, and the fold only
+        // reports a figure as absent where both sources failed.
+        if (store.RollupZone is not TimeZoneInfo keyed || !keyed.HasSameRules(zone))
+        {
+            return null;
+        }
+
+        var rollups = store.RollupsFor(userId, firstDay, dayAfter, MostRollupRowsAPersonalWindowMayHold + 1);
+
+        // A window over the bound is answered as no rollups rather than as the
+        // ones that fitted: a truncated fold is a figure wrong by whatever it
+        // did not read with nothing on it saying so.
+        return rollups.Count > MostRollupRowsAPersonalWindowMayHold ? null : rollups;
+    }
+
+    /// <summary>
+    /// This account's play rows over the window, read a month at a time, or null
+    /// with the reason they could not be read.
+    /// </summary>
+    /// <remarks>
+    /// The walk stops at the first month that refuses. Every figure these rows
+    /// feed is a figure over the whole window, so a partial read cannot answer
+    /// one, and reading the remaining months would spend the reads to produce
+    /// numbers that would then have to be thrown away.
+    /// </remarks>
+    /// <param name="store">The open store.</param>
+    /// <param name="userId">The account.</param>
+    /// <param name="firstDay">The first day of the window.</param>
+    /// <param name="dayAfter">The first day after it.</param>
+    /// <param name="zone">The zone the window is read in.</param>
+    /// <returns>The rows, or null and why.</returns>
+    private static (IReadOnlyList<PlayRecord>? Rows, string? Because) TheirRowsOverTheWindow(
+        IPlayStore store,
+        Guid userId,
+        DateOnly firstDay,
+        DateOnly dayAfter,
+        TimeZoneInfo zone)
+    {
+        var months = new List<(DateOnly From, DateOnly To)>();
+        var month = new DateOnly(firstDay.Year, firstDay.Month, 1);
+
+        while (month < dayAfter)
+        {
+            var next = month.AddMonths(1);
+
+            months.Add((month < firstDay ? firstDay : month, next < dayAfter ? next : dayAfter));
+            month = next;
+        }
+
+        if (months.Count > MostWindowsAPersonalFigureIsReadOver)
+        {
+            return (null, "This window reaches further back than one answer may read the rows over.");
+        }
+
+        var rows = new List<PlayRecord>();
+
+        foreach (var each in months)
+        {
+            var read = APlayWindow(store, LocalDay.StartOf(each.From, zone), LocalDay.StartOf(each.To, zone));
+
+            if (read.OverTheBound is string because)
+            {
+                return (null, because);
+            }
+
+            foreach (var play in read.Plays)
+            {
+                // The account is filtered here and the window is filtered in the
+                // fold, because a month read between two local midnights already
+                // holds only rows inside it and an account read is not offered
+                // by the store at all.
+                if (play.UserId == userId)
+                {
+                    rows.Add(play);
+                }
+            }
+        }
+
+        return (rows, null);
     }
 
     /// <summary>

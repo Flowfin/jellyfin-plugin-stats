@@ -220,7 +220,32 @@ public class AuthorizationMatrixTests
             Anonymous: 401,
             Someone: 403,
             SomeoneElse: 403,
-            Administrator: 200)
+            Administrator: 200),
+
+        /* One person's own figures, twice: asked about themselves and asked
+         * about somebody else. The administrator cell on the second row is the
+         * one that carries this route's rule and it is 403, which is the
+         * OPPOSITE of every aggregate row above. What those answer names nobody
+         * and is an operator's business; this is entirely about one person, and
+         * elevation is not a way to reach it. Issue #274. */
+        new Row(
+            Action: "YourStatisticsController.GetStatistics",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Statistics/last30Days",
+            RowsAskedFor: WhoseRows.TheCallersOwn,
+            Anonymous: 401,
+            Someone: 200,
+            SomeoneElse: 200,
+            Administrator: 200),
+        new Row(
+            Action: "YourStatisticsController.GetStatistics",
+            Method: "GET",
+            Path: "/Stats/Users/{0}/Statistics/last30Days",
+            RowsAskedFor: WhoseRows.SomebodyElses,
+            Anonymous: 401,
+            Someone: 403,
+            SomeoneElse: 403,
+            Administrator: 403)
     ];
 
     /// <summary>
