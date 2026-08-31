@@ -18,11 +18,11 @@ namespace Jellyfin.Plugin.Stats.Data;
 /// thread.
 /// <para>
 /// This sits behind the tracker rather than in front of it, which is the shape
-/// the maintainer chose on issue #29. The tracker reads the live session the
-/// event points at, including the moment the server last heard from it, so an
-/// event queued and folded later is folded against a session that has moved on
-/// and produces a row that is wrong. A finished row has already been read out of
-/// those fields and holds still, so it is the thing that can wait.
+/// I chose on issue #29. The tracker reads the live session the event points
+/// at, including the moment the server last heard from it, so an event queued
+/// and folded later is folded against a session that has moved on and produces
+/// a row that is wrong. A finished row has already been read out of those
+/// fields and holds still, so it is the thing that can wait.
 /// </para>
 /// <para>
 /// What sits in the queue is therefore a row and never a sample. A progress
