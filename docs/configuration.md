@@ -16,9 +16,9 @@ happened to, above the form.
 
 ## What these settings govern today
 
-Five of them decide something. The other three exist, validate and are stored,
-and change nothing, and this section says which is which so no entry below reads
-as a description of behaviour that is present.
+Seven of them decide something. One exists, validates and is stored, and
+changes nothing, and this section says which is which so no entry below reads as
+a description of behaviour that is present.
 
 `CaptureEnabled`, `ExcludedUserIds` and `ExcludedItemTypes` are honoured
 immediately before a play is written:
@@ -45,40 +45,43 @@ that answers a report reads it at the request:
     Jellyfin.Plugin.Stats/Api/YourYearController.cs:176:        var zone = TimeZoneInfo.FindSystemTimeZoneById(settings.RollupTimeZone);
     Jellyfin.Plugin.Stats/Api/YourYearController.cs:240:        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
 
-Nothing reads the other three:
+`MaximumRangeDays` and `MaximumRowsPerResponse` bound what the aggregate report
+routes answer, read at the request rather than held:
 
-    grep -rn "DailyAggregateRetentionDays\|MaximumRangeDays\|MaximumRowsPerResponse" \
+    grep -n 'MaximumRangeDays\|MaximumRowsPerResponse' \
+      Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs
+    502:                longestRange: TimeSpan.FromDays(_configuration().MaximumRangeDays));
+    539:    private bool WithinTheRowCap(int rows) => rows <= _configuration().MaximumRowsPerResponse;
+
+That was issue #305, and it is worth stating what it moved, because an
+installation that stored the previous default is not where it was. Until it
+landed the two caps reached nothing: the range every route answered over was
+367 days whatever the page said, the number of rows a response carried was
+whatever the fold produced, and an operator who lowered either was told nothing.
+The range ceiling on these routes is now the operator's number rather than the
+query layer's, and the shipped default moved from 400 to 367 so an installation
+nobody has configured is bounded by exactly what bounded it before. A file
+already carrying 400 answers over up to 400 days from now on, which is five
+weeks wider than it was.
+
+What is NOT operator-settable is the bound that stops one request making the
+server do arbitrary work, and it is the play count rather than either cap:
+
+    grep -n 'MostPlaysAnyShapeReads =' Jellyfin.Plugin.Stats/Reports/QueryWindow.cs
+    52:    public const int MostPlaysAnyShapeReads = 250_000;
+
+Nothing reads the third:
+
+    grep -rn "DailyAggregateRetentionDays" \
       --include=*.cs Jellyfin.Plugin.Stats/ | grep -v "^Jellyfin.Plugin.Stats/Configuration/" ; echo "exit=$?"
     exit=1
 
 with no output.
 
-The reason is not that their subject has not been built. It has. Daily
-aggregates are folded as plays are written, two personal answers are read back
-out of them, and four aggregate report routes are served:
-
-    grep -n 'HttpGet' Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs
-    162:    [HttpGet("Top")]
-    245:    [HttpGet("Breakdown")]
-    322:    [HttpGet("Usage")]
-    396:    [HttpGet("Year/{year:int}")]
-
-What is absent is the wiring between those three settings and the subject that
-exists, and each of the three is absent in its own way.
-
-A report is bounded, by two numbers the query layer holds rather than by the two
-caps on the settings page:
-
-    grep -n 'MostPlaysAnyShapeReads =\|LongestRangeAnyShapeAnswers =' \
-      Jellyfin.Plugin.Stats/Reports/QueryWindow.cs
-    52:    public const int MostPlaysAnyShapeReads = 250_000;
-    83:    public static readonly TimeSpan LongestRangeAnyShapeAnswers = TimeSpan.FromDays(367);
-
-So an operator who raises `MaximumRangeDays` to `3650` still meets a range
-refused above 367 days, by a number no page shows, and one who lowers
-`MaximumRowsPerResponse` to `10` gets responses no smaller than before.
-
-An aggregate is kept for ever rather than for `DailyAggregateRetentionDays`.
+The reason is not that its subject has not been built. It has: daily aggregates
+are folded as plays are written, and two personal answers are read back out of
+them. An aggregate is kept for ever rather than for
+`DailyAggregateRetentionDays`.
 Two statements remove a rollup row, one dropping a day a corrective deletion
 emptied and one clearing the table for a rebuild, and neither of them reads an
 age:
@@ -87,10 +90,10 @@ age:
     Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:500:        "DELETE FROM daily_rollups WHERE Plays <= 0";
     Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:504:    private const string ForgetEveryRollup = "DELETE FROM daily_rollups";
 
-Read a cap here as one sitting beside a working report and doing nothing, rather
-than as one waiting for a feature to arrive. The three entries below therefore
-say what the setting is defined to govern rather than what it governs, and
-whether each is wired to what it names or comes off the page is issue #305.
+Read that entry as one sitting beside a working fold and doing nothing, rather
+than as one waiting for a feature to arrive. Its row below therefore says what
+the setting is defined to govern rather than what it governs, and the sweep it
+names is issue #315.
 
 ## The settings
 
@@ -98,9 +101,9 @@ whether each is wired to what it names or comes off the page is issue #305.
 | ----------------------------- | ------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `CaptureEnabled`              | `true`  | `true` or `false`                                    | Whether plays are recorded at all. Off means nothing is written. It does not hide, and does not delete, what is already stored.      |
 | `PlayRowRetentionDays`        | `90`    | a whole number of days from `1` to `3650`            | How long a raw play row is kept before the retention sweep deletes it.                                                              |
-| `DailyAggregateRetentionDays` | `400`   | a whole number of days from `1` to `3650`            | How long the daily aggregates are kept. Longer than the raw rows on purpose, because they answer a question that names nobody.       |
-| `MaximumRangeDays`            | `400`   | a whole number of days from `1` to `3650`            | The widest range a report may ask for. A request for more is refused with the cap named rather than quietly shortened.               |
-| `MaximumRowsPerResponse`      | `1000`  | a whole number from `1` to `100000`                  | The most rows any single response may carry.                                                                                        |
+| `DailyAggregateRetentionDays` | `400`   | a whole number of days from `1` to `3650`            | Read by nothing. It is defined as how long the daily aggregates are kept, and no sweep deletes one; issue #315 holds that.           |
+| `MaximumRangeDays`            | `367`   | a whole number of days from `1` to `3650`            | The widest range an aggregate report may ask for. A longer range is refused rather than quietly shortened.                           |
+| `MaximumRowsPerResponse`      | `1000`  | a whole number from `1` to `100000`                  | The most rows an aggregate report may carry. An answer with more rows is refused rather than cut to the first of them.               |
 | `RollupTimeZone`              | `UTC`   | any zone identifier the running machine can resolve  | The zone a day is counted in. Rows are stored in UTC and read into a local day, so this decides which day a late evening play is on. |
 | `ExcludedUserIds`             | empty   | user identifiers                                     | Users whose plays are not recorded. An entry that is not an identifier is dropped and the rest of the list is kept.                  |
 | `ExcludedItemTypes`           | empty   | names the server's own item kinds carry              | Item types whose plays are not recorded. An entry the server has no such kind for is dropped and the rest of the list is kept.       |
@@ -111,7 +114,7 @@ whether each is wired to what it names or comes off the page is issue #305.
 
 ## What takes effect when, and what it leaves alone
 
-This is the meaning each setting is defined to have. For the three the section
+This is the meaning each setting is defined to have. For the one the section
 above names as read by nothing, it is still a definition rather than a
 description.
 
@@ -132,9 +135,13 @@ setting:
     44:[Route("Stats/Users/{userId}/Plays")]
     108:    [HttpDelete]
 
-`MaximumRangeDays` and `MaximumRowsPerResponse` are defined to apply to the next
-request, changing what a report may ask for and never what is stored. Neither is
-read, so today neither changes anything in either direction.
+`MaximumRangeDays` and `MaximumRowsPerResponse` apply to the next request,
+changing what an aggregate report may ask for and carry, and never what is
+stored. Both are read while the request is served, so a saved page binds the
+request after it rather than the restart after it. Both refuse rather than
+shorten: a report folded from the part of a range that fitted, or cut to the
+first of its rows, reads exactly like one that covered the whole of what was
+asked.
 
 `RollupTimeZone` is the exception, and it changes a reading rather than a row. A
 stored play does not move; it is stamped in UTC. What moves is which local day
@@ -154,10 +161,10 @@ Shortening it deletes nothing at the moment the page is saved.
 `DailyAggregateRetentionDays` takes effect on no sweep at all, because no sweep
 reads it.
 
-None of the five settings that are read needs a restart. Each is read at the
+None of the seven settings that are read needs a restart. Each is read at the
 moment it is used rather than copied at start-up: capture and the two exclusion
-lists at every play, the retention window at every sweep, and the rollup zone at
-every request for a report. A setting that turns out to need a restart is named
+lists at every play, the retention window at every sweep, and the rollup zone
+and the two report caps at every request for a report. A setting that turns out to need a restart is named
 on the page and in this document rather than left for an operator to discover.
 
 ## Retention deletes, and the deletion cannot be undone

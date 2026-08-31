@@ -189,6 +189,15 @@ public sealed class AggregateReportsController : ControllerBase
         {
             var rows = _reports.Top(window, TopListLength, groupRowsBy, sort);
 
+            if (rows is not null && !WithinTheRowCap(rows.Count))
+            {
+                // A withheld list carries no rows, so it is inside every cap and
+                // is answered rather than refused. What is refused here is a top
+                // list longer than the operator allows a response to be, which
+                // on this route means a cap set below TopListLength.
+                return BadRequest();
+            }
+
             return Ok(rows is null ? TopTitles.NotShown : TopTitles.Of(rows));
         }
         catch (TooManyPlaysToAnswerException)
@@ -270,6 +279,16 @@ public sealed class AggregateReportsController : ControllerBase
         {
             var folded = _reports.Breakdown(window, groupRowsBy);
 
+            if (folded is not null && !WithinTheRowCap(folded.Rows.Count))
+            {
+                // A withheld breakdown carries no rows and is answered as
+                // withheld. What is refused is a breakdown with more members
+                // than the operator allows a response to carry, which is the
+                // shape the cap was put on the page for: a server with hundreds
+                // of clients answering one request with all of them.
+                return BadRequest();
+            }
+
             return Ok(folded is null ? BreakdownReport.NotShown : BreakdownReport.Of(folded));
         }
         catch (TooManyPlaysToAnswerException)
@@ -345,7 +364,20 @@ public sealed class AggregateReportsController : ControllerBase
 
         try
         {
-            return Ok(_reports.Series(window, zone));
+            var usage = _reports.Series(window, zone);
+
+            if (!WithinTheRowCap(usage.Rows.Count))
+            {
+                // One row per day the range covers, so this is the cap and the
+                // range cap saying the same thing from two directions. Both are
+                // the operator's numbers and neither is derived from the other,
+                // so a cap of thirty rows with a range of a year is a
+                // configuration that refuses its own reports rather than one
+                // this route quietly reconciles.
+                return BadRequest();
+            }
+
+            return Ok(usage);
         }
         catch (TooManyPlaysToAnswerException)
         {
@@ -453,7 +485,7 @@ public sealed class AggregateReportsController : ControllerBase
     /// <param name="to">The first moment after the range.</param>
     /// <param name="window">The range and the bound.</param>
     /// <returns><c>true</c> where the request named a range this plugin answers over.</returns>
-    private static bool ARangeThisPluginAnswersOver(DateTimeOffset? from, DateTimeOffset? to, out QueryWindow window)
+    private bool ARangeThisPluginAnswersOver(DateTimeOffset? from, DateTimeOffset? to, out QueryWindow window)
     {
         window = null!;
 
@@ -464,7 +496,10 @@ public sealed class AggregateReportsController : ControllerBase
 
         try
         {
-            window = QueryWindow.Of(from.Value.UtcDateTime, to.Value.UtcDateTime);
+            window = QueryWindow.Of(
+                from.Value.UtcDateTime,
+                to.Value.UtcDateTime,
+                longestRange: TimeSpan.FromDays(_configuration().MaximumRangeDays));
         }
         catch (ArgumentException)
         {
@@ -473,6 +508,35 @@ public sealed class AggregateReportsController : ControllerBase
 
         return true;
     }
+
+    /// <summary>
+    /// Whether a response carrying this many rows is one the settings allow.
+    /// </summary>
+    /// <remarks>
+    /// The second half of issue #305. A cap that does not bite is worse than an
+    /// absent one: an operator lowers it, believes the server is bounded by what
+    /// they typed, and the report answers with everything it folded. So the
+    /// number on the page decides here, and it decides for every shape on this
+    /// route rather than for the ones whose row count happens to follow the
+    /// data - a cap that reached two of three responses is the same defect one
+    /// step smaller.
+    /// <para>
+    /// REFUSED AND NEVER SHORTENED, which is the rule the range cap beside it
+    /// already follows and the reason it is stated again here. A breakdown cut
+    /// to the first ten of its rows reads exactly like a breakdown that had ten,
+    /// and the reader has no way to tell the two apart; a refusal is a fact the
+    /// operator can act on, by raising the cap or by asking over less.
+    /// </para>
+    /// <para>
+    /// The setting is read while the request is served rather than held, so a
+    /// cap an operator changes binds the next request instead of the next
+    /// restart. That is what <c>WhenAChangeTakesEffect.AtOnce</c> on the
+    /// property claims, and this is the call that makes the claim true.
+    /// </para>
+    /// </remarks>
+    /// <param name="rows">How many rows the response would carry.</param>
+    /// <returns><c>true</c> where the response is inside the cap.</returns>
+    private bool WithinTheRowCap(int rows) => rows <= _configuration().MaximumRowsPerResponse;
 
     /// <summary>
     /// Reads one choice off the request, or the default where the request did

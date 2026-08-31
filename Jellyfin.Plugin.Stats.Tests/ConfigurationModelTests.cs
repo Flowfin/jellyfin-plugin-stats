@@ -35,7 +35,7 @@ public class ConfigurationModelTests
             // field, default, an accepted value, one refused value
             { nameof(PluginConfiguration.PlayRowRetentionDays), 90, 3650, 0 },
             { nameof(PluginConfiguration.DailyAggregateRetentionDays), 400, 1, 3651 },
-            { nameof(PluginConfiguration.MaximumRangeDays), 400, 365, -1 },
+            { nameof(PluginConfiguration.MaximumRangeDays), 367, 365, -1 },
             { nameof(PluginConfiguration.MaximumRowsPerResponse), 1000, 100000, 100001 },
             { nameof(PluginConfiguration.RollupTimeZone), "UTC", "Europe/Berlin", "Nowhere/Atall" },
             {
