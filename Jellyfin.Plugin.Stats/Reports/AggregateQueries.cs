@@ -797,22 +797,25 @@ public sealed class AggregateQueries
     /// <param name="zone">The zone the window's days are read in.</param>
     /// <param name="now">The moment the window ends at, read off a clock the caller was given.</param>
     /// <param name="topCount">How many rows the top list may hold.</param>
+    /// <param name="access">What the library says about which items this account may see, which the top list is cut to. Issue #299.</param>
     /// <returns>The figures.</returns>
-    /// <exception cref="ArgumentNullException">No zone was given.</exception>
+    /// <exception cref="ArgumentNullException">No zone or no library was given.</exception>
     /// <exception cref="StoreCouldNotBeOpenedException">The store could not be opened.</exception>
     public OwnFigures FiguresFor(
         Guid userId,
         PersonalWindow window,
         TimeZoneInfo zone,
         DateTimeOffset now,
-        int topCount)
+        int topCount,
+        IItemAccess access)
     {
         ArgumentNullException.ThrowIfNull(zone);
+        ArgumentNullException.ThrowIfNull(access);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
 
         return ReadFromTheStore.Answering(
             _openStore,
-            store => TheirFiguresOver(store, userId, window, zone, now, topCount));
+            store => TheirFiguresOver(store, userId, window, zone, now, topCount, access));
     }
 
     /// <summary>
@@ -824,18 +827,21 @@ public sealed class AggregateQueries
     /// <param name="zone">The zone the window is read in.</param>
     /// <param name="now">The moment the window ends at.</param>
     /// <param name="topCount">How many rows the top list may hold.</param>
+    /// <param name="access">What the library says about which items this account may see, which the top list is cut to. Issue #299.</param>
     /// <returns>The figures.</returns>
-    /// <exception cref="ArgumentNullException">No store or no zone was given.</exception>
+    /// <exception cref="ArgumentNullException">No store, no zone or no library was given.</exception>
     public static OwnFigures TheirFiguresOver(
         IPlayStore store,
         Guid userId,
         PersonalWindow window,
         TimeZoneInfo zone,
         DateTimeOffset now,
-        int topCount)
+        int topCount,
+        IItemAccess access)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(zone);
+        ArgumentNullException.ThrowIfNull(access);
 
         var today = LocalDay.Of(now, zone);
         var dayAfter = today.AddDays(1);
@@ -853,7 +859,9 @@ public sealed class AggregateQueries
             rollups,
             rows.Rows,
             rows.Because,
-            topCount);
+            topCount,
+            userId,
+            access);
     }
 
     /// <summary>

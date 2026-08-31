@@ -369,24 +369,27 @@ consent and deletion controls beside them, one showing their year - and one is
 an administrator's view of usage over time. The settings page reads settings and
 shows no stored row.
 
-The year answer is cut to what the account asking may still see. Every label in
-it comes off the row that was written when the play happened, and the library is
-asked one thing while the request is served: whether that account may see the
-item a row of a top list would name. An item it may not see is dropped from the
-lists and still counted in the totals, so a figure never moves for a reason a
-reader cannot see; an item the library no longer holds is named, because a play
-of something that has since been deleted is still that account's own play and
-there is no access question left to ask about it. The rows are untouched by any
-of this: what changes is the answer, per request, and never the store.
+Both personal answers are cut to what the account asking may still see. Every
+label in them comes off the row that was written when the play happened, and the
+library is asked one thing while the request is served: whether that account may
+see the item a row of a top list would name. An item it may not see is dropped
+from the lists and still counted in the totals, so a figure never moves for a
+reason a reader cannot see; an item the library no longer holds is named,
+because a play of something that has since been deleted is still that account's
+own play and there is no access question left to ask about it. The rows are
+untouched by any of this: what changes is the answer, per request, and never the
+store.
 
-**That cut is on the year answer and on no other.** The statistics answer above
-carries a top list too, built from the same play rows, and the library is not
-asked about the items it names. So an account that played an item it may no
-longer see is told the item's name there and is not told it in its own year, and
-the two answers about the same rows disagree. Nothing about this reaches another
-account: it is that account's own play either way. It is written here because it
-is a difference between two routes a reader would expect to behave alike, and
-issue #299 is where it is held.
+**One rule over both, settled on 2026-08-31.** Until then the cut was on the
+year answer alone. The statistics answer carries a top list built from the same
+rows, it was built after the rule was decided and did not carry it, and one
+account asking the two routes about the same item got two different answers.
+Issue #299 settled it in favour of the year rather than declaring the two
+deliberately different: an item can be moved out of a library an account no
+longer has access to, and a top list of that account's own plays would then name
+it back to them. Declaring them different would have put a second visibility
+model into this plugin with nothing enforcing it, which is the shape the rest of
+this design spends its time removing.
 
 Beyond those two, the readers of this data are whoever can read the file. That is
 the server's own account and anyone with access to the server data directory or
