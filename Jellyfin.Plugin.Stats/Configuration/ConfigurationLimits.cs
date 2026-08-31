@@ -39,7 +39,20 @@ public static class ConfigurationLimits
     /// <summary>
     /// The widest range a report may ask for by default, in days.
     /// </summary>
-    public const int DefaultMaximumRangeDays = 400;
+    /// <remarks>
+    /// The plugin's own longest range, expressed as a setting, so an
+    /// installation nobody has configured is bounded by exactly the number that
+    /// bounded it before this setting reached anything. It was 400 until issue
+    /// #305 wired the setting to the report path, and 400 against a query layer
+    /// that refused at 367 was a page number and a behaviour disagreeing by
+    /// five weeks.
+    /// <para>
+    /// The two are held together by a case rather than by this sentence, since
+    /// a number written in two places is a number that disagrees with itself
+    /// the first time only one of them is edited.
+    /// </para>
+    /// </remarks>
+    public const int DefaultMaximumRangeDays = 367;
 
     /// <summary>
     /// The most rows any single response may carry by default.

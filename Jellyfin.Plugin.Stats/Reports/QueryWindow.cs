@@ -52,14 +52,21 @@ public sealed record QueryWindow
     public const int MostPlaysAnyShapeReads = 250_000;
 
     /// <summary>
-    /// The longest range any shape here answers over, whatever a caller asks
-    /// for.
+    /// The longest range this type answers over where nothing names another
+    /// ceiling, and whatever a caller asks for.
     /// </summary>
     /// <remarks>
     /// The other half of the same sentence as the bound above, and it bites
     /// earlier: a range is refused for its length before a single row is read,
     /// so an eight-year window costs the server one comparison rather than a
     /// quarter of a million rows fetched and thrown away.
+    /// <para>
+    /// A CALLER MAY NAME A DIFFERENT CEILING AND THIS IS WHAT STANDS WHERE NONE
+    /// DOES. The report routes name the one the settings page carries, which is
+    /// issue #305; every other call takes this number. The word "whatever a
+    /// caller asks for" is about the request and is unchanged: nothing on a
+    /// request has ever decided this and nothing does now.
+    /// </para>
     /// <para>
     /// The number follows from the longest report this plugin offers rather
     /// than being picked for roundness. That report is a calendar year, and a
@@ -110,13 +117,34 @@ public sealed record QueryWindow
     /// <param name="fromUtc">The first moment in the window, in UTC.</param>
     /// <param name="toUtc">The first moment after the window, in UTC.</param>
     /// <param name="mostPlays">How many plays at most to read. Held down to <see cref="MostPlaysAnyShapeReads"/>.</param>
+    /// <param name="longestRange">
+    /// The longest range this window may cover. Absent, it is
+    /// <see cref="LongestRangeAnyShapeAnswers"/>, so every call that names no
+    /// ceiling is bounded exactly as it was before a caller could name one.
+    /// </param>
     /// <returns>The window.</returns>
-    /// <exception cref="ArgumentException">A bound is not in UTC, the window ends before it starts, or it is longer than <see cref="LongestRangeAnyShapeAnswers"/>.</exception>
-    public static QueryWindow Of(DateTime fromUtc, DateTime toUtc, int mostPlays = MostPlaysAnyShapeReads)
+    /// <exception cref="ArgumentException">A bound is not in UTC, the window ends before it starts, or it is longer than the ceiling in force.</exception>
+    public static QueryWindow Of(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int mostPlays = MostPlaysAnyShapeReads,
+        TimeSpan? longestRange = null)
     {
         InUtc(fromUtc, nameof(fromUtc));
         InUtc(toUtc, nameof(toUtc));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(mostPlays);
+
+        // WHAT DECIDES THE CEILING IS THE CALLER WHERE ONE NAMES IT, AND THIS
+        // TYPE OTHERWISE. Issue #305: an operator sets a range cap on the
+        // settings page, and until this argument existed there was no way for
+        // that number to reach anything - the constant below decided every
+        // range on every route, and the page said otherwise. A ceiling an
+        // operator can raise is a weaker statement than one nobody can, and it
+        // is the statement a cap on a settings page makes; what is not
+        // operator-settable, and is the bound that actually stops a request
+        // making the server do arbitrary work, is MostPlaysAnyShapeReads.
+        var ceiling = longestRange ?? LongestRangeAnyShapeAnswers;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ceiling, TimeSpan.Zero, nameof(longestRange));
 
         if (toUtc < fromUtc)
         {
@@ -126,14 +154,14 @@ public sealed record QueryWindow
         }
 
         var asked = toUtc - fromUtc;
-        if (asked > LongestRangeAnyShapeAnswers)
+        if (asked > ceiling)
         {
             throw new ArgumentException(
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "That range is {0} days and the longest this plugin answers over is {1} days. It is refused rather than shortened, because a report over the part of a range that fitted reads exactly like a report over the whole of it.",
                     asked.TotalDays.ToString("0.##", CultureInfo.InvariantCulture),
-                    LongestRangeAnyShapeAnswers.TotalDays.ToString("0.##", CultureInfo.InvariantCulture)),
+                    ceiling.TotalDays.ToString("0.##", CultureInfo.InvariantCulture)),
                 nameof(toUtc));
         }
 
