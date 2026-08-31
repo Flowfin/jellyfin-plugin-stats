@@ -21,6 +21,7 @@ using Jellyfin.Plugin.Stats.Api;
 using Jellyfin.Plugin.Stats.Data;
 using Jellyfin.Plugin.Stats.Reports;
 using Jellyfin.Plugin.Stats.Tests.Api;
+using Jellyfin.Plugin.Stats.Tests.Fakes;
 using Xunit;
 
 namespace Jellyfin.Plugin.Stats.Tests;
@@ -83,7 +84,7 @@ public sealed class YourOwnFiguresTests : IDisposable
 
         using var store = new SqlitePlayStore(_root, Berlin);
 
-        var figures = AggregateQueries.TheirFiguresOver(store, Ada, window, Berlin, Noon, topCount: 5);
+        var figures = AggregateQueries.TheirFiguresOver(store, Ada, window, Berlin, Noon, topCount: 5, FakeItemAccess.EverythingVisible);
 
         Assert.Equal(name, figures.Window);
         Assert.Equal(Berlin.Id, figures.ZoneId);
@@ -117,7 +118,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         var inWindow = plays
             .Where(play => DayOf(play) >= DateOnly.FromDateTime(Noon.UtcDateTime).AddDays(-29))
@@ -159,7 +161,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         var alone = AggregateQueries.TheirFiguresOver(
             store,
@@ -167,7 +170,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Equal(AJuneOfPlays(Ada).Count(), hers.Plays);
         Assert.Equal(AJuneOfPlays(Bob).Count(), alone.Plays);
@@ -191,7 +195,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 2);
+            topCount: 2,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Equal(2, figures.TopItems.Count);
         Assert.True(figures.TopItems[0].Watched >= figures.TopItems[1].Watched);
@@ -221,7 +226,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         var fromRows = OwnFiguresFold.Over(
             "last30Days",
@@ -232,7 +238,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             rollups: null,
             rows: AJuneOfPlays(Ada).ToList(),
             rowsRefusedBecause: null,
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.Equal(fromRollups.Plays, fromRows.Plays);
         Assert.Equal(fromRollups.Watched, fromRows.Watched);
@@ -259,7 +267,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Auckland,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Equal(Auckland.Id, figures.ZoneId);
         Assert.NotNull(figures.Plays);
@@ -288,7 +297,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.NotNull(figures.Plays);
         Assert.NotNull(figures.Watched);
@@ -320,7 +330,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             rollups: null,
             rows: null,
             rowsRefusedBecause: "There are more of these than one answer may read.",
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.Null(figures.Plays);
         Assert.Null(figures.Watched);
@@ -363,7 +375,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.AllTime,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.True(figures.Degraded.ContainsKey(OwnFigures.TopItemsFigure));
         Assert.Empty(figures.TopItems);
@@ -387,7 +400,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.AllTime,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Equal(0, figures.Plays);
         Assert.Empty(figures.TopItems);
@@ -411,7 +425,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Single(figures.TopItems);
         Assert.Null(figures.TopItems[0].Name);
@@ -517,7 +532,8 @@ public sealed class YourOwnFiguresTests : IDisposable
                 (PersonalWindow)99,
                 Berlin,
                 Noon,
-                topCount: 5));
+                topCount: 5,
+                FakeItemAccess.EverythingVisible));
     }
 
     /// <summary>
@@ -542,7 +558,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         var overTheBound = AggregateQueries.TheirFiguresOver(
             new EveryRollupReadIsOverTheBound(store),
@@ -550,7 +567,8 @@ public sealed class YourOwnFiguresTests : IDisposable
             PersonalWindow.Last30Days,
             Berlin,
             Noon,
-            topCount: 5);
+            topCount: 5,
+            FakeItemAccess.EverythingVisible);
 
         Assert.Equal(honest.Plays, overTheBound.Plays);
         Assert.Equal(honest.Watched, overTheBound.Watched);
@@ -590,7 +608,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             rollups: null,
             rows: rows,
             rowsRefusedBecause: null,
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.Equal(AJuneOfPlays(Ada).Count(), fromRows.Plays);
 
@@ -609,7 +629,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             rollups: rollups,
             rows: rows,
             rowsRefusedBecause: null,
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.Equal(4, fromRollups.Plays);
         Assert.Equal(TimeSpan.FromHours(2), fromRollups.Watched);
@@ -638,7 +660,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             rollups: null,
             rows: null,
             rowsRefusedBecause: null,
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.NotEmpty(figures.Degraded[OwnFigures.TopItemsFigure]);
         Assert.NotEmpty(figures.Degraded[OwnFigures.PlaysFigure]);
@@ -673,7 +697,9 @@ public sealed class YourOwnFiguresTests : IDisposable
             },
             rows: Array.Empty<PlayRecord>(),
             rowsRefusedBecause: null,
-            topCount: 5);
+            topCount: 5,
+            whose: Ada,
+            access: FakeItemAccess.EverythingVisible);
 
         Assert.Equal(12, figures.Points.Count);
         Assert.Equal("2025-07", figures.Points[0].Label);

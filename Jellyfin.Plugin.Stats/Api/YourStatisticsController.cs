@@ -65,6 +65,7 @@ public sealed class YourStatisticsController : ControllerBase
     private readonly IAuthorizationContext _callers;
     private readonly Func<PluginConfiguration> _configuration;
     private readonly TimeProvider _clock;
+    private readonly IItemAccess _access;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="YourStatisticsController"/>
@@ -74,21 +75,25 @@ public sealed class YourStatisticsController : ControllerBase
     /// <param name="callers">What the server says about who made a request.</param>
     /// <param name="configuration">The current settings, read at the moment one is needed rather than held.</param>
     /// <param name="clock">Says which moment the window ends at, so the window is not worked out from a machine setting.</param>
+    /// <param name="access">What the library says about which items the caller may see, which the top list is cut to. The year route takes the same seam, and issue #299 is where the two were made one rule.</param>
     public YourStatisticsController(
         AggregateQueries reports,
         IAuthorizationContext callers,
         Func<PluginConfiguration> configuration,
-        TimeProvider clock)
+        TimeProvider clock,
+        IItemAccess access)
     {
         ArgumentNullException.ThrowIfNull(reports);
         ArgumentNullException.ThrowIfNull(callers);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(access);
 
         _reports = reports;
         _callers = callers;
         _configuration = configuration;
         _clock = clock;
+        _access = access;
     }
 
     /// <summary>
@@ -149,7 +154,7 @@ public sealed class YourStatisticsController : ControllerBase
 
         try
         {
-            return Ok(_reports.FiguresFor(userId, chosen, zone, _clock.GetUtcNow(), TopListLength));
+            return Ok(_reports.FiguresFor(userId, chosen, zone, _clock.GetUtcNow(), TopListLength, _access));
         }
         catch (StoreCouldNotBeOpenedException)
         {

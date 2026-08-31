@@ -53,8 +53,10 @@ public static class OwnFiguresFold
     /// <param name="rows">This account's play rows for the window, or null where they could not be read.</param>
     /// <param name="rowsRefusedBecause">Why the rows could not be read, where they could not.</param>
     /// <param name="topCount">How many rows the top list may hold.</param>
+    /// <param name="whose">The account these figures are for, which is the account the access question is asked about.</param>
+    /// <param name="access">What the library says about which items that account may see.</param>
     /// <returns>The figures.</returns>
-    /// <exception cref="ArgumentNullException">No window name or no zone was given.</exception>
+    /// <exception cref="ArgumentNullException">No window name, no zone or no library was given.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The top list bound is not a positive number.</exception>
     public static OwnFigures Over(
         string window,
@@ -65,10 +67,13 @@ public static class OwnFiguresFold
         IReadOnlyList<DailyRollup>? rollups,
         IReadOnlyList<PlayRecord>? rows,
         string? rowsRefusedBecause,
-        int topCount)
+        int topCount,
+        Guid whose,
+        IItemAccess access)
     {
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(zone);
+        ArgumentNullException.ThrowIfNull(access);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(topCount);
 
         var degraded = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -111,7 +116,7 @@ public static class OwnFiguresFold
             Finished = totals.Finished,
             Abandoned = totals.Plays - totals.Finished,
             Points = PointsOf(grouping, firstDay, dayAfter, totals.PerDay),
-            TopItems = rows is null ? Array.Empty<TitleRow>() : TopOf(rows, topCount),
+            TopItems = rows is null ? Array.Empty<TitleRow>() : TopOf(rows, topCount, whose, access),
             Degraded = degraded,
         };
     }
@@ -199,17 +204,48 @@ public static class OwnFiguresFold
     }
 
     /// <summary>
-    /// What this account watched most over the window.
+    /// What this account watched most over the window, out of the items it may
+    /// still be shown.
     /// </summary>
     /// <remarks>
     /// The identifier breaks a tie, so two items watched for the same time come
     /// back in the same order on every run and on every machine rather than in
     /// the order the store happened to hand them over.
+    /// <para>
+    /// THE ACCESS RULE IS ISSUE #54'S AND IT REACHES A READER'S OWN PLAYS,
+    /// which is what issue #299 settled on 2026-08-31. Until then this list was
+    /// the one production top list that named an item without asking, so one
+    /// account asking two routes about the same rows got two different answers
+    /// - and the argument for that difference, that a person who played an item
+    /// may always be told they played it, fails exactly where it matters: an
+    /// item can be moved out of a library that account no longer has access to,
+    /// and this list would name it back to them.
+    /// </para>
+    /// <para>
+    /// The cut is taken after the question rather than before it, the way the
+    /// year's own list takes it. Filtering a list that had already been cut to
+    /// its length would shorten it by the withheld rows, so a person with one
+    /// hidden item would see four titles where somebody else sees five, and the
+    /// missing row would be a fact about the library they could read off the
+    /// length.
+    /// </para>
+    /// <para>
+    /// FALSE IS THE ONLY ANSWER THAT DROPS A ROW. Null is the library holding
+    /// no such item, which is a play of something since deleted rather than
+    /// something this account may not see, and it is named out of the row the
+    /// way every other label here is.
+    /// </para>
     /// </remarks>
     /// <param name="rows">The rows.</param>
     /// <param name="topCount">How many rows the list may hold.</param>
+    /// <param name="whose">The account the list is for.</param>
+    /// <param name="access">What the library says about which items that account may see.</param>
     /// <returns>The list.</returns>
-    private static List<TitleRow> TopOf(IReadOnlyList<PlayRecord> rows, int topCount)
+    private static List<TitleRow> TopOf(
+        IReadOnlyList<PlayRecord> rows,
+        int topCount,
+        Guid whose,
+        IItemAccess access)
     {
         var tallies = new Dictionary<Guid, Tally>();
 
@@ -238,7 +274,17 @@ public static class OwnFiguresFold
             return byWatched != 0 ? byWatched : left.Key.CompareTo(right.Key);
         });
 
-        return ranked.Count > topCount ? ranked.GetRange(0, topCount) : ranked;
+        var shown = new List<TitleRow>(topCount);
+
+        for (var i = 0; i < ranked.Count && shown.Count < topCount; i++)
+        {
+            if (access.MaySee(whose, ranked[i].Key) != false)
+            {
+                shown.Add(ranked[i]);
+            }
+        }
+
+        return shown;
     }
 
     /// <summary>
