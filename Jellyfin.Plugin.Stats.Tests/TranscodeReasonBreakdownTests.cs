@@ -124,9 +124,14 @@ public class TranscodeReasonBreakdownTests
                 var earlier = breakdown.Reasons[i - 1];
                 var later = breakdown.Reasons[i];
 
+                // The tie is read with the comparison the fold itself sorts by
+                // rather than with `==`. Two doubles are tied here exactly when
+                // CompareTo says so, which is the question the fold asked, and
+                // an equality operator on a pair of doubles is a second way of
+                // asking a question the fold has already answered. Issue #313.
                 Assert.True(
                     earlier.WatchedMinutes > later.WatchedMinutes
-                    || (earlier.WatchedMinutes == later.WatchedMinutes
+                    || (earlier.WatchedMinutes.CompareTo(later.WatchedMinutes) == 0
                         && (earlier.Plays > later.Plays
                             || (earlier.Plays == later.Plays
                                 && string.CompareOrdinal(earlier.Reason, later.Reason) < 0))),
@@ -415,6 +420,66 @@ public class TranscodeReasonBreakdownTests
     public void AMissingSequenceIsRefusedRatherThanReadAsEmpty()
     {
         Assert.Throws<ArgumentNullException>(() => TranscodeReasonBreakdown.Over(null!));
+    }
+
+    /// <summary>
+    /// Two rows a single tick apart are ordered by their minutes, and the
+    /// tie-break is not reached.
+    /// </summary>
+    /// <remarks>
+    /// The near miss the alert on this file predicted, built rather than
+    /// argued. A tick is 1/600,000,000 of a minute and the totals here are of
+    /// the order of half an hour, so the two doubles are distinct by a very
+    /// long way and the first branch of the ordering assertion decides it. The
+    /// case is here because the prediction is what the repair was proposed for,
+    /// and a repair whose reason nobody reproduced is one somebody undoes.
+    /// </remarks>
+    [Fact]
+    public void TwoRowsOneTickApartAreOrderedByTheirMinutes()
+    {
+        var longer = TimeSpan.FromMinutes(30);
+
+        var breakdown = TranscodeReasonBreakdown.Over(
+        [
+            APlayWatchedFor(longer, "ContainerNotSupported"),
+            APlayWatchedFor(longer - TimeSpan.FromTicks(1), "VideoCodecNotSupported")
+        ]);
+
+        Assert.Equal(
+            new[] { "ContainerNotSupported", "VideoCodecNotSupported" },
+            breakdown.Reasons.Select(row => row.Reason));
+
+        Assert.NotEqual(
+            0,
+            breakdown.Reasons[0].WatchedMinutes.CompareTo(breakdown.Reasons[1].WatchedMinutes));
+    }
+
+    /// <summary>
+    /// Two rows whose minutes are the same are ordered by plays, which is the
+    /// branch the tie-break decides.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the pair above: the ordering assertion reads a tie
+    /// with the comparison the fold sorts by, so the branch has to be reachable
+    /// or the assertion is one nothing exercises.
+    /// </remarks>
+    [Fact]
+    public void TwoRowsWithTheSameMinutesAreOrderedByPlays()
+    {
+        var half = TimeSpan.FromMinutes(15);
+
+        var breakdown = TranscodeReasonBreakdown.Over(
+        [
+            APlayWatchedFor(half, "VideoCodecNotSupported", "ContainerNotSupported"),
+            APlayWatchedFor(half, "VideoCodecNotSupported")
+        ]);
+
+        Assert.Equal(
+            new[] { "VideoCodecNotSupported", "ContainerNotSupported" },
+            breakdown.Reasons.Select(row => row.Reason));
+
+        Assert.Equal(2, breakdown.Reasons[0].Plays);
+        Assert.Equal(1, breakdown.Reasons[1].Plays);
     }
 
     private static PlayRecord APlayReporting(params string[] reasons)
