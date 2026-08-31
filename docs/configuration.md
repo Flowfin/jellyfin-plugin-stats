@@ -16,7 +16,7 @@ happened to, above the form.
 
 ## What these settings govern today
 
-Four of them decide something. The other four exist, validate and are stored,
+Five of them decide something. The other three exist, validate and are stored,
 and change nothing, and this section says which is which so no entry below reads
 as a description of behaviour that is present.
 
@@ -25,9 +25,9 @@ immediately before a play is written:
 
     grep -n 'configuration.CaptureEnabled\|configuration.ExcludedUserIds\|configuration.ExcludedItemTypes' \
       Jellyfin.Plugin.Stats/Capture/CaptureGate.cs
-    81:        if (!configuration.CaptureEnabled)
-    86:        if (Array.Exists(configuration.ExcludedUserIds, entry => Guid.Parse(entry) == play.UserId))
-    92:            configuration.ExcludedItemTypes,
+    94:        if (!configuration.CaptureEnabled)
+    99:        if (Array.Exists(configuration.ExcludedUserIds, entry => Guid.Parse(entry) == play.UserId))
+    105:            configuration.ExcludedItemTypes,
 
 `PlayRowRetentionDays` decides what the retention sweep deletes, and it is read
 at the run rather than held from start-up:
@@ -35,18 +35,62 @@ at the run rather than held from start-up:
     grep -rn 'PlayRowRetentionDays' --include=*.cs Jellyfin.Plugin.Stats/ScheduledTasks/
     Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs:111:        var days = _configuration().PlayRowRetentionDays;
 
-Nothing reads the other four:
+`RollupTimeZone` decides which local day a play is counted on, and every route
+that answers a report reads it at the request:
 
-    grep -rn "DailyAggregateRetentionDays\|MaximumRangeDays\|MaximumRowsPerResponse\|RollupTimeZone" \
+    grep -rn 'RollupTimeZone' --include=*.cs Jellyfin.Plugin.Stats/Api/
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:344:        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:419:        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs:148:        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:176:        var zone = TimeZoneInfo.FindSystemTimeZoneById(settings.RollupTimeZone);
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:240:        var zone = TimeZoneInfo.FindSystemTimeZoneById(_configuration().RollupTimeZone);
+
+Nothing reads the other three:
+
+    grep -rn "DailyAggregateRetentionDays\|MaximumRangeDays\|MaximumRowsPerResponse" \
       --include=*.cs Jellyfin.Plugin.Stats/ | grep -v "^Jellyfin.Plugin.Stats/Configuration/" ; echo "exit=$?"
     exit=1
 
-with no output. There are no daily aggregates, so nothing keeps them for
-`DailyAggregateRetentionDays` and nothing rolls a day up in `RollupTimeZone`, and
-there are no reports, so nothing is bounded by `MaximumRangeDays` or
-`MaximumRowsPerResponse`. Issues #49 and #51 are where those gaps close. Until
-they do, those four entries below say what the setting will govern rather than
-what it governs.
+with no output.
+
+The reason is not that their subject has not been built. It has. Daily
+aggregates are folded as plays are written, two personal answers are read back
+out of them, and four aggregate report routes are served:
+
+    grep -n 'HttpGet' Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs
+    162:    [HttpGet("Top")]
+    245:    [HttpGet("Breakdown")]
+    322:    [HttpGet("Usage")]
+    396:    [HttpGet("Year/{year:int}")]
+
+What is absent is the wiring between those three settings and the subject that
+exists, and each of the three is absent in its own way.
+
+A report is bounded, by two numbers the query layer holds rather than by the two
+caps on the settings page:
+
+    grep -n 'MostPlaysAnyShapeReads =\|LongestRangeAnyShapeAnswers =' \
+      Jellyfin.Plugin.Stats/Reports/QueryWindow.cs
+    52:    public const int MostPlaysAnyShapeReads = 250_000;
+    83:    public static readonly TimeSpan LongestRangeAnyShapeAnswers = TimeSpan.FromDays(367);
+
+So an operator who raises `MaximumRangeDays` to `3650` still meets a range
+refused above 367 days, by a number no page shows, and one who lowers
+`MaximumRowsPerResponse` to `10` gets responses no smaller than before.
+
+An aggregate is kept for ever rather than for `DailyAggregateRetentionDays`.
+Two statements remove a rollup row, one dropping a day a corrective deletion
+emptied and one clearing the table for a rebuild, and neither of them reads an
+age:
+
+    grep -rn 'DELETE FROM daily_rollups' --include=*.cs Jellyfin.Plugin.Stats/
+    Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:500:        "DELETE FROM daily_rollups WHERE Plays <= 0";
+    Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:504:    private const string ForgetEveryRollup = "DELETE FROM daily_rollups";
+
+Read a cap here as one sitting beside a working report and doing nothing, rather
+than as one waiting for a feature to arrive. The three entries below therefore
+say what the setting is defined to govern rather than what it governs, and
+whether each is wired to what it names or comes off the page is issue #305.
 
 ## The settings
 
@@ -67,7 +111,7 @@ what it governs.
 
 ## What takes effect when, and what it leaves alone
 
-This is the meaning each setting is defined to have. For the four the section
+This is the meaning each setting is defined to have. For the three the section
 above names as read by nothing, it is still a definition rather than a
 description.
 
@@ -80,33 +124,49 @@ where they are until their retention window ends or somebody deletes them.
 
 Adding a user to `ExcludedUserIds`, or a type to `ExcludedItemTypes`, is the
 same shape: it stops new rows and removes none. A user who wants what was
-already recorded gone needs a deletion, which is issue #46.
+already recorded gone deletes it, which is a route of its own rather than a
+setting:
 
-`MaximumRangeDays` and `MaximumRowsPerResponse` apply to the next request. They
-change what a report is allowed to ask for and never what is stored.
+    grep -n 'Route("Stats/Users/{userId}/Plays")\|HttpDelete' \
+      Jellyfin.Plugin.Stats/Api/YourHistoryController.cs
+    44:[Route("Stats/Users/{userId}/Plays")]
+    108:    [HttpDelete]
+
+`MaximumRangeDays` and `MaximumRowsPerResponse` are defined to apply to the next
+request, changing what a report may ask for and never what is stored. Neither is
+read, so today neither changes anything in either direction.
 
 `RollupTimeZone` is the exception, and it changes a reading rather than a row. A
 stored play does not move; it is stamped in UTC. What moves is which local day
 it is counted on, so the same rows can produce different daily totals under a
 different zone. An aggregate computed under the old zone is not reused
-afterwards, which is issue #50.
+afterwards: the store states the zone its rollups were keyed in, and a report
+asked for in any zone with other rules folds the play rows instead of the
+rollups.
 
-The two retention windows take effect on the next sweep rather than on save.
-Shortening one does not delete anything at the moment the page is saved.
+    grep -n 'RollupZone is not TimeZoneInfo keyed' \
+      Jellyfin.Plugin.Stats/Reports/AggregateQueries.cs
+    926:        if (store.RollupZone is not TimeZoneInfo keyed || !keyed.HasSameRules(zone))
+    1039:        if (store.RollupZone is not TimeZoneInfo keyed || !keyed.HasSameRules(zone))
 
-None of the four settings that are read needs a restart. Each is read at the
+`PlayRowRetentionDays` takes effect on the next sweep rather than on save.
+Shortening it deletes nothing at the moment the page is saved.
+`DailyAggregateRetentionDays` takes effect on no sweep at all, because no sweep
+reads it.
+
+None of the five settings that are read needs a restart. Each is read at the
 moment it is used rather than copied at start-up: capture and the two exclusion
-lists at every play, and the retention window at every sweep. Issue #72 is where
-that is held for every consumer as they arrive, and where a setting that turns
-out to need a restart is named on the page and in this document rather than left
-for an operator to discover.
+lists at every play, the retention window at every sweep, and the rollup zone at
+every request for a report. A setting that turns out to need a restart is named
+on the page and in this document rather than left for an operator to discover.
 
 ## Retention deletes, and the deletion cannot be undone
 
 The sweep runs daily and can also be started by hand, from the scheduled tasks
 page of the server, where it is called "Delete playback statistics past their
 retention window". It reads `PlayRowRetentionDays`. Nothing sweeps the daily
-aggregates, because there are none yet.
+aggregates: they are folded and kept, and no run reads
+`DailyAggregateRetentionDays` in order to expire them.
 
 `PlayRowRetentionDays` and `DailyAggregateRetentionDays` are not display
 filters. A row past its window is deleted from the plugin's store, and the
@@ -133,19 +193,30 @@ end of a run rather than after each deletion. A store file that does not shrink
 after a sweep is one that found nothing to delete, or one whose run was
 cancelled before it got that far.
 
-What survives a row is the daily aggregates, for as long as
-`DailyAggregateRetentionDays` allows. Those say how much the server was used on
-a day and name no user, which is why they are allowed to outlive the rows they
-were computed from. Once a day passes that second window, nothing about it is
-left. None of that is true yet: nothing computes an aggregate, so a row past
-`PlayRowRetentionDays` today leaves nothing at all behind it, and issue #49 is
-where the other half arrives.
+What survives a row is the daily aggregates, and that is deliberate rather than
+incidental. A retention deletion leaves the day the row was folded into alone,
+which is what separates it from a deletion correcting the record; that second
+kind does take the row back out of its day:
+
+    grep -n 'A retention deletion reaches none of this' \
+      Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs
+    1511:    // A retention deletion reaches none of this. Its statement is that the raw
+
+Those figures say how much the server was used on a day and name no user, which
+is why they are allowed to outlive the rows they were computed from.
+
+They outlive them without end, and that is the half to read carefully.
+`DailyAggregateRetentionDays` is on the page, is validated and is stored, and
+nothing expires an aggregate by age, so a day whose raw rows left long ago is
+still counted in the totals a report reads. There is no second window closing
+behind the first one.
 
 Setting `DailyAggregateRetentionDays` shorter than `PlayRowRetentionDays` is
-accepted and nothing refuses it. It means the aggregates go before the rows they
-came from, and a report over a range that far back then has to read the rows
-instead. That is a slower report rather than a wrong one, but it is not what the
-two windows are shaped for.
+accepted and nothing refuses it. It is defined to mean that the aggregates go
+before the rows they came from, and that a report over a range that far back
+then has to read the rows instead - a slower report rather than a wrong one, but
+not what the two windows are shaped for. Since nothing reads the setting,
+neither the going nor the slower report happens today.
 
 ## Where this document is checked
 
@@ -155,5 +226,25 @@ fails, an entry for a field that no longer exists fails, a default that
 disagrees with the code fails, and a range that disagrees with the accepted
 range fails.
 
-What it cannot check is whether the prose is right. Every sentence outside the
-table is read by a person or not at all.
+One of the four reaches outside the table. It holds that the retention section
+names both windows, says what is deleted, says what survives, and says the
+deletion is permanent:
+
+    grep -n 'public void ' Jellyfin.Plugin.Stats.Tests/ConfigurationReferenceTests.cs
+    62:    public void TheTableCoversExactlyTheFieldsTheModelHas()
+    77:    public void EveryEntryNamesTheDefaultTheModelStartsFrom()
+    106:    public void EveryBoundedEntryNamesTheRangeTheSetterEnforces()
+    144:    public void TheRetentionSectionSaysWhatGoesWhatStaysAndThatItIsPermanent()
+
+What that one holds is that the statements are present, not that they are
+right. A section saying the wrong thing in the right words passes it, and every
+sentence this pass repaired had passed it. Run against the text this pass
+replaced, all four are green:
+
+    DOTNET_CLI_UI_LANGUAGE=en dotnet test --nologo -v q --filter "FullyQualifiedName~ConfigurationReferenceTests"
+    Passed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4  [net9.0]
+    Passed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4  [net10.0]
+
+with the duration and the assembly path of each line cut, because both move.
+
+Every other sentence outside the table is read by a person or not at all.
