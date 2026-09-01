@@ -559,6 +559,46 @@ public class AuthorizationMatrixTests
         }
     }
 
+    /// <summary>
+    /// Fails when a row that declares itself about nobody carries a placeholder
+    /// in its path.
+    /// </summary>
+    /// <remarks>
+    /// This is the premise a dismissal rests on rather than a statement about
+    /// an endpoint. Code scanning reports the format call in
+    /// <see cref="Row.PathFor"/> as ignoring the value it is handed, once per
+    /// row about nobody, and issue #314 dismissed that as intended behaviour:
+    /// a path naming nobody has nowhere to put the account, and the account is
+    /// computed anyway so that a row cannot declare itself about nobody in one
+    /// place and name somebody in another.
+    /// <para>
+    /// A dismissal freezes the claim it rests on and the analyser stops
+    /// re-reading the site, so a later row about nobody whose path did carry a
+    /// placeholder would put an account into a row declaring itself about
+    /// nobody, with no alert coming back to say so. The walk below is that
+    /// frozen claim turned back into a checked one, and the dismissal and the
+    /// property it rests on now fail together.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ARowAboutNobodyHasNoPlaceholderInItsPath()
+    {
+        var aboutNobody = Matrix
+            .Where(row => row.RowsAskedFor == WhoseRows.NobodysInParticular)
+            .ToList();
+
+        // A walk over an empty set asserts nothing, and would report the premise
+        // as holding on a table that had stopped carrying such a row at all.
+        Assert.NotEmpty(aboutNobody);
+
+        foreach (var row in aboutNobody)
+        {
+            Assert.False(
+                row.Path.Contains("{0}", StringComparison.Ordinal),
+                row.Action + " declares itself about nobody and its path carries the account placeholder.");
+        }
+    }
+
     private static IEnumerable<MethodInfo> Actions()
         => typeof(YourYearController).Assembly
             .GetTypes()
