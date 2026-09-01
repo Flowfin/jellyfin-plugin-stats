@@ -116,10 +116,71 @@ jobs:
           # repository, and hiding them would be an analysis of part of the
           # tree reported as an analysis of it - the failure this file's
           # build step already refuses one shape of.
+          # The second half of the same block is a different statement.
+          # paths-ignore says which source is not read; query-filters says
+          # which questions are not asked of the source that IS read. Six rule
+          # ids are excluded, which is the per-rule decision taken on #263 on
+          # 2026-08-28 and applied by #312 - not a fix and not a dismissal, but
+          # the third answer that issue offers: the rule is off for this
+          # repository.
+          #
+          # Every one of the six is a readability opinion rather than a fault
+          # finder, and this tree already answers style with an analyser set and
+          # an editorconfig. Each id carries the reason it is here, because a
+          # list of rule ids with no reason beside it is what somebody deletes
+          # in a year without being able to tell what it cost.
+          #
+          # They are named by id and never by language, because this block is
+          # shared by the three legs of the matrix above. A filter reaches
+          # exactly the ids it names, so no rule outside the six is affected and
+          # the security queries are untouched.
           config: |
             paths-ignore:
               - "**/obj/**"
               - "**/bin/**"
+            query-filters:
+              # A loop that could be a `.Where(...)`. The clearest of its ten
+              # sites is the loop over an account's permissions in
+              # Jellyfin.Plugin.Stats/Api/CallerIdentity.cs that looks for the
+              # administrator flag: satisfying the rule would put an
+              # authorization decision behind two lambdas and a deferred
+              # sequence, which is a style rule pointed at the wrong thing.
+              - exclude:
+                  id: cs/linq/missed-where
+              # The same family one question over: a loop that could be a
+              # `.Select(...)`. Off together with `missed-where` rather than
+              # separately, because splitting one opinion into two answers would
+              # leave the tree arguing with half of it.
+              - exclude:
+                  id: cs/linq/missed-select
+              # Two nested conditions that could be one. Both sites are in
+              # Jellyfin.Plugin.Stats/Data/PlayArchive.cs, where the outer
+              # condition and the inner one say different things about a row,
+              # and collapsing them would make one sentence out of two facts.
+              - exclude:
+                  id: cs/nested-if-statements
+              # A condition with more operators than the rule allows. Its site
+              # is the ordering assertion in the transcode reason breakdown
+              # suite, whose condition IS the three-level tie-break the fold
+              # sorts by - watched time, then plays, then the server's own name.
+              # Stating it in pieces would stop it reading as the ordering.
+              - exclude:
+                  id: cs/complex-condition
+              # A `ContainsKey` followed by an indexer, which the rule reads as
+              # one lookup too many. Its site asserts twice about one entry -
+              # that a sentence exists, and that it is not blank - with a
+              # different message for each, and one `TryGetValue` would collapse
+              # two failures a person can act on into one.
+              - exclude:
+                  id: cs/inefficient-containskey
+              # A disposable held in a local rather than in a `using`. Its site
+              # is the drain loop in
+              # Jellyfin.Plugin.Stats/Data/QueuedPlayWriter.cs, where the store
+              # is opened lazily inside the loop and disposed in the outer
+              # finally, so it outlives every iteration and a `using` cannot
+              # express that lifetime at all.
+              - exclude:
+                  id: cs/missed-using-statement
 
       - name: Build what is scanned
         # Built by name rather than by autobuild. Autobuild guesses, and a
