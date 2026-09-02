@@ -1,4 +1,4 @@
-# Where this plugin keeps its data, and what removing it takes away
+﻿# Where this plugin keeps its data, and what removing it takes away
 
 Two places on the server hold something this plugin wrote. Both are named here
 so an administrator can look at them, back them up, or check after an uninstall
@@ -49,6 +49,38 @@ directory and lists every file and directory under it before and after, so a
 second file appearing here is a red test and not a paragraph somebody has to
 remember to update.
 
+## What the retention sweep deletes, and when
+
+`plays.db` also loses things while the plugin is installed, and the retention
+sweep is what takes them. It is a scheduled task, it runs daily at three in the
+morning by the server's own trigger, and an administrator can start it by hand
+from the scheduled tasks page. It answers two windows off one reading of the
+clock, both read at the run rather than held from start-up:
+
+    grep -n 'AddDays(-configuration' Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs
+    117:        var cutoff = now.AddDays(-configuration.PlayRowRetentionDays);
+    118:        var aggregateCutoff = now.AddDays(-configuration.DailyAggregateRetentionDays);
+
+A play row that started before the first cutoff is deleted: which account
+played which item, when it started and stopped, how much was watched, the
+client and device it played on, and whether the server transcoded and why.
+
+A daily aggregate keyed to a day before the second cutoff is deleted: one day's
+totals per account, item type and client - how many plays, how long, how many
+finished, and how the server delivered them. The day is a day in the zone the
+store states its rollups were counted in, not the machine's, so the boundary
+does not move with where the server is.
+
+The aggregates go first, and the run then reclaims the space both deletions
+freed, which is why a store file that found nothing to delete does not shrink.
+Neither deletion is a display filter and neither can be undone: the plugin
+keeps no second copy, and it takes no export of its own. Where the aggregate
+window is the shorter of the two, a deleted day can be folded again from rows
+that are still in the file; where it is the longer, which is the shipped
+arrangement, the aggregate was the only remaining record of that day and its
+deletion is terminal. `docs/configuration.md` is where the two numbers are set
+and where that difference is argued.
+
 ## Uninstalling
 
 Removing the plugin deletes both of the paths above. The server itself deletes
@@ -71,7 +103,8 @@ data still goes; the log says which of the two happened.
 ## What this document does not cover
 
 What the plugin records, who can read it and what is refused on purpose are in
-`docs/what-is-stored.md`. How long a row is kept before the retention sweep
-deletes it is a setting, and `docs/configuration.md` is the reference for it.
-This document is about the two paths and the removal, and nothing in it should
-be read as a statement about the contents.
+`docs/what-is-stored.md`. How long a row and how long a daily aggregate are
+kept before the sweep above deletes them are two settings, and
+`docs/configuration.md` is the reference for both. This document is about the
+two paths, what leaves them on a schedule and the removal, and nothing in it
+should be read as a statement about what the contents mean.

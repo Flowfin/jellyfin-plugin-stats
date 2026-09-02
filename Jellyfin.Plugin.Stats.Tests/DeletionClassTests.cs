@@ -1,4 +1,4 @@
-// What each of this plugin's five deletions says about the rows it takes, read
+﻿// What each of this plugin's five deletions says about the rows it takes, read
 // back off the store rather than off the method that was called. Issue #251.
 //
 // Every case here drives a real store over a temporary directory, because the
@@ -39,6 +39,13 @@ public sealed class DeletionClassTests : IDisposable
     private static readonly DateTime March = new(2026, 3, 14, 9, 0, 0, DateTimeKind.Utc);
 
     /// <summary>
+    /// An aggregate window nothing here falls outside of. These cases are
+    /// about the play rows, and a sweep that took the days they were folded
+    /// into as well would be proving two windows at once.
+    /// </summary>
+    private static readonly DateTime KeepEveryRollup = DateTime.UnixEpoch;
+
+    /// <summary>
     /// How many entries a case reads back. Larger than anything a case here
     /// writes, so a case that recorded more than it meant to fails on the
     /// comparison rather than on the bound.
@@ -70,7 +77,7 @@ public sealed class DeletionClassTests : IDisposable
         Seed(Bob, March);
 
         new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite)
-            .Run(March.AddMonths(-6), new Progress<double>(), CancellationToken.None);
+            .Run(March.AddMonths(-6), KeepEveryRollup, new Progress<double>(), CancellationToken.None);
 
         new OwnHistoryDeletion(OpenTheStore, OwnHistoryDeletion.DefaultBite).Delete(Bob, null, null);
 
@@ -93,7 +100,35 @@ public sealed class DeletionClassTests : IDisposable
         Seed(Alice, March.AddYears(-1));
 
         new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite)
-            .Run(March.AddMonths(-6), new Progress<double>(), CancellationToken.None);
+            .Run(March.AddMonths(-6), KeepEveryRollup, new Progress<double>(), CancellationToken.None);
+
+        Assert.Equal(DeletionClass.Retention, TheOnlyDeletion().Class);
+    }
+
+    /// <summary>
+    /// The same sweep ageing an aggregate out names retention too. Changing
+    /// that call site to the other class fails here, and so would giving the
+    /// aggregate a class of its own: one reason has one name whichever table
+    /// the row was in.
+    /// </summary>
+    /// <remarks>
+    /// The play-row cutoff is set past everything seeded, so the only deletion
+    /// in the run is the aggregate's. A run that took both would record two
+    /// entries of one class and prove nothing about which of them was which.
+    /// </remarks>
+    [Fact]
+    public void TheAggregateSweepSaysTheRollupsAgedOut()
+    {
+        Seed(Alice, March.AddYears(-1));
+
+        new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite)
+            .Run(March.AddYears(-5), March, new Progress<double>(), CancellationToken.None);
+
+        using (var store = OpenTheStore())
+        {
+            Assert.Empty(store.AllRollups());
+            Assert.Single(store.AllPlays());
+        }
 
         Assert.Equal(DeletionClass.Retention, TheOnlyDeletion().Class);
     }
@@ -177,6 +212,7 @@ public sealed class DeletionClassTests : IDisposable
 
         Assert.Equal(0, store.DeletePlaysFor(Bob, DeletionClass.Corrective, 10));
         Assert.Equal(0, store.DeletePlaysStartedBefore(March.AddYears(-1), DeletionClass.Retention, 10));
+        Assert.Equal(0, store.DeleteRollupsBefore(DateOnly.FromDateTime(March.AddYears(-1)), DeletionClass.Retention, 10));
 
         Assert.Empty(store.DeletionsRecorded(Plenty));
     }
@@ -206,8 +242,11 @@ public sealed class DeletionClassTests : IDisposable
             () => store.DeletePlaysFor(Alice, deletionClass, 10));
         Assert.Throws<ArgumentOutOfRangeException>(
             () => store.DeletePlaysFor(Alice, March.AddHours(-1), March.AddHours(1), deletionClass, 10));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => store.DeleteRollupsBefore(DateOnly.FromDateTime(March.AddYears(1)), deletionClass, 10));
 
         Assert.Single(store.PlaysFor(Alice));
+        Assert.Single(store.AllRollups());
     }
 
     /// <summary>

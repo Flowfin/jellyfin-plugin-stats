@@ -49,6 +49,25 @@ public enum DeletionClass
     /// that happens to remove the last rows of an account nobody has deleted is
     /// still retention.
     /// </para>
+    /// <para>
+    /// It is also the class of the sweep and not of the table. A daily aggregate
+    /// deleted because it is older than the window configured for it went away
+    /// for the same reason a play row does, so it is recorded here and not as
+    /// corrective; recording it there would give one reason two names depending
+    /// on which table the deletion happened in, which is the distinction this
+    /// vocabulary exists to make unnecessary. Corrective belongs to the
+    /// aggregate deletion that is already there for it: the one that drops a day
+    /// a corrective deletion emptied.
+    /// </para>
+    /// <para>
+    /// That a rollup can outlive the rows it was folded from, so that deleting
+    /// it destroys the only remaining record of a period, is a consequence and
+    /// not a second reason. It follows from which of the two windows an
+    /// installation set longer rather than from anything about the deletion, so
+    /// the same removal would carry different classes on two servers if it were
+    /// written here. It is said beside the settings instead, in
+    /// <c>docs/configuration.md</c> and <c>docs/plugin-data.md</c>. Issue #315.
+    /// </para>
     /// </remarks>
     Retention = 1,
 

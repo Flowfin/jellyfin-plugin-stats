@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -498,6 +498,37 @@ public sealed class SqlitePlayStore : IPlayStore
     // nothing to say.
     private const string ForgetTheDaysThatAreEmpty =
         "DELETE FROM daily_rollups WHERE Plays <= 0";
+
+    // The aggregate window's own pair, over days rather than over ticks. Issue
+    // #315.
+    //
+    // The comparison is on the leading column of the primary key and the column
+    // holds an ISO date, which sorts as text in the order it sorts as a date, so
+    // this is a range over the key rather than a walk of the table.
+    private const string CountRollupsBeforeADay =
+        @"-- unbounded: one number
+          SELECT COUNT(*)
+          FROM daily_rollups
+          WHERE Day < $day";
+
+    // The bound sits in an inner select for the reason the play deletions give:
+    // a limit on the delete itself is a SQLite build option rather than a
+    // guarantee, and a statement that depends on how the native library was
+    // compiled is a statement that works here and fails on somebody's server.
+    //
+    // Over the implicit row identifier, because this table has no declared one
+    // and its key is four columns. The order is what makes a bite deterministic;
+    // which order it is does not matter, because a caller bites until nothing
+    // is left and every doomed rollup is on one side of one comparison.
+    private const string DeleteRollupsBeforeADay =
+        @"DELETE FROM daily_rollups
+          WHERE rowid IN (
+              SELECT rowid
+              FROM daily_rollups
+              WHERE Day < $day
+              ORDER BY rowid
+              LIMIT $limit
+          )";
 
     // What a rebuild starts from. Not a drop: the table stays, its shape stays,
     // and what goes is every row in it.
@@ -1157,6 +1188,43 @@ public sealed class SqlitePlayStore : IPlayStore
     }
 
     /// <inheritdoc />
+    public long CountRollupsBefore(DateOnly day)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = CountRollupsBeforeADay;
+        command.Parameters.AddWithValue("$day", Text(day));
+
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// No transaction over one statement. The play deletions beside this one
+    /// take one because each of them is several statements that have to arrive
+    /// together - the open rows, the days the doomed rows were folded into, the
+    /// rows themselves and the entry saying what the deletion meant. Here the
+    /// entry is the only second statement, and it takes the transaction with it.
+    /// </remarks>
+    public int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        Declared(deletionClass);
+
+        using var transaction = _connection.BeginTransaction();
+
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = DeleteRollupsBeforeADay;
+        command.Parameters.AddWithValue("$day", Text(day));
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var deleted = Recorded(transaction, command.ExecuteNonQuery(), deletionClass);
+        transaction.Commit();
+
+        return deleted;
+    }
+
+    /// <inheritdoc />
     public void RebuildRollups()
     {
         using var transaction = _connection.BeginTransaction();
@@ -1759,6 +1827,12 @@ public sealed class SqlitePlayStore : IPlayStore
         => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
     private static string Text(Guid value) => value.ToString("N", CultureInfo.InvariantCulture);
+
+    // A day goes into the column in the one shape the column holds, and through
+    // the invariant culture, because a machine whose calendar is not the
+    // Gregorian one would otherwise write a day the rows already there do not
+    // sort beside.
+    private static string Text(DateOnly value) => value.ToString(DayFormat, CultureInfo.InvariantCulture);
 
     private static object Text(Guid? value)
         => value is null ? DBNull.Value : value.Value.ToString("N", CultureInfo.InvariantCulture);

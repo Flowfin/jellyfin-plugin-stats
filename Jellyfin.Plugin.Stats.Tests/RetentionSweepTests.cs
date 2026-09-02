@@ -1,12 +1,18 @@
-// The retention sweep, driven over a temporary directory. Nothing here needs a
+﻿// The retention sweep, driven over a temporary directory. Nothing here needs a
 // server, a socket or a service: the store takes the folder it writes into as an
-// argument and the sweep takes the moment it measures back from, so a test hands
-// it both and the boundary is a value rather than the day the suite ran.
+// argument and the sweep takes the moments it measures back from, so a test
+// hands it all of them and each boundary is a value rather than the day the
+// suite ran.
 //
 // The moment every case is written around is fixed. A row is placed one hour on
 // each side of the cutoff a ninety day window produces from it, which is the
 // case a sweep that was one day out would still pass and one that read the
 // machine clock could not be written at all.
+//
+// The sweep answers two windows, and the second is written the same way: a
+// rollup is keyed on the first day the aggregate window keeps and on the day
+// before it, so the case sits on the boundary itself rather than at a value
+// comfortably past it. Issue #315.
 
 using System;
 using System.Collections.Generic;
@@ -40,6 +46,21 @@ public sealed class RetentionSweepTests : IDisposable
     /// A window whose boundary the rows below straddle.
     /// </summary>
     private const int Window = 90;
+
+    /// <summary>
+    /// The aggregate window the cases below are written around. Wider than
+    /// <see cref="Window"/>, which is the arrangement an installation running
+    /// defaults has: the figures folded from the rows outlive the rows.
+    /// </summary>
+    private const int AggregateWindow = 400;
+
+    /// <summary>
+    /// A play-row window no case reaches the far side of, for the cases whose
+    /// subject is the aggregate window alone. A sweep taking rows as well would
+    /// leave a reader unable to say which of the two windows an answer came
+    /// from.
+    /// </summary>
+    private const int NoPlayRowGoes = 3650;
 
     /// <summary>
     /// Only the columns that cannot be absent. The seeding in the file-size
@@ -119,6 +140,15 @@ public sealed class RetentionSweepTests : IDisposable
     /// on the settings page gets the shorter one on the next sweep, with no
     /// restart in between, which is the shape issue #72 asks of every consumer.
     /// </summary>
+    /// <remarks>
+    /// The second run is handed a DIFFERENT object rather than the first one
+    /// with a field moved, and that is what makes this bite. The server hands
+    /// the plugin its whole configuration as one object, so a task that read
+    /// one once and held it would still see a mutation of the object it was
+    /// holding, and a case that only moved a field would pass over exactly the
+    /// defect it is written against. Measured: holding the first reading in a
+    /// field left this case green until it was written this way.
+    /// </remarks>
     [Fact]
     public async Task TheWindowIsReadAtTheRunAndNotHeldFromBefore()
     {
@@ -128,7 +158,7 @@ public sealed class RetentionSweepTests : IDisposable
         }
 
         var configuration = new PluginConfiguration { PlayRowRetentionDays = Window };
-        var task = ATask(configuration);
+        var task = ATask(() => configuration);
 
         await task.ExecuteAsync(new IgnoredProgress(), CancellationToken.None);
 
@@ -137,13 +167,158 @@ public sealed class RetentionSweepTests : IDisposable
             Assert.Single(untouched.AllPlays());
         }
 
-        configuration.PlayRowRetentionDays = 7;
+        configuration = new PluginConfiguration { PlayRowRetentionDays = 7 };
         await task.ExecuteAsync(new IgnoredProgress(), CancellationToken.None);
 
         using var after = new SqlitePlayStore(_root);
         Assert.Empty(after.AllPlays());
     }
 
+
+    /// <summary>
+    /// The aggregate window on its own boundary. The rollup keyed on the first
+    /// day that is kept stays, and the one keyed the day before it goes, so a
+    /// cutoff that is one day out fails here rather than passing.
+    /// </summary>
+    /// <remarks>
+    /// The play-row window is set wide on purpose. What is under test is which
+    /// aggregates a sweep takes, and a run that also emptied the plays would
+    /// leave a reader unable to say which of the two windows did it.
+    /// </remarks>
+    /// <returns>The running case.</returns>
+    [Fact]
+    public async Task OnlyTheAggregatesOlderThanTheirWindowAreDeleted()
+    {
+        var firstDayKept = DateOnly.FromDateTime(Now.UtcDateTime.AddDays(-AggregateWindow));
+
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayStartedAt(AtNoonOn(firstDayKept)));
+            store.Add(APlayStartedAt(AtNoonOn(firstDayKept.AddDays(-1))));
+        }
+
+        var configuration = new PluginConfiguration
+        {
+            PlayRowRetentionDays = NoPlayRowGoes,
+            DailyAggregateRetentionDays = AggregateWindow
+        };
+
+        await ATask(configuration).ExecuteAsync(new IgnoredProgress(), CancellationToken.None);
+
+        using var after = new SqlitePlayStore(_root);
+
+        Assert.Equal(new[] { firstDayKept }, after.AllRollups().Select(rollup => rollup.Day));
+        Assert.Equal(2, after.AllPlays().Count());
+    }
+
+    /// <summary>
+    /// The aggregate window is read at the run as well. An administrator who
+    /// shortens it gets the shorter one on the next sweep with no restart in
+    /// between, and the answer moves here because the setting moved rather than
+    /// because the day did.
+    /// </summary>
+    /// <remarks>
+    /// A different object on the second run, for the reason written at the
+    /// play-row case above.
+    /// </remarks>
+    /// <returns>The running case.</returns>
+    [Fact]
+    public async Task TheAggregateWindowIsReadAtTheRunAndNotHeldFromBefore()
+    {
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayStartedAt(Now.UtcDateTime.AddDays(-200)));
+        }
+
+        var configuration = new PluginConfiguration
+        {
+            PlayRowRetentionDays = NoPlayRowGoes,
+            DailyAggregateRetentionDays = AggregateWindow
+        };
+        var task = ATask(() => configuration);
+
+        await task.ExecuteAsync(new IgnoredProgress(), CancellationToken.None);
+
+        using (var untouched = new SqlitePlayStore(_root))
+        {
+            Assert.Single(untouched.AllRollups());
+        }
+
+        configuration = new PluginConfiguration
+        {
+            PlayRowRetentionDays = NoPlayRowGoes,
+            DailyAggregateRetentionDays = 100
+        };
+        await task.ExecuteAsync(new IgnoredProgress(), CancellationToken.None);
+
+        using var after = new SqlitePlayStore(_root);
+
+        Assert.Empty(after.AllRollups());
+        Assert.Single(after.AllPlays());
+    }
+
+    /// <summary>
+    /// The aggregates go before the play rows, and a cancellation is where that
+    /// order is visible. A run stopped between the two leaves the rows the
+    /// deleted aggregates were folded from in the file, so a rebuild produces
+    /// them again; the other order would have taken those rows away first and
+    /// made the same deletion terminal.
+    /// </summary>
+    /// <remarks>
+    /// The day here is past both windows, so a run that finished would end in
+    /// the same state whichever loop went first. What separates the two orders
+    /// is every moment before the end, which is why this case stops the sweep
+    /// instead of letting it finish.
+    /// </remarks>
+    /// <returns>The running case.</returns>
+    [Fact]
+    public async Task TheAggregatesGoBeforeThePlayRowsTheyWereFoldedFrom()
+    {
+        using (var store = new SqlitePlayStore(_root))
+        {
+            store.Add(APlayStartedAt(Now.UtcDateTime.AddDays(-500)));
+        }
+
+        var configuration = new PluginConfiguration
+        {
+            PlayRowRetentionDays = Window,
+            DailyAggregateRetentionDays = AggregateWindow
+        };
+
+        using var stop = new CancellationTokenSource();
+        var reported = new CancellingProgress(stop);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => ATask(configuration, bite: 1).ExecuteAsync(reported, stop.Token));
+
+        using var after = new SqlitePlayStore(_root);
+
+        Assert.Empty(after.AllRollups());
+        Assert.Single(after.AllPlays());
+
+        after.RebuildRollups();
+
+        Assert.Single(after.AllRollups());
+    }
+
+    /// <summary>
+    /// A store that has keyed no rollup states no zone for a day to be read in,
+    /// and is not asked for one. A sweep reading the machine's zone instead
+    /// would name a day such a store has never used, and would be asking for a
+    /// deletion over days that mean nothing.
+    /// </summary>
+    [Fact]
+    public void AStoreThatKeyedNoRollupIsNotAskedForADay()
+    {
+        var store = new AStoreThatKeyedNoRollup();
+
+        var swept = new RetentionSweep(() => store, RetentionSweep.DefaultBite)
+            .Run(Now.UtcDateTime, Now.UtcDateTime, new IgnoredProgress(), CancellationToken.None);
+
+        Assert.Equal(0, swept.Rollups);
+        Assert.Equal(0, swept.Plays);
+        Assert.True(store.SpaceWasReclaimed);
+    }
     /// <summary>
     /// The second of the three conditions: progress is reported as the sweep
     /// goes, so a large first sweep does not look hung.
@@ -313,17 +488,36 @@ public sealed class RetentionSweepTests : IDisposable
         };
     }
 
+    /// <summary>
+    /// Noon on a day, in UTC, which is the zone these stores key their rollups
+    /// in. Away from both midnights, so a case is about which day a rollup is
+    /// keyed to rather than about which side of one a moment fell.
+    /// </summary>
+    /// <param name="day">The day.</param>
+    /// <returns>Noon on it.</returns>
+    private static DateTime AtNoonOn(DateOnly day) => day.ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);
+
     private RetentionSweepTask ATask(int bite = RetentionSweep.DefaultBite)
         => ATask(new PluginConfiguration { PlayRowRetentionDays = Window }, bite);
 
     private RetentionSweepTask ATask(PluginConfiguration configuration, int bite = RetentionSweep.DefaultBite)
+        => ATask(() => configuration, bite);
+
+    /// <summary>
+    /// The task as the server builds it, reading its settings through a function
+    /// rather than out of an object a case is holding.
+    /// </summary>
+    /// <param name="configuration">What the task reads its settings through, called once per run.</param>
+    /// <param name="bite">How many rows one statement deletes.</param>
+    /// <returns>The task.</returns>
+    private RetentionSweepTask ATask(Func<PluginConfiguration> configuration, int bite = RetentionSweep.DefaultBite)
     {
         // A store per sweep, opened and closed by the sweep, which is what
         // happens on a server: the writer holds its own and this one is not it.
         return new RetentionSweepTask(
             new RetentionSweep(() => new SqlitePlayStore(_root), bite),
             new FixedClock(Now),
-            () => configuration);
+            configuration);
     }
 
     private void SeedOldRows(int rows)
@@ -394,6 +588,85 @@ public sealed class RetentionSweepTests : IDisposable
         public IReadOnlyList<double> Values => _values;
 
         public void Report(double value) => _values.Add(value);
+    }
+
+
+    /// <summary>
+    /// A store holding no rollup, and therefore stating no zone one could be
+    /// keyed in.
+    /// </summary>
+    /// <remarks>
+    /// Every rollup call refuses rather than answering with nothing. A store
+    /// that answered zero would let a sweep asking about days it has no zone
+    /// for pass through this case, which is the whole of what it is here to
+    /// catch.
+    /// </remarks>
+    private sealed class AStoreThatKeyedNoRollup : IPlayStore
+    {
+        public bool SpaceWasReclaimed { get; private set; }
+
+        public TimeZoneInfo? RollupZone => null;
+
+        public long CountPlaysStartedBefore(DateTime cutoffUtc) => 0;
+
+        public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => 0;
+
+        public void ReclaimFreedSpace() => SpaceWasReclaimed = true;
+
+        public void Dispose()
+        {
+        }
+
+        public long CountRollupsBefore(DateOnly day) => throw NotPartOfThis();
+
+        public int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public void Add(PlayRecord play) => throw NotPartOfThis();
+
+        public void NoteOpenPlay(OpenPlay play) => throw NotPartOfThis();
+
+        public void AddAndForgetOpenPlay(PlayRecord play, string playKey) => throw NotPartOfThis();
+
+        public void ForgetOpenPlay(string playKey) => throw NotPartOfThis();
+
+        public IEnumerable<OpenPlay> OpenPlays() => throw NotPartOfThis();
+
+        public IReadOnlyList<PlayRecord> MostRecentPlays(int limit) => throw NotPartOfThis();
+
+        public IReadOnlyList<PlayRecord> PlaysBetween(DateTime fromUtc, DateTime toUtc, int limit) => throw NotPartOfThis();
+
+        public IEnumerable<PlayRecord> AllPlays() => throw NotPartOfThis();
+
+        public IEnumerable<DailyRollup> AllRollups() => throw NotPartOfThis();
+
+        public IReadOnlyList<DailyRollup> RollupsFor(Guid userId, DateOnly fromDay, DateOnly toDay, int limit) => throw NotPartOfThis();
+
+        public void RebuildRollups() => throw NotPartOfThis();
+
+        public IEnumerable<PlayRecord> PlaysFor(Guid userId) => throw NotPartOfThis();
+
+        public IReadOnlyList<Guid> UserIdsWithPlays() => throw NotPartOfThis();
+
+        public DateTime? OldestPlayStartedUtc() => throw NotPartOfThis();
+
+        public IReadOnlyList<int> YearsWithPlaysFor(Guid userId, TimeZoneInfo zone) => throw NotPartOfThis();
+
+        public int DeletePlaysFor(Guid userId, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
+        public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
+
+        public ConsentRecord? ConsentFor(Guid userId) => throw NotPartOfThis();
+
+        public IReadOnlyList<Guid> UserIdsWithConsent() => throw NotPartOfThis();
+
+        public void RecordConsent(ConsentRecord consent) => throw NotPartOfThis();
+
+        public void ForgetConsentFor(Guid userId) => throw NotPartOfThis();
+
+        private static NotSupportedException NotPartOfThis()
+            => new("This store has keyed no rollup and answers nothing about days.");
     }
 
     /// <summary>

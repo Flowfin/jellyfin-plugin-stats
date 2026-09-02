@@ -531,6 +531,55 @@ public interface IPlayStore : IDisposable
     int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit);
 
     /// <summary>
+    /// Counts the day-by-day rollups keyed to a day before a given one.
+    /// </summary>
+    /// <remarks>
+    /// The aggregate half of what a sweep asks before it starts deleting, so it
+    /// can say how far through it is. It carries no bound because its answer is
+    /// one number however many rows it counted.
+    /// <para>
+    /// The day is a day in <see cref="RollupZone"/> and not a moment. A rollup
+    /// is keyed to a calendar day, so a caller holding an instant converts it
+    /// through that zone rather than through the machine's, and a store that
+    /// has keyed no rollup states no zone for one to convert through.
+    /// </para>
+    /// </remarks>
+    /// <param name="day">The first day that is kept. A rollup keyed before it is counted.</param>
+    /// <returns>How many rollups are keyed before that day.</returns>
+    long CountRollupsBefore(DateOnly day);
+
+    /// <summary>
+    /// Deletes the day-by-day rollups keyed to a day before a given one, up to
+    /// a limit.
+    /// </summary>
+    /// <remarks>
+    /// The aggregate window, which is a second window rather than a second
+    /// meaning of the first: the raw rows and the figures folded from them are
+    /// kept for different lengths of time, and this is the deletion the longer
+    /// of the two performs.
+    /// <para>
+    /// The limit is here for the reason it is on the play deletions. One
+    /// statement removing a decade of rollups holds the write lock for its whole
+    /// duration and answers no cancellation in the middle of it, so the caller
+    /// takes a bite at a time and decides between bites whether to take another.
+    /// </para>
+    /// <para>
+    /// A rollup that goes is gone. Where the rows it was folded from are still
+    /// in the file it can be folded again by <see cref="RebuildRollups"/>, and
+    /// where the shorter window has already taken them it cannot: deleting the
+    /// rollup then destroys the only remaining record of that day. Which of the
+    /// two an installation has chosen follows from its two settings rather than
+    /// from anything on the row, so it is said where the settings are typed and
+    /// not recorded here.
+    /// </para>
+    /// </remarks>
+    /// <param name="day">The first day that is kept. A rollup keyed before it is deleted.</param>
+    /// <param name="deletionClass">What this deletion says about the rollups it removes, recorded beside it.</param>
+    /// <param name="limit">How many rollups at most. The store never deletes more than this in one call.</param>
+    /// <returns>How many rollups this call deleted, and zero where there were none left to delete.</returns>
+    int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit);
+
+    /// <summary>
     /// Reads back the deletions this store has performed, newest first.
     /// </summary>
     /// <remarks>

@@ -1,4 +1,4 @@
-// What a caller is told about the window their wrap-up covers, over the route a
+﻿// What a caller is told about the window their wrap-up covers, over the route a
 // page would use rather than at the fold.
 //
 // Issue #69's first condition asks for the statement in the response and not
@@ -37,6 +37,13 @@ public sealed class YearCoverageInTheResponseTests : IDisposable
     /// one day is visible in the count rather than hidden by February.
     /// </summary>
     private const int Year = 2025;
+
+    /// <summary>
+    /// An aggregate window nothing here falls outside of. These cases are
+    /// about the play rows, and a sweep that took the days they were folded
+    /// into as well would be proving two windows at once.
+    /// </summary>
+    private static readonly DateTime KeepEveryRollup = DateTime.UnixEpoch;
 
     private readonly string _root;
 
@@ -207,9 +214,9 @@ public sealed class YearCoverageInTheResponseTests : IDisposable
 
         var cutoff = new DateTime(Year, 9, 1, 0, 0, 0, DateTimeKind.Utc);
         var deleted = new RetentionSweep(() => new SqlitePlayStore(_root), RetentionSweep.DefaultBite)
-            .Run(cutoff, new IgnoredProgress(), CancellationToken.None);
+            .Run(cutoff, KeepEveryRollup, new IgnoredProgress(), CancellationToken.None);
 
-        Assert.Equal(8, deleted);
+        Assert.Equal(8, deleted.Plays);
 
         using var after = new SqlitePlayStore(_root);
 
