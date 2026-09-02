@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using Jellyfin.Plugin.Stats.Aggregation;
 using Jellyfin.Plugin.Stats.Data;
@@ -6,15 +6,22 @@ using Jellyfin.Plugin.Stats.Data;
 namespace Jellyfin.Plugin.Stats.ScheduledTasks;
 
 /// <summary>
-/// Deletes the play rows that are past their retention window, and gives the
-/// space they were using back to the file system.
+/// Deletes the play rows and the daily aggregates that are past their retention
+/// windows, and gives the space they were using back to the file system.
 /// </summary>
 /// <remarks>
-/// The moment the window is measured from arrives as an argument rather than
-/// being read off a clock here. That is what makes the boundary a value a test
+/// Two windows and one sweep. The raw rows and the figures folded from them are
+/// kept for different lengths of time, so this takes two cutoffs; a second
+/// scheduled task also called retention, over the same schedule and the same
+/// store, is how two windows drift apart until one is quietly not running.
+/// Issue #315.
+/// <para>
+/// The moments the windows are measured from arrive as arguments rather than
+/// being read off a clock here. That is what makes each boundary a value a test
 /// can choose: a sweep that read the machine clock could not be tested for the
 /// day it deletes without waiting ninety days for one, and it would answer
 /// differently on a runner in another zone.
+/// </para>
 /// <para>
 /// The rows go a bite at a time. One statement deleting a decade of history
 /// holds the store's write lock for its whole duration and answers no
@@ -68,7 +75,8 @@ public sealed class RetentionSweep
     }
 
     /// <summary>
-    /// Deletes every row that started before a moment, then reclaims the space.
+    /// Deletes every daily aggregate keyed before one moment's day and every
+    /// row that started before another, then reclaims the space.
     /// </summary>
     /// <remarks>
     /// A cancelled sweep leaves the rows it has already deleted deleted. There
@@ -77,21 +85,78 @@ public sealed class RetentionSweep
     /// its retention window was going to go on the next run anyway. What a
     /// cancellation does cost is the reclaim, so a sweep stopped halfway
     /// leaves a file that is no smaller than it was.
+    /// <para>
+    /// The aggregates go first, and that order is the property this run has to
+    /// hold rather than an arrangement of two loops. Where the aggregate window
+    /// is the shorter of the two, every rollup this deletes can still be folded
+    /// again from rows that are in the file, which is what makes that
+    /// configuration a recoverable one. Deleting the play rows first would take
+    /// the source rows of the oldest of those days away in the same pass and
+    /// make the deletion terminal, on a server whose settings say it is not.
+    /// </para>
     /// </remarks>
     /// <param name="cutoffUtc">The moment, in UTC. A row that started before it is deleted.</param>
+    /// <param name="aggregateCutoffUtc">
+    /// The moment, in UTC, whose day in the store's rollup zone is the first day
+    /// of aggregates that are kept. An aggregate keyed before that day is
+    /// deleted. A store that has keyed no aggregate states no zone, and none is
+    /// deleted there.
+    /// </param>
     /// <param name="progress">Told how far through the sweep is, from nothing to a hundred.</param>
     /// <param name="cancellationToken">Checked between bites.</param>
-    /// <returns>How many rows were deleted.</returns>
-    public long Run(DateTime cutoffUtc, IProgress<double> progress, CancellationToken cancellationToken)
+    /// <returns>How many of each were deleted.</returns>
+    public SweptRows Run(
+        DateTime cutoffUtc,
+        DateTime aggregateCutoffUtc,
+        IProgress<double> progress,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
 
         using var store = _openStore();
 
-        var doomed = store.CountPlaysStartedBefore(cutoffUtc);
+        // The day the aggregate window ends on is a day in the zone the store
+        // states its rollups were counted in, and not one in the machine's. A
+        // cutoff converted through a runner's zone is a boundary that moves by
+        // one day depending on where the server is, on a deletion.
+        var zone = store.RollupZone;
+        var oldestDayKept = zone is null
+            ? (DateOnly?)null
+            : LocalDay.Of(new DateTimeOffset(aggregateCutoffUtc.ToUniversalTime(), TimeSpan.Zero), zone);
+
+        // Both counts before either loop, so the fraction below is over the
+        // whole sweep rather than restarting at nought half way through it.
+        var doomed = store.CountPlaysStartedBefore(cutoffUtc)
+            + (oldestDayKept is null ? 0 : store.CountRollupsBefore(oldestDayKept.Value));
+
         progress.Report(0);
 
         long deleted = 0;
+        long rollups = 0;
+        while (oldestDayKept is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Retention, and the same retention the play rows go under. What
+            // this deletion says is that the aggregate is past the window
+            // configured for it, which is the reason a play row goes too, and
+            // recording it as corrective would give one reason two names
+            // depending on which table it happened in. Corrective belongs to the
+            // deletion that is already there for it, the one that drops a day a
+            // corrective deletion emptied.
+            var bitten = store.DeleteRollupsBefore(oldestDayKept.Value, DeletionClass.Retention, _bite);
+            if (bitten == 0)
+            {
+                break;
+            }
+
+            rollups += bitten;
+            deleted += bitten;
+
+            progress.Report(Math.Min(99d, deleted * 100d / doomed));
+        }
+
+        long plays = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -115,6 +180,7 @@ public sealed class RetentionSweep
                 break;
             }
 
+            plays += bitten;
             deleted += bitten;
 
             // Ninety-nine at most until the reclaim has run, because the
@@ -141,6 +207,6 @@ public sealed class RetentionSweep
 
         progress.Report(100);
 
-        return deleted;
+        return new SweptRows { Plays = plays, Rollups = rollups };
     }
 }

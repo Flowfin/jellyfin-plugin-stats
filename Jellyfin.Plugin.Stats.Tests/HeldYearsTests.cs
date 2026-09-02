@@ -1,4 +1,4 @@
-// What keeps a folded year and what makes it let go, driven over a temporary
+﻿// What keeps a folded year and what makes it let go, driven over a temporary
 // directory where a real deletion is what does the letting go.
 //
 // Two kinds of case are in here on purpose. The ones about holding count folds
@@ -46,6 +46,13 @@ public sealed class HeldYearsTests : IDisposable
     /// the one the server is in are values the test chose.
     /// </summary>
     private static readonly DateTimeOffset Now = new(2026, 3, 14, 9, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// An aggregate window nothing here falls outside of. These cases are
+    /// about the play rows, and a sweep that took the days they were folded
+    /// into as well would be proving two windows at once.
+    /// </summary>
+    private static readonly DateTime KeepEveryRollup = DateTime.UnixEpoch;
 
     /// <summary>
     /// A year that has ended at <see cref="Now"/>, and the year every play
@@ -363,9 +370,9 @@ public sealed class HeldYearsTests : IDisposable
         Assert.Equal(2, years.Count);
 
         var swept = new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite, years)
-            .Run(Now.UtcDateTime, new Progress<double>(), CancellationToken.None);
+            .Run(Now.UtcDateTime, KeepEveryRollup, new Progress<double>(), CancellationToken.None);
 
-        Assert.Equal(2, swept);
+        Assert.Equal(2, swept.Plays);
         Assert.Equal(0, years.Count);
     }
 
@@ -388,9 +395,9 @@ public sealed class HeldYearsTests : IDisposable
         years.For(Ada, Finished, Utc, Top);
 
         var swept = new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite, years)
-            .Run(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc), new Progress<double>(), CancellationToken.None);
+            .Run(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc), KeepEveryRollup, new Progress<double>(), CancellationToken.None);
 
-        Assert.Equal(0, swept);
+        Assert.Equal(0, swept.Plays);
         Assert.Equal(1, years.Count);
 
         years.For(Ada, Finished, Utc, Top);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,9 +27,9 @@ namespace Jellyfin.Plugin.Stats.ScheduledTasks;
 /// that here instead of there.
 /// </para>
 /// <para>
-/// The window is read at the run rather than held from start-up, so a retention
-/// changed on the settings page decides the next sweep and not the one after a
-/// restart.
+/// Both windows are read at the run rather than held from start-up, so a
+/// retention changed on the settings page decides the next sweep and not the
+/// one after a restart.
 /// </para>
 /// </remarks>
 public sealed class RetentionSweepTask : IScheduledTask
@@ -64,7 +64,7 @@ public sealed class RetentionSweepTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Delete playback statistics past their retention window";
+    public string Name => "Delete playback statistics past their retention windows";
 
     /// <inheritdoc />
     /// <remarks>
@@ -76,7 +76,7 @@ public sealed class RetentionSweepTask : IScheduledTask
 
     /// <inheritdoc />
     public string Description =>
-        "Deletes play rows older than the retention window on the plugin's settings page, then gives the space they were using back to the disk. The deletion is permanent.";
+        "Deletes play rows and daily aggregates older than the two retention windows on the plugin's settings page, then gives the space they were using back to the disk. The deletion is permanent.";
 
     /// <inheritdoc />
     public string Category => "Playback statistics";
@@ -108,11 +108,17 @@ public sealed class RetentionSweepTask : IScheduledTask
     /// </remarks>
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        var days = _configuration().PlayRowRetentionDays;
-        var cutoff = _clock.GetUtcNow().UtcDateTime.AddDays(-days);
+        // One reading of the clock for both windows. Two calls could land on
+        // either side of a midnight, which would measure the two boundaries
+        // from different days on one run of one task.
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        var configuration = _configuration();
+        var cutoff = now.AddDays(-configuration.PlayRowRetentionDays);
+        var aggregateCutoff = now.AddDays(-configuration.DailyAggregateRetentionDays);
 
         await Task
-            .Run(() => _sweep.Run(cutoff, progress, cancellationToken), cancellationToken)
+            .Run(() => _sweep.Run(cutoff, aggregateCutoff, progress, cancellationToken), cancellationToken)
             .ConfigureAwait(false);
     }
 }

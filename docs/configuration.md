@@ -1,4 +1,4 @@
-# Configuration reference
+﻿# Configuration reference
 
 Every setting this plugin has: what it does, what it accepts, what it defaults
 to, and what changing it does not do.
@@ -16,9 +16,9 @@ happened to, above the form.
 
 ## What these settings govern today
 
-Seven of them decide something. One exists, validates and is stored, and
-changes nothing, and this section says which is which so no entry below reads as
-a description of behaviour that is present.
+All eight of them decide something. One of the eight reached nothing until
+issue #315 built the sweep it names, and this section says where each is read
+so no entry below has to be taken on trust.
 
 `CaptureEnabled`, `ExcludedUserIds` and `ExcludedItemTypes` are honoured
 immediately before a play is written:
@@ -33,7 +33,7 @@ immediately before a play is written:
 at the run rather than held from start-up:
 
     grep -rn 'PlayRowRetentionDays' --include=*.cs Jellyfin.Plugin.Stats/ScheduledTasks/
-    Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs:111:        var days = _configuration().PlayRowRetentionDays;
+    Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs:117:        var cutoff = now.AddDays(-configuration.PlayRowRetentionDays);
 
 `RollupTimeZone` decides which local day a play is counted on, and every route
 that answers a report reads it at the request:
@@ -70,30 +70,28 @@ server do arbitrary work, and it is the play count rather than either cap:
     grep -n 'MostPlaysAnyShapeReads =' Jellyfin.Plugin.Stats/Reports/QueryWindow.cs
     52:    public const int MostPlaysAnyShapeReads = 250_000;
 
-Nothing reads the third:
+The third is read by the same sweep, at the same run, and it is the setting
+this section used to record as reaching nothing:
 
     grep -rn "DailyAggregateRetentionDays" \
-      --include=*.cs Jellyfin.Plugin.Stats/ | grep -v "^Jellyfin.Plugin.Stats/Configuration/" ; echo "exit=$?"
-    exit=1
+      --include=*.cs Jellyfin.Plugin.Stats/ | grep -v "^Jellyfin.Plugin.Stats/Configuration/"
+    Jellyfin.Plugin.Stats/ScheduledTasks/RetentionSweepTask.cs:118:        var aggregateCutoff = now.AddDays(-configuration.DailyAggregateRetentionDays);
 
-with no output.
-
-The reason is not that its subject has not been built. It has: daily aggregates
-are folded as plays are written, and two personal answers are read back out of
-them. An aggregate is kept for ever rather than for
-`DailyAggregateRetentionDays`.
-Two statements remove a rollup row, one dropping a day a corrective deletion
-emptied and one clearing the table for a rebuild, and neither of them reads an
-age:
+WHAT STOOD HERE SAID THE COMMAND ABOVE RETURNED NOTHING, and until issue #315
+landed it did. A daily aggregate was kept for ever whatever the number on the
+page said, while the raw rows behind it went at ninety days by default, which is
+the opposite of the sentence the two settings carry about the two windows.
+Three statements remove a rollup row now rather than two, and the third is the
+one that reads an age:
 
     grep -rn 'DELETE FROM daily_rollups' --include=*.cs Jellyfin.Plugin.Stats/
     Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:500:        "DELETE FROM daily_rollups WHERE Plays <= 0";
-    Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:504:    private const string ForgetEveryRollup = "DELETE FROM daily_rollups";
+    Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:524:        @"DELETE FROM daily_rollups
+    Jellyfin.Plugin.Stats/Data/SqlitePlayStore.cs:535:    private const string ForgetEveryRollup = "DELETE FROM daily_rollups";
 
-Read that entry as one sitting beside a working fold and doing nothing, rather
-than as one waiting for a feature to arrive. Its row below therefore says what
-the setting is defined to govern rather than what it governs, and the sweep it
-names is issue #315.
+The first of the three still drops a day a corrective deletion emptied and the
+last still clears the table for a rebuild. Neither of those is a window; the
+middle one is, and it is the statement the sweep bites through.
 
 ## The settings
 
@@ -101,7 +99,7 @@ names is issue #315.
 | ----------------------------- | ------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `CaptureEnabled`              | `true`  | `true` or `false`                                    | Whether plays are recorded at all. Off means nothing is written. It does not hide, and does not delete, what is already stored.      |
 | `PlayRowRetentionDays`        | `90`    | a whole number of days from `1` to `3650`            | How long a raw play row is kept before the retention sweep deletes it.                                                              |
-| `DailyAggregateRetentionDays` | `400`   | a whole number of days from `1` to `3650`            | Read by nothing. It is defined as how long the daily aggregates are kept, and no sweep deletes one; issue #315 holds that.           |
+| `DailyAggregateRetentionDays` | `400`   | a whole number of days from `1` to `3650`            | How long a daily aggregate is kept before the same retention sweep deletes it. A day older than this is gone from the figures.       |
 | `MaximumRangeDays`            | `367`   | a whole number of days from `1` to `3650`            | The widest range an aggregate report may ask for. A longer range is refused rather than quietly shortened.                           |
 | `MaximumRowsPerResponse`      | `1000`  | a whole number from `1` to `100000`                  | The most rows an aggregate report may carry. An answer with more rows is refused rather than cut to the first of them.               |
 | `RollupTimeZone`              | `UTC`   | any zone identifier the running machine can resolve  | The zone a day is counted in. Rows are stored in UTC and read into a local day, so this decides which day a late evening play is on. |
@@ -156,14 +154,14 @@ rollups.
     926:        if (store.RollupZone is not TimeZoneInfo keyed || !keyed.HasSameRules(zone))
     1039:        if (store.RollupZone is not TimeZoneInfo keyed || !keyed.HasSameRules(zone))
 
-`PlayRowRetentionDays` takes effect on the next sweep rather than on save.
-Shortening it deletes nothing at the moment the page is saved.
-`DailyAggregateRetentionDays` takes effect on no sweep at all, because no sweep
-reads it.
+`PlayRowRetentionDays` and `DailyAggregateRetentionDays` take effect on the next
+sweep rather than on save. Shortening either deletes nothing at the moment the
+page is saved. Both are read at the run, off one reading of the clock, so a
+sweep cannot measure its two boundaries from different days.
 
-None of the seven settings that are read needs a restart. Each is read at the
+None of the eight settings needs a restart. Each is read at the
 moment it is used rather than copied at start-up: capture and the two exclusion
-lists at every play, the retention window at every sweep, and the rollup zone
+lists at every play, both retention windows at every sweep, and the rollup zone
 and the two report caps at every request for a report. A setting that turns out to need a restart is named
 on the page and in this document rather than left for an operator to discover.
 
@@ -171,9 +169,10 @@ on the page and in this document rather than left for an operator to discover.
 
 The sweep runs daily and can also be started by hand, from the scheduled tasks
 page of the server, where it is called "Delete playback statistics past their
-retention window". It reads `PlayRowRetentionDays`. Nothing sweeps the daily
-aggregates: they are folded and kept, and no run reads
-`DailyAggregateRetentionDays` in order to expire them.
+retention windows". It reads both `PlayRowRetentionDays` and
+`DailyAggregateRetentionDays`, and it is one task over two windows rather than
+two tasks: a second task on the same schedule and the same store is how two
+windows drift apart until one is quietly not running.
 
 `PlayRowRetentionDays` and `DailyAggregateRetentionDays` are not display
 filters. A row past its window is deleted from the plugin's store, and the
@@ -212,18 +211,29 @@ kind does take the row back out of its day:
 Those figures say how much the server was used on a day and name no user, which
 is why they are allowed to outlive the rows they were computed from.
 
-They outlive them without end, and that is the half to read carefully.
-`DailyAggregateRetentionDays` is on the page, is validated and is stored, and
-nothing expires an aggregate by age, so a day whose raw rows left long ago is
-still counted in the totals a report reads. There is no second window closing
-behind the first one.
+They outlive them by the difference between the two windows, and no longer.
+`DailyAggregateRetentionDays` is the second window closing behind the first: a
+day keyed before it is deleted on the next sweep, and the figures a report
+reads stop covering that day. What is deleted there is the day's totals - how
+many plays, how long, how many finished, and how the server delivered them -
+per account, item type and client. No play row is deleted with it and no name
+is in it.
 
-Setting `DailyAggregateRetentionDays` shorter than `PlayRowRetentionDays` is
-accepted and nothing refuses it. It is defined to mean that the aggregates go
-before the rows they came from, and that a report over a range that far back
-then has to read the rows instead - a slower report rather than a wrong one, but
-not what the two windows are shaped for. Since nothing reads the setting,
-neither the going nor the slower report happens today.
+WHICH OF THE TWO NUMBERS IS LARGER DECIDES WHETHER THE AGGREGATE DELETION CAN BE
+UNDONE, and nothing on the page says so, which is why it is said here.
+
+- `DailyAggregateRetentionDays` larger than `PlayRowRetentionDays`, which is the
+  shipped arrangement: an aggregate outlives the rows it was folded from, so
+  when it goes it is the only remaining record of that day and the deletion is
+  terminal.
+- `DailyAggregateRetentionDays` smaller than or equal to `PlayRowRetentionDays`:
+  the rows are still in the store when the aggregate goes, so the day can be
+  folded again by a rebuild, and until it is, a report over that range reads the
+  rows instead - a slower report rather than a wrong one.
+
+Both are accepted and nothing refuses either. One sweep serves both windows and
+the aggregates go first inside it, so a run stopped halfway leaves the second
+case recoverable rather than making it terminal by taking the rows away first.
 
 ## Where this document is checked
 

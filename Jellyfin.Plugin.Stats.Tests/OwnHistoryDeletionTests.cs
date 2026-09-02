@@ -509,6 +509,10 @@ public sealed class OwnHistoryDeletionTests : IDisposable
 
         public int DeletePlaysStartedBefore(DateTime cutoffUtc, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
 
+        public long CountRollupsBefore(DateOnly day) => throw NotPartOfThis();
+
+        public int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit) => throw NotPartOfThis();
+
         public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => throw NotPartOfThis();
 
         public void RebuildRollups() => throw NotPartOfThis();

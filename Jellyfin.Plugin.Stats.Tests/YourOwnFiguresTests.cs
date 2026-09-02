@@ -867,6 +867,10 @@ public sealed class YourOwnFiguresTests : IDisposable
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit)
             => _behind.DeletePlaysFor(userId, fromUtc, toUtc, deletionClass, limit);
 
+        public long CountRollupsBefore(DateOnly day) => _behind.CountRollupsBefore(day);
+
+        public int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit) => _behind.DeleteRollupsBefore(day, deletionClass, limit);
+
         public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => _behind.DeletionsRecorded(limit);
 
         public ConsentRecord? ConsentFor(Guid userId) => _behind.ConsentFor(userId);
@@ -946,6 +950,10 @@ public sealed class YourOwnFiguresTests : IDisposable
 
         public int DeletePlaysFor(Guid userId, DateTime fromUtc, DateTime toUtc, DeletionClass deletionClass, int limit)
             => _behind.DeletePlaysFor(userId, fromUtc, toUtc, deletionClass, limit);
+
+        public long CountRollupsBefore(DateOnly day) => _behind.CountRollupsBefore(day);
+
+        public int DeleteRollupsBefore(DateOnly day, DeletionClass deletionClass, int limit) => _behind.DeleteRollupsBefore(day, deletionClass, limit);
 
         public IReadOnlyList<DeletionRecorded> DeletionsRecorded(int limit) => _behind.DeletionsRecorded(limit);
 

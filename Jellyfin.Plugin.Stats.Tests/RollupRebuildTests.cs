@@ -1,4 +1,4 @@
-// A rollup that cannot be produced again from the play rows is the only copy of
+﻿// A rollup that cannot be produced again from the play rows is the only copy of
 // what it holds, and one that has drifted from them is worse than no rollup at
 // all, because it is believed. Both are read the same way: rebuild and compare.
 // Issue #253.
@@ -40,6 +40,13 @@ public sealed class RollupRebuildTests : IDisposable
     /// different answer from a slip of thirty days.
     /// </summary>
     private static readonly DateTime FirstOfMarch = new(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>
+    /// An aggregate window nothing here falls outside of. These cases are
+    /// about the play rows, and a sweep that took the days they were folded
+    /// into as well would be proving two windows at once.
+    /// </summary>
+    private static readonly DateTime KeepEveryRollup = DateTime.UnixEpoch;
 
     /// <summary>
     /// The zone every case here keys its days in. Named rather than left to the
@@ -269,7 +276,7 @@ public sealed class RollupRebuildTests : IDisposable
         var before = Rollups();
 
         new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite)
-            .Run(FirstOfMarch.AddDays(40), new Progress<double>(), CancellationToken.None);
+            .Run(FirstOfMarch.AddDays(40), KeepEveryRollup, new Progress<double>(), CancellationToken.None);
 
         using (var store = OpenTheStore())
         {
@@ -291,7 +298,7 @@ public sealed class RollupRebuildTests : IDisposable
         SeedAMonth();
 
         new RetentionSweep(OpenTheStore, RetentionSweep.DefaultBite)
-            .Run(FirstOfMarch.AddDays(40), new Progress<double>(), CancellationToken.None);
+            .Run(FirstOfMarch.AddDays(40), KeepEveryRollup, new Progress<double>(), CancellationToken.None);
 
         Assert.NotEmpty(Rollups());
 

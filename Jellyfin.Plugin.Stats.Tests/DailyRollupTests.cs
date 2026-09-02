@@ -1,4 +1,4 @@
-// The day-by-day account, built as rows are written. Issue #252.
+﻿// The day-by-day account, built as rows are written. Issue #252.
 //
 // Everything here is asserted over the store rather than over a fold. The point
 // of the table is that a figure survives the request that produced it, so a case
@@ -315,6 +315,87 @@ public sealed class DailyRollupTests : IDisposable
         Assert.Equal(
             TimeZoneInfo.FindSystemTimeZoneById(Configuration.ConfigurationLimits.DefaultRollupTimeZone).Id,
             Assert.IsType<TimeZoneInfo>(store.RollupZone).Id);
+    }
+
+    /// <summary>
+    /// The aggregate window's own pair, read over days rather than over
+    /// moments. A rollup keyed before the day given is counted and deleted and
+    /// one keyed on that day is neither, so a comparison written as an
+    /// inclusive one fails here rather than taking a day nobody asked for.
+    /// </summary>
+    /// <remarks>
+    /// Berlin, because a day is a day in the zone the store states. The two
+    /// plays are at eleven at night Berlin time on consecutive days, which is
+    /// ten at night UTC, so a count that read a moment instead of a day would
+    /// answer over the wrong pair rather than passing quietly.
+    /// </remarks>
+    [Fact]
+    public void TheCountAndTheDeletionReachTheDaysBeforeTheOneTheyAreGiven()
+    {
+        var firstDayKept = new DateOnly(2026, 3, 5);
+
+        using var store = new SqlitePlayStore(_root, Berlin);
+
+        store.Add(APlay(Ada, new DateTime(2026, 3, 4, 22, 0, 0, DateTimeKind.Utc), TimeSpan.FromMinutes(20), reachedTheEnd: true));
+        store.Add(APlay(Ada, new DateTime(2026, 3, 5, 22, 0, 0, DateTimeKind.Utc), TimeSpan.FromMinutes(20), reachedTheEnd: true));
+
+        Assert.Equal(1, store.CountRollupsBefore(firstDayKept));
+        Assert.Equal(1, store.DeleteRollupsBefore(firstDayKept, DeletionClass.Retention, 10));
+
+        Assert.Equal(new[] { firstDayKept }, store.AllRollups().Select(rollup => rollup.Day));
+        Assert.Equal(0, store.CountRollupsBefore(firstDayKept));
+    }
+
+    /// <summary>
+    /// The deletion takes no more than its bite, and the play rows it was
+    /// folded from are left where they are.
+    /// </summary>
+    /// <remarks>
+    /// The bite is what makes a sweep over a decade of rollups answer a
+    /// cancellation, and a statement that ignored its limit would hold the
+    /// write lock for the whole of it. Three days and a bite of two, so a
+    /// deletion that took everything and a deletion that took one are both
+    /// different from what is asserted.
+    /// </remarks>
+    [Fact]
+    public void ADeletionOverRollupsTakesNoMoreThanItsBite()
+    {
+        var firstDayKept = new DateOnly(2026, 3, 8);
+
+        using var store = new SqlitePlayStore(_root, Berlin);
+
+        foreach (var day in new[] { 4, 5, 6 })
+        {
+            store.Add(APlay(Ada, new DateTime(2026, 3, day, 12, 0, 0, DateTimeKind.Utc), TimeSpan.FromMinutes(20), reachedTheEnd: true));
+        }
+
+        Assert.Equal(3, store.CountRollupsBefore(firstDayKept));
+        Assert.Equal(2, store.DeleteRollupsBefore(firstDayKept, DeletionClass.Retention, 2));
+        Assert.Equal(1, store.DeleteRollupsBefore(firstDayKept, DeletionClass.Retention, 2));
+        Assert.Equal(0, store.DeleteRollupsBefore(firstDayKept, DeletionClass.Retention, 2));
+
+        Assert.Empty(store.AllRollups());
+        Assert.Equal(3, store.AllPlays().Count());
+    }
+
+    /// <summary>
+    /// The deletion refuses a bite that is not one, rather than taking it as a
+    /// statement with no limit at all.
+    /// </summary>
+    /// <param name="limit">What a caller asked for.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void TheRollupDeletionRefusesABiteThatIsNotOne(int limit)
+    {
+        using var store = new SqlitePlayStore(_root, Berlin);
+
+        store.Add(APlay(Ada, March, TimeSpan.FromMinutes(20), reachedTheEnd: true));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => store.DeleteRollupsBefore(new DateOnly(2026, 4, 1), DeletionClass.Retention, limit));
+
+        Assert.Single(store.AllRollups());
     }
 
     /// <summary>

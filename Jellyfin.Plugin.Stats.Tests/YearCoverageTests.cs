@@ -1,4 +1,4 @@
-// What a wrap-up says about the part of its year the store could still answer
+﻿// What a wrap-up says about the part of its year the store could still answer
 // for, and the two failures that statement exists against.
 //
 // The first is a partial year presented as a whole one. Play rows are deleted
@@ -43,6 +43,13 @@ public sealed class YearCoverageTests : IDisposable
     /// year is three hundred and sixty-five days and a slip of one is visible.
     /// </summary>
     private const int Year = 2025;
+
+    /// <summary>
+    /// An aggregate window nothing here falls outside of. These cases are
+    /// about the play rows, and a sweep that took the days they were folded
+    /// into as well would be proving two windows at once.
+    /// </summary>
+    private static readonly DateTime KeepEveryRollup = DateTime.UnixEpoch;
 
     private readonly string _root;
 
@@ -282,9 +289,9 @@ public sealed class YearCoverageTests : IDisposable
 
         var cutoff = new DateTime(Year, 9, 1, 0, 0, 0, DateTimeKind.Utc);
         var deleted = new RetentionSweep(() => new SqlitePlayStore(_root), RetentionSweep.DefaultBite)
-            .Run(cutoff, new IgnoredProgress(), CancellationToken.None);
+            .Run(cutoff, KeepEveryRollup, new IgnoredProgress(), CancellationToken.None);
 
-        Assert.Equal(8, deleted);
+        Assert.Equal(8, deleted.Plays);
 
         using var after = new SqlitePlayStore(_root);
         var survivors = after.PlaysFor(Mine).ToList();
