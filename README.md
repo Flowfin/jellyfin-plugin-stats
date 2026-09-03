@@ -110,11 +110,31 @@ would take from it:
 A 12.0 server finds nothing to install under that entry until the 12.0 line
 publishes, which is issue #80.
 
-Nobody has followed this route on a fresh server and written down what happened.
-The address answers, the entry names a release that exists, and the checksum it
-publishes is the one in the release's `.md5` - but an install is a thing a
-server does, and none of those three readings is one. That recording is what
-issue #81 is still open for, and this paragraph is not it.
+This route was followed once on a fresh server, and what happened is written
+down. A dispatched job, `Reading of the install route`, starts a 10.11 server
+in a container, hands it the address above and nothing else, asks it to
+install the plugin from the catalogue that address serves, restarts it, and
+reads whether the plugin is listed active at the version the catalogue
+offered. `docs/headless-tests.md` says why that is a reading and not a test.
+It was taken on 2026-09-03:
+
+    gh run view 33749480051 --repo Flowfin/jellyfin-plugin-stats \
+      --json status,conclusion,headSha --jq '"\(.status) \(.conclusion) \(.headSha)"'
+    completed success f1513385249b89e6780ddc2ddf3ef00f6607cc65
+
+and this is the reading, from that run's log:
+
+    a fresh 10.11.11 server, given the address, was offered Playback Statistics 0.1.0.0 from it,
+    fetched the archive the catalogue named, found its checksum to be the one
+    the catalogue carries, 69dbb5648e0ef0ec73e1cf087d6f8e2d,
+    and loaded it at the next start, active, at that version
+
+The server did the checking. It hashes the archive it fetched and refuses the
+install when the hash is not the checksum the catalogue carries, so an install
+that completed is one where the two agreed at the server. What the run proves is
+the day it was taken and nothing about the days nobody dispatched it; a reader
+who wants today's answer dispatches it again rather than trusting this
+paragraph.
 
 The two lines are told apart by the version number, because a catalogue admits
 one tag shape and a suffix cannot carry the difference. The 10.11 line's
