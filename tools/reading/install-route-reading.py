@@ -70,7 +70,17 @@ def version_tuple(text):
 
 
 def same_id(candidate):
-    return str(candidate).lower() == PLUGIN_ID
+    """Compare identifiers the way the server writes them.
+
+    The server's own JSON converter writes every GUID in the form without
+    dashes, so the catalogue answers `guid` as thirty-two hex digits and the
+    plugin list answers `Id` the same way, while build.yaml and the manifest
+    carry the dashed form. The first dispatch of this reading compared the two
+    forms as strings, found nothing under this plugin in a catalogue that held
+    it, and stopped at step 4 with a FAIL that was its own. Both sides are
+    reduced to the digits before they are compared.
+    """
+    return str(candidate).replace("-", "").lower() == PLUGIN_ID.replace("-", "")
 
 
 def one_line(plugin):
@@ -152,6 +162,22 @@ def install(base, manifest, expected_path):
                 manifest, PLUGIN_ID, server_version
             )
         )
+        # What the catalogue does hold under this name and from this address,
+        # so that a reader can tell a missing entry from a comparison that
+        # missed it, which is the difference the first dispatch could not show.
+        for package in packages:
+            by_name = str(package.get("name")).lower() == PLUGIN_NAME.lower()
+            from_here = any(
+                version.get("repositoryUrl") == manifest for version in package.get("versions") or []
+            )
+            if by_name or from_here:
+                print("     held: name {0!r} guid {1!r}".format(package.get("name"), package.get("guid")))
+                for version in package.get("versions") or []:
+                    print(
+                        "       version {0} targetAbi {1} from {2}".format(
+                            version.get("version"), version.get("targetAbi"), version.get("repositoryUrl")
+                        )
+                    )
         return 1
     for version in offered:
         print(
