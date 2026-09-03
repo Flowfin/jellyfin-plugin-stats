@@ -94,10 +94,10 @@ which is the one directory the scan does not read.
 
 ## A reading that needs a server, and why it is not a test
 
-One job in this repository starts a real Jellyfin server, publishes a port on
-the runner it is on, installs the packaged plugin into it and asks it a
-question. Both of those are on the list above. This section is the departure,
-written where the rule is rather than in the file that takes it.
+Two jobs in this repository start a real Jellyfin server, publish a port on
+the runner they are on, put this plugin into it and ask it a question. Both of
+those are on the list above, and the second job adds a third. This section is
+the departure, written where the rule is rather than in the files that take it.
 
 **What it is.** A dispatched job, `Reading`, driving
 `tools/reading/settings-page-reading.py`. It answers one question that no
@@ -108,6 +108,20 @@ that page receives. What answers it is the server's own serialisation of its
 own configuration object, and the server is the thing under the question, so
 standing where a server stands is not available here. Issue #31 carries the
 argument.
+
+**The second.** A dispatched job, `Reading of the install route`, driving
+`tools/reading/install-route-reading.py`. It answers issue #81's second
+condition: whether a fresh server that follows the route `README.md` gives a
+person - add one address, install from the catalogue it serves - ends up with
+this plugin loaded. Nothing from the checkout is installed. The server is
+handed the address and fetches whatever it serves, hashes the archive against
+the checksum the catalogue carries, and refuses the install when they
+disagree, so what is read is the published route and not the tree. That is
+also a third thing from the list above, a network call to something outside
+the run, and it is the question rather than a shortcut to it: the route a
+user follows goes over the network or it is not the route. The two readings
+share what every reading does first, in `tools/reading/jellyfin_server.py`,
+and nothing else.
 
 **Why it is not a test, in the sense the list above uses.** No trigger runs it,
 no ruleset names its context, and nothing merges or fails on it. Its output is
@@ -124,12 +138,13 @@ artefact: it proves the run it was taken in and nothing about the runs nobody
 dispatched, which is the opposite of what an invariant rule buys and is why
 this route is not the one anything else here moves to.
 
-**The costs, stated.** The job can rot between dispatches with nothing saying
-so. It reads an image from outside the run, pinned by digest so that at least
-the same bytes answer twice. And the port, published on the loopback address,
-is a resource shared with everything else on that runner - the reason the rule
-above gives for refusing one does not stop applying because this is a reading,
-it is paid.
+**The costs, stated.** Either job can rot between dispatches with nothing
+saying so. Both read an image from outside the run, pinned by digest so that at
+least the same bytes answer twice, and the second reads a manifest that is
+pinned to nothing, because a manifest that moved is exactly what it exists to
+notice. And the port, published on the loopback address, is a resource shared
+with everything else on that runner - the reason the rule above gives for
+refusing one does not stop applying because this is a reading, it is paid.
 
 ## What is left to a person
 

@@ -1,0 +1,124 @@
+# One reading of the install route README.md documents, taken on a fresh server.
+#
+# THIS IS A READING AND NOT A TEST, and the distinction is the whole reason
+# this file may exist. docs/headless-tests.md says no test may need a running
+# Jellyfin server, a listening port or a network call to anything outside the
+# run, and this job needs all three: the server it starts fetches the
+# published manifest and the archive that manifest names. It is run by hand,
+# it gates nothing, no ruleset names its context, and what it produces is
+# output somebody pastes into an issue. The departure and its bound are
+# written in that document rather than only here.
+#
+# What it settles is issue #81's second condition: a fresh server can install
+# the plugin by following the documented route. Three readings had stood in
+# place of that - the address answers, the entry names a release that exists,
+# the two checksums agree - and not one of them was a server fetching the
+# archive and loading the plugin. This run is that.
+#
+# Nothing from this tree is installed. The server is handed the address the
+# README gives a person, and what it installs is whatever that address serves,
+# so the reading is of the published route and not of the checkout. A run
+# that goes red after a release is what a stale or broken manifest looks like
+# from a user's side, which is the other reason to keep it dispatchable.
+#
+# It is dispatched rather than scheduled. A reading answers a question once,
+# and a job on a trigger would become a check that gates nothing while looking
+# like one. The cost is that it can rot unnoticed between dispatches, which is
+# stated here rather than left for whoever next runs it and finds it red.
+name: Reading of the install route
+
+on:
+  workflow_dispatch:
+
+# Deny by default; the job below reads the repository and nothing else.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-route:
+    name: Follow the documented install route on a fresh server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      # The one address README.md tells a person to add. It is the whole of
+      # what the server is given, and it is written here once rather than
+      # read out of the README, because a reading that parsed the document it
+      # is meant to check would pass whatever the document said.
+      MANIFEST: https://flowfin.dev/manifest.json
+      SERVER: http://127.0.0.1:8096
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the token is not kept in .git/config.
+          persist-credentials: false
+
+      # A real server, on the oldest line this plugin declares support for,
+      # pinned by digest for the same reason every action above is pinned by
+      # commit: a reading against an image that moved is a reading of
+      # something else. The same digest as the settings page reading, so the
+      # two readings are of one server.
+      #
+      # The port is published on the loopback address alone. It is a port on
+      # the runner either way, which is the departure this file declares; what
+      # the address buys is that nothing outside the runner can reach it.
+      #
+      # Both directories are empty when the server starts: a fresh server is
+      # the condition, and the reading refuses one that already lists the
+      # address. The server writes as root inside the container and this job
+      # reads what it wrote afterwards.
+      - name: Start a fresh server
+        run: |
+          set -euo pipefail
+          mkdir -p server/config server/cache
+          chmod -R 777 server
+          docker run --detach --name jellyfin \
+            --publish 127.0.0.1:8096:8096 \
+            --volume "${PWD}/server/config:/config" \
+            --volume "${PWD}/server/cache:/cache" \
+            jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db
+          docker ps
+
+      - name: Add the address and install the plugin from it
+        run: |
+          set -euo pipefail
+          python3 tools/reading/install-route-reading.py install "${SERVER}" "${MANIFEST}" expected.json
+
+      # What the dashboard asks a person to do after an install, done the way
+      # a container is restarted. The reading has no hand on the container
+      # and says so; this step is that hand.
+      - name: Restart the server, which is what loads an installed plugin
+        run: |
+          set -euo pipefail
+          docker restart jellyfin
+          docker ps
+
+      - name: Read whether the plugin loaded
+        run: |
+          set -euo pipefail
+          python3 tools/reading/install-route-reading.py loaded "${SERVER}" expected.json
+
+      # Whatever happened above, the server's own account of it. A reading
+      # that failed is worth more with the log beside it than without, and a
+      # reading that passed is worth checking against the log for a checksum
+      # the server refused or a plugin that did not load.
+      - name: What the server wrote and logged
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "== what the reading expected the server to pick"
+          cat expected.json || true
+          echo "== the plugin directory after the install"
+          ls -lR server/config/plugins || true
+          echo "== what the server said about repositories, packages and this plugin"
+          docker logs jellyfin 2>&1 | grep -i -E "stat|plugin|package|checksum|repositor" | head -80 || true
+
+      - name: Stop the server
+        if: always()
+        run: docker rm --force jellyfin || true
