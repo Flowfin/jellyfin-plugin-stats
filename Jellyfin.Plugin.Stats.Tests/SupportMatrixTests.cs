@@ -68,9 +68,10 @@ public class SupportMatrixTests
     /// <param name="Line">The server line.</param>
     /// <param name="Framework">The framework the artifact for that line targets.</param>
     /// <param name="Floor">The oldest server release the artifact is built against.</param>
+    /// <param name="SqliteFloor">The Microsoft.Data.Sqlite that floor server ships.</param>
     /// <param name="TargetAbi">The abi the package for that line declares.</param>
     /// <param name="PluginVersions">The plugin versions the row is about.</param>
-    private sealed record Row(string Line, string Framework, string Floor, string TargetAbi, string PluginVersions);
+    private sealed record Row(string Line, string Framework, string Floor, string SqliteFloor, string TargetAbi, string PluginVersions);
 
     /// <summary>
     /// The table lists a row for each framework the plugin builds and for no
@@ -105,6 +106,25 @@ public class SupportMatrixTests
         {
             var property = FloorPropertyFor(row.Framework);
             Assert.Equal(ProjectProperty(props, property), row.Floor);
+        }
+    }
+
+    /// <summary>
+    /// The same statement one layer down. The plugin ships no SQLite stack, so
+    /// the version it binds has to be one the floor server of the line already
+    /// loads, and that version is a column of the table. A floor raised in
+    /// Directory.Build.props without the column moving is a document promising
+    /// an older server than the artifact can be installed on.
+    /// </summary>
+    [Fact]
+    public void EverySqliteFloorInTheTableIsTheFloorTheBuildUses()
+    {
+        var props = Path.Combine(RepositoryRoot(), "Directory.Build.props");
+
+        foreach (var row in Table())
+        {
+            var property = SqliteFloorPropertyFor(row.Framework);
+            Assert.Equal(ProjectProperty(props, property), row.SqliteFloor);
         }
     }
 
@@ -202,6 +222,41 @@ public class SupportMatrixTests
     }
 
     /// <summary>
+    /// The same reading for the SQLite stack, and the one that catches the
+    /// failure issue #330 is about. Nothing of that stack travels in the
+    /// package, so the reference the assembly carries is a demand on the server:
+    /// a strong-named assembly found BELOW the referenced version is not found
+    /// at all, and the plugin then stores nothing on the oldest servers of a
+    /// line while starting cleanly everywhere else. 0.1.0.0 bound 9.0.11.0 and a
+    /// 10.11.0 server ships 9.0.10.0.
+    /// </summary>
+    /// <remarks>
+    /// Package version and assembly version agree part for part for this
+    /// package, so a floor of 9.0.10 is compared against a reference of
+    /// 9.0.10.0. The split is kept for the same reason the check above carries
+    /// one: a floor written as a pre-release is compared on its release part.
+    /// </remarks>
+    [Fact]
+    public void ThePluginBindsTheSqliteTheFloorServerShips()
+    {
+        var framework = RunningFramework();
+
+        var row = Table().SingleOrDefault(candidate => string.Equals(candidate.Framework, framework, StringComparison.Ordinal));
+        Assert.True(row is not null, "The table has no row for " + framework + ", which is the framework this suite is running on.");
+
+        var reference = typeof(Plugin).Assembly.GetReferencedAssemblies()
+            .SingleOrDefault(assembly => string.Equals(assembly.Name, "Microsoft.Data.Sqlite", StringComparison.Ordinal));
+        Assert.True(reference is not null, "The plugin assembly references no Microsoft.Data.Sqlite, and the store is what that reference is for.");
+
+        var claimed = row!.SqliteFloor.Split('-', 2)[0];
+        var built = reference!.Version!;
+
+        Assert.Equal(
+            claimed,
+            built.Major + "." + built.Minor + "." + built.Build);
+    }
+
+    /// <summary>
     /// Reads the table out of docs/support-matrix.md.
     /// </summary>
     /// <remarks>
@@ -219,10 +274,10 @@ public class SupportMatrixTests
             .Select(line => line.Trim())
             .Where(line => line.StartsWith('|'))
             .Select(line => line.Trim('|').Split('|').Select(cell => cell.Trim()).ToArray())
-            .Where(cells => cells.Length == 5)
+            .Where(cells => cells.Length == 6)
             .Where(cells => !cells[0].StartsWith("---", StringComparison.Ordinal))
             .Where(cells => !string.Equals(cells[0], "server line", StringComparison.Ordinal))
-            .Select(cells => new Row(cells[0], cells[1], cells[2], cells[3], cells[4]))
+            .Select(cells => new Row(cells[0], cells[1], cells[2], cells[3], cells[4], cells[5]))
             .ToList();
 
         Assert.NotEmpty(rows);
@@ -242,6 +297,22 @@ public class SupportMatrixTests
             "net10.0" => "JellyfinFloorNet10",
             _ => throw new Xunit.Sdk.XunitException(
                 "The table has a row for " + framework + " and no floor property is named for it. A framework added to the build needs its floor declared before this table can be checked against it.")
+        };
+    }
+
+    /// <summary>
+    /// Names the property holding the SQLite floor for a framework.
+    /// </summary>
+    /// <param name="framework">The framework a row is about.</param>
+    /// <returns>The MSBuild property that declares that framework's SQLite floor.</returns>
+    private static string SqliteFloorPropertyFor(string framework)
+    {
+        return framework switch
+        {
+            "net9.0" => "SqliteFloorNet9",
+            "net10.0" => "SqliteFloorNet10",
+            _ => throw new Xunit.Sdk.XunitException(
+                "The table has a row for " + framework + " and no SQLite floor property is named for it. A framework added to the build needs the version its floor server ships declared before this table can be checked against it.")
         };
     }
 

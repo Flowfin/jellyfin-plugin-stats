@@ -68,6 +68,13 @@ jobs:
           - line: '10.11'
             framework: net9.0
             floor-property: JellyfinFloorNet9
+            # The SQLite stack is the server's as well, so it has a floor of its
+            # own: the Microsoft.Data.Sqlite the oldest server of this line
+            # ships. A reference above it binds an assembly that server does not
+            # have, and a strong-named assembly found below the referenced
+            # version is not found at all, so the plugin starts and then stores
+            # nothing. Issue #330.
+            sqlite-floor-property: SqliteFloorNet9
             # build.yaml declares this line's targetAbi to the server. The step
             # below checks it against the floor, because the two are one claim
             # written twice: an abi of 10.11.0.0 is only honest if the assembly
@@ -76,6 +83,7 @@ jobs:
           - line: '12.0'
             framework: net10.0
             floor-property: JellyfinFloorNet10
+            sqlite-floor-property: SqliteFloorNet10
             # Empty, and this is a gap rather than an omission. The 12.0 line's
             # targetAbi is not a value in this tree: the packaging workflow
             # substitutes it into a copy of build.yaml at package time, so there
@@ -97,7 +105,7 @@ jobs:
       # Read out of the tree rather than written here. A floor typed into this
       # file would be a second place to change, which is the state this job
       # exists to keep the repository out of.
-      - name: Read the declared floor
+      - name: Read the declared floors
         id: floor
         run: |
           set -euo pipefail
@@ -107,8 +115,15 @@ jobs:
             echo "${{ matrix.floor-property }} is empty. Directory.Build.props is where it is declared." >&2
             exit 1
           fi
-          echo "The ${{ matrix.line }} line declares floor ${floor}."
+          sqlite_floor=$(dotnet msbuild Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj \
+            -getProperty:${{ matrix.sqlite-floor-property }} -nologo | tr -d '[:space:]')
+          if [ -z "${sqlite_floor}" ]; then
+            echo "${{ matrix.sqlite-floor-property }} is empty. Directory.Build.props is where it is declared." >&2
+            exit 1
+          fi
+          echo "The ${{ matrix.line }} line declares floor ${floor} and SQLite floor ${sqlite_floor}."
           echo "floor=${floor}" >> "$GITHUB_OUTPUT"
+          echo "sqlite-floor=${sqlite_floor}" >> "$GITHUB_OUTPUT"
 
       - name: Build against the floor
         run: dotnet build Jellyfin.Plugin.Stats/Jellyfin.Plugin.Stats.csproj -f ${{ matrix.framework }} --nologo
@@ -118,9 +133,16 @@ jobs:
       # anything but the declared floor, so a version written into a project file
       # instead of read from Directory.Build.props is red here rather than a
       # quiet upgrade nobody sees.
+      #
+      # Microsoft.Data.Sqlite is judged against a floor of its own, because the
+      # version that satisfies it is the one the server ships rather than the one
+      # the Jellyfin packages are numbered with. Every package in the loop below
+      # is a reference the plugin compiles against and does not ship, and that is
+      # the whole reason each of them has a floor at all.
       - name: What was resolved is the floor and nothing above it
         env:
           FLOOR: ${{ steps.floor.outputs.floor }}
+          SQLITE_FLOOR: ${{ steps.floor.outputs.sqlite-floor }}
           FRAMEWORK: ${{ matrix.framework }}
         run: |
           set -euo pipefail
@@ -129,8 +151,13 @@ jobs:
           import os
           import sys
 
-          floor = os.environ["FLOOR"]
           framework = os.environ["FRAMEWORK"]
+
+          expected = {
+              "Jellyfin.Controller": os.environ["FLOOR"],
+              "Jellyfin.Model": os.environ["FLOOR"],
+              "Microsoft.Data.Sqlite": os.environ["SQLITE_FLOOR"],
+          }
 
           with open("Jellyfin.Plugin.Stats/packages.lock.json", encoding="utf-8") as handle:
               locked = json.load(handle)["dependencies"]
@@ -139,7 +166,7 @@ jobs:
               sys.exit("packages.lock.json holds no {0} section.".format(framework))
 
           failed = False
-          for package in ("Jellyfin.Controller", "Jellyfin.Model"):
+          for package, floor in expected.items():
               entry = locked[framework].get(package)
               if entry is None:
                   print("FAIL {0} is not a direct reference under {1}".format(package, framework))

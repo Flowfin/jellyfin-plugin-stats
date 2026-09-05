@@ -75,27 +75,38 @@
     package, over an Entity Framework context and over the server's database,
     and the reasons are written there.
 
-    It travels in the package, unlike the two references above, because the
-    server does not supply it. Neither server line declares it anywhere in the
-    graph the plugin restores from:
+    The SQLite stack is the server's, exactly like the two references above, and
+    for the same reason: it does not travel in the package. This project is a
+    library, so no package assembly is copied to its build output, and the
+    output is what the packaging tool zips. The archive a server installs holds
+    meta.json and Jellyfin.Plugin.Stats.dll and nothing else, so a reference
+    naming a version the server does not have is a load failure rather than a
+    heavier download. ExcludeAssets runtime says that in the project file, so the
+    reference reads the way it behaves.
 
-        grep -c 'Microsoft.Data.Sqlite' Jellyfin.Plugin.Stats/packages.lock.json
+    The version therefore follows the server line, and it is that line's FLOOR:
+    every server on the line supplies it or something later, and a strong-named
+    assembly found below the referenced version is not found at all. The floors
+    are declared in Directory.Build.props beside the Jellyfin ones, with the
+    reading that produced them, and no version is written here; a literal in this
+    file is what the ABI floor jobs refuse. Issue #330 is where this was
+    measured, on a 10.11.0 server that stored nothing.
 
-    counts it only as this reference and what it pulls in. The closest prior art
-    ships its own SQLite stack in its package for the same reason.
-
-    The version follows the server line rather than being one number for both,
-    the same way the two references above do. Each line already carries a
-    Microsoft.Extensions.* graph pinned to its own major, so a package from the
-    other major would pull a second copy of those assemblies into a process that
-    already has one.
+    Not the neighbouring shape, shipping the SQLite stack inside the archive.
+    That puts a second managed SQLite and a native library per platform into a
+    process that already has one, and the bundle's provider initialisation is
+    process-wide state.
   -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(SqliteFloorNet9)">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(SqliteFloorNet10)">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <!--
@@ -112,9 +123,14 @@
     this raises the native library and leaves the managed bundle and provider
     where the two Microsoft.Data.Sqlite versions put them.
 
-    This reference exists only for that advisory. When the bundle's own default
-    moves past it, this goes, and the way to tell is that removing it leaves the
-    restore green.
+    This reference exists for that advisory and for nothing else. It ships
+    nothing: the native library that actually runs is the server's, loaded by the
+    server's own bundle, and this project's output carries no package assembly at
+    all. What it buys is a restore graph an audit can read, so the advisory is
+    answered in the file rather than in a note.
+
+    When the bundle's own default moves past it, this goes, and the way to tell
+    is that removing it leaves the restore green.
   -->
   <ItemGroup>
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
