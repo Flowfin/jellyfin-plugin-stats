@@ -33,8 +33,8 @@
  * compared instead of one standing in for the other.
  *
  * What the server re-encoded with is drawn under the bars and not as bars. It
- * is a partition — a play carries one acceleration and every reason the server
- * gave — so putting it in the same picture as the reasons would invite exactly
+ * is a partition: a play carries one acceleration and every reason the server
+ * gave, so putting it in the same picture as the reasons would invite exactly
  * the addition the caption spends a sentence refusing. It is listed with its
  * own sentence saying that these rows do add up.
  *
