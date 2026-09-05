@@ -168,11 +168,53 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     /// <inheritdoc />
     /// <remarks>
+    /// The route a save from the settings page takes, and the one route on
+    /// which the guard in <see cref="SaveConfiguration(PluginConfiguration)"/>
+    /// arrives too late. The base class assigns the incoming object to
+    /// <see cref="BasePlugin{TConfigurationType}.Configuration"/> first and asks
+    /// the save only afterwards, measured rather than assumed:
+    /// <code>
+    /// MediaBrowser.Common/Plugins/BasePluginOfT.cs at v10.11.11
+    /// 167:            Configuration = (TConfigurationType)configuration;
+    /// 169:            SaveConfiguration(Configuration);
+    /// </code>
+    /// So a save that guard refused left the stored file alone and the process
+    /// running on the refused object, with the refused field on its default. A
+    /// server keeping rows for 400 days would sweep them at 90 on the next run
+    /// until somebody restarted it, and the settings page would report a stored
+    /// value as refused that the file never held. Issue #331.
+    /// <para>
+    /// The value guard is therefore asked here, before anything is assigned,
+    /// off the same object and the same recorded refusals the file route reads.
+    /// A save that passes here is judged once more on its way to the file, and
+    /// that second judgement reads the same fields and cannot disagree.
+    /// </para>
+    /// </remarks>
+    /// <param name="configuration">The configuration the server was sent.</param>
+    /// <exception cref="ConfigurationValueRefusedException">A value in <paramref name="configuration"/> is outside what this plugin accepts. Nothing was assigned and nothing was written.</exception>
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // The cast the base class makes on its own route, made here first so
+        // that the refusal is read off this plugin's type, and so that a caller
+        // handing over some other plugin's configuration fails here the way it
+        // would have failed there.
+        RefuseAValueOutsideWhatIsAccepted((PluginConfiguration)configuration);
+
+        base.UpdateConfiguration(configuration);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
     /// The one place this plugin's configuration is written. Measured rather
     /// than assumed: on both supported server lines the no-argument save and
-    /// <see cref="BasePlugin{TConfigurationType}.UpdateConfiguration"/> both
-    /// come through here, so one guard covers all three ways in and there is no
-    /// second copy of it to fall out of step.
+    /// <see cref="UpdateConfiguration"/> both come through here, so the file
+    /// guard is asked once and there is no second copy of it to fall out of
+    /// step. The value guard is a different case and is asked twice: here, for
+    /// the two saves that arrive here first, and at the entry of
+    /// <see cref="UpdateConfiguration"/>, because on that route the base class
+    /// has already replaced the running configuration by the time this runs.
     /// <para>
     /// Two things are refused here and they are refused in this order. The
     /// first reads the argument and the second reads the file, so a caller who
@@ -183,9 +225,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// The value guard is the write half of a decision the model does not make
     /// on its own: a stored file carrying a bad value still loads, with that one
     /// field on its default, because a settings file must not stop a server from
-    /// starting. A save carrying one is refused whole. Nothing here re-derives
-    /// what is acceptable; the setters have already recorded which fields they
-    /// refused, and this reads that.
+    /// starting. A save carrying one is refused whole.
     /// </para>
     /// </remarks>
     /// <param name="configuration">The configuration to write.</param>
@@ -193,16 +233,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <exception cref="ConfigurationIsNewerThanThePluginException">The stored file was written by a later version of this plugin.</exception>
     public override void SaveConfiguration(PluginConfiguration configuration)
     {
-        var refused = configuration.RejectedFields;
-
-        if (refused.Length > 0)
-        {
-            _logger.LogError(
-                "A save was refused. The value sent for {Fields} is outside what this plugin accepts, so nothing was written and the stored settings are unchanged.",
-                string.Join(", ", refused));
-
-            throw new ConfigurationValueRefusedException(refused);
-        }
+        RefuseAValueOutsideWhatIsAccepted(configuration);
 
         var stored = ConfigurationMigrator.VersionOfFile(ConfigurationFilePath, ConfigurationMigrations.Current);
 
@@ -296,5 +327,33 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 path,
                 ConfigurationMigrations.Current);
         }
+    }
+
+    /// <summary>
+    /// Refuses a configuration carrying a value this plugin does not accept.
+    /// </summary>
+    /// <remarks>
+    /// Nothing here re-derives what is acceptable; the setters have already
+    /// recorded which fields they refused, and this reads that. The field is
+    /// named on the log because the exception reaches the caller that sent the
+    /// value, and the operator reading the server log is the one who has to
+    /// know which setting the server is still running on.
+    /// </remarks>
+    /// <param name="configuration">The configuration about to be assigned or written.</param>
+    /// <exception cref="ConfigurationValueRefusedException">A value in <paramref name="configuration"/> is outside what this plugin accepts.</exception>
+    private void RefuseAValueOutsideWhatIsAccepted(PluginConfiguration configuration)
+    {
+        var refused = configuration.RejectedFields;
+
+        if (refused.Length == 0)
+        {
+            return;
+        }
+
+        _logger.LogError(
+            "A save was refused. The value sent for {Fields} is outside what this plugin accepts, so nothing was written and the stored settings are unchanged.",
+            string.Join(", ", refused));
+
+        throw new ConfigurationValueRefusedException(refused);
     }
 }
