@@ -81,6 +81,51 @@
     </PropertyGroup>
 
     <!--
+      The SQLite stack is the server's too, and these are its floors, read the
+      same way and for the same reason as the two above.
+
+      Nothing of it travels in the package. The plugin project is a library, so
+      the assemblies of its package references are not copied to the build
+      output at all, and the output is what the packaging tool zips: the archive
+      holds meta.json and one assembly. So whichever version the reference names
+      is the version the assembly binds, and the server has to supply that one
+      or a later one on the same major.
+
+      A strong-named assembly found BELOW the referenced version is not found,
+      and the failure is silent until the store is first opened. Built against
+      9.0.11, the plugin logged a FileNotFoundException on a 10.11.0 server,
+      created no data folder and stored no play, while build.yaml went on
+      offering the archive to that server. Issue #330.
+
+      What each supported server ships, read out of the image rather than out of
+      a release note:
+
+          cid=$(docker create jellyfin/jellyfin:10.11.0)
+          docker cp "$cid:/jellyfin/Microsoft.Data.Sqlite.dll" .
+          docker rm "$cid"
+          [System.Reflection.AssemblyName]::GetAssemblyName("Microsoft.Data.Sqlite.dll").Version
+
+          jellyfin/jellyfin:10.11.0     9.0.10.0
+          jellyfin/jellyfin:10.11.11    9.0.11.0
+          jellyfin/jellyfin:12.0-rc1    10.0.9.0
+          jellyfin/jellyfin:12.0-rc4    10.0.10.0
+
+      The floor of a line is the oldest of those, so every later server on the
+      line satisfies the reference. The package version and the assembly version
+      agree part for part here, which is what lets the suite compare a package
+      floor of 9.0.10 against an assembly reference of 9.0.10.0.
+
+      These move when a line's floor server moves, which is the same moment the
+      Jellyfin floor above moves, and the ABI floor jobs in
+      .github/workflows/build.yaml refuse a project file that names a version of
+      its own instead of reading these.
+    -->
+    <PropertyGroup>
+        <SqliteFloorNet9>9.0.10</SqliteFloorNet9>
+        <SqliteFloorNet10>10.0.9</SqliteFloorNet10>
+    </PropertyGroup>
+
+    <!--
       A version that could not be read leaves these properties empty, and the SDK
       then substitutes its own default without saying so. That was measured while
       writing this: a three-part version in build.yaml produced a build that

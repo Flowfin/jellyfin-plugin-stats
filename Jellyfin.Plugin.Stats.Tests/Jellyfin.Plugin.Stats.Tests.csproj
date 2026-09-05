@@ -88,6 +88,30 @@
     <PackageReference Include="Jellyfin.Model" Version="$(JellyfinFloorNet10)" />
   </ItemGroup>
 
+  <!--
+    The SQLite stack, for the same reason and with the opposite outcome. The
+    plugin stopped shipping it on issue #330 and now compiles against the
+    version its floor server carries, so nothing reaches this suite through the
+    project reference and every store test failed to load Microsoft.Data.Sqlite
+    until these two lines existed.
+
+    Here the suite CAN follow the plugin down to the floor, unlike the Jellyfin
+    references above: the floor package is referenced rather than a later one,
+    so the assembly the tests load is the exact version a floor server supplies
+    and the store is exercised against it rather than against something newer
+    that happens to satisfy the same reference.
+
+    The versions are read from Directory.Build.props, which is where both floors
+    are written and the only place either is.
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(SqliteFloorNet9)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(SqliteFloorNet10)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Jellyfin.Plugin.Stats\Jellyfin.Plugin.Stats.csproj" />
   </ItemGroup>
