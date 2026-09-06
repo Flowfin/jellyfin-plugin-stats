@@ -4,17 +4,17 @@ Two server lines are supported and nothing else is. They run on different
 frameworks, so there is one artifact per line and a server is offered the one
 that matches the version it reports.
 
-| server line | framework | oldest server the artifact is built against | the SQLite that server ships | targetAbi the package declares | plugin versions |
+| server line | framework | oldest server the artifact is built against | the SQLite that server ships | targetAbi the package declares | newest released plugin version |
 | --- | --- | --- | --- | --- | --- |
-| 10.11 | net9.0 | 10.11.0 | 9.0.10 | 10.11.0.0 | none released |
-| 12.0 | net10.0 | 12.0.0-rc1 | 10.0.9 | 12.0.0.0 | none released |
+| 10.11 | net9.0 | 10.11.0 | 9.0.10 | 10.11.0.0 | 0.1.0.0 |
+| 12.0 | net10.0 | 12.0.0-rc1 | 10.0.9 | 12.0.0.0 | no release yet |
 
 Every cell in that table is checked against the value the build uses, by
 `SupportMatrixTests` in the suite. A floor bumped in `Directory.Build.props`, a
 framework added to or removed from the plugin, an abi changed in `build.yaml` or
-in the packaging workflow, or the first release being cut, each turns this
-document red rather than leaving it quietly wrong. What each cell is compared
-against is written in that file next to the comparison.
+in the packaging workflow, or a release cut without this table moving, each
+turns this document red rather than leaving it quietly wrong. What each cell is
+compared against is written in that file next to the comparison.
 
 ## A server outside the table
 
@@ -75,33 +75,38 @@ those are different statements.
 
 ## Plugin versions
 
-Nothing has been released:
+One release exists, on the 10.11 line, and it is the version the row names:
 
     gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
-    0
+    1
+    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq '.[].tag_name'
+    0.1.0.0-stable
 
-Both rows say so. `build.yaml` no longer agrees with them by carrying a version
-that could not be a release, and this section said it did:
+The 12.0 line has none. Its stream starts at `1.0.0.0`, which is the decision
+issue #133 recorded, and no artifact for that line has been tagged.
+
+The cell is the newest release of the line and not a list, so a line with
+several releases behind it names one number, and a reader wanting the rest
+opens `CHANGELOG.md`, where every release has a heading.
+
+What the check compares the cell against is that heading. The suite reads no
+network and no git, and the checkout the test workflow runs in carries no tags,
+so the newest tag is represented in the tree by the newest `## X.Y.Z.W`
+heading in `CHANGELOG.md` whose leading number is the line's stream: `0` for
+10.11, `1` for 12.0. A line with no such heading says `no release yet`. Whether
+that heading and the tag agree is the one part no test here reads, and it is
+read by the two commands above; a release cut without a heading is refused
+before that by `docs/RELEASING.md`'s own step of raising the version and the
+changelog in one change.
+
+`build.yaml` carries the version the next tag will have, and the sequence
+issue #133 settled is raising it first and tagging second, because a release
+deleted to correct its number burns that tag permanently. So the file is
+allowed above the newest heading and refused below it:
 
     grep -n '^version:' build.yaml
     10:version: "0.1.0.0"
 
-The number moved before any tag exists, on purpose. Issue #133 settled the
-sequence as raising `build.yaml` first and tagging second, because a release
-deleted to correct its number burns that tag permanently, so there is a window in
-which the file names a version and no release carries it. This is that window.
-
-So the column and the file say two different true things, and the check compares
-the file against the number written here rather than against a version that means
-nothing has shipped:
-
-    awaiting its first tag: 0.1.0.0
-
-That is the 10.11 line, which is the line `build.yaml` is. The 12.0 line's stream
-starts at `1.0.0.0`, and where that number is written when the second artifact is
-tagged is the release route in issue #80 rather than this file, so no line here
-claims it is written anywhere yet.
-
-When a version ships, the rows stop saying "none released" and this comparison
-stops being made at all, so the first release cannot land without this table
-being brought with it.
+That is equal today, because the version has not been raised for the next
+release yet. When it is, this table does not move, because nothing has been
+released by the raise; it moves with the heading, in the release change.

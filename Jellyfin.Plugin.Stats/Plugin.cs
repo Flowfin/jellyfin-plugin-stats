@@ -246,6 +246,24 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The settings page and nothing else, until the views render. The three
+    /// assembled views stay embedded and their modules stay under test, but
+    /// none of them is declared here, because a declared page the dashboard
+    /// cannot run is a blank page with a heading in front of every
+    /// administrator. Measured on issue #329 against a 10.11.11 server: the
+    /// dashboard translates every plugin page before it inserts it, its
+    /// translation walks every <c>${</c> in the page, and the modules are
+    /// written as template literals, so the script that reaches the document
+    /// is a syntax error and the mount call has nothing to call.
+    /// <para>
+    /// Issue #335 is the stage that serves the page code from the plugin
+    /// instead of from the translated page, and it is the change that puts
+    /// the three declarations back. The names above are kept for it: each is
+    /// half of the address its view will have, and the suite reads them.
+    /// Issue #332.
+    /// </para>
+    /// </remarks>
     public IEnumerable<PluginPageInfo> GetPages()
     {
         return
@@ -254,21 +272,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = Name,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
-            },
-            new PluginPageInfo
-            {
-                Name = UsageOverTimePage,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.usageOverTime.html", GetType().Namespace)
-            },
-            new PluginPageInfo
-            {
-                Name = YourYearPage,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.yourYear.html", GetType().Namespace)
-            },
-            new PluginPageInfo
-            {
-                Name = YourStatisticsPage,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Pages.yourStatistics.html", GetType().Namespace)
             }
         ];
     }

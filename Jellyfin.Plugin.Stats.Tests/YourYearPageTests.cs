@@ -32,17 +32,16 @@ public class YourYearPageTests
     }
 
     /// <summary>
-    /// The assembled page is one the server is told about. A page nobody
-    /// declares is embedded, unreachable and invisible.
+    /// The assembled page is embedded under the name the plugin will declare it
+    /// by. It is not declared today, for the reason <see cref="PageAssetTests"/>
+    /// gives where it holds the declared set to the settings page: a page the
+    /// dashboard cannot run is a blank page. Issue #335 puts the declaration
+    /// back; this keeps the page there for it. Issue #332.
     /// </summary>
     [Fact]
-    public void TheWrapUpPageIsDeclaredToTheServer()
+    public void TheWrapUpPageIsEmbeddedUnderTheNameItWillBeDeclaredBy()
     {
-        var plugin = (Plugin)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Plugin));
-
-        var page = Assert.Single(plugin.GetPages(), declared => declared.Name == Plugin.YourYearPage);
-
-        Assert.Equal(typeof(Plugin).Namespace + ".Pages.yourYear.html", page.EmbeddedResourcePath);
+        Assert.Contains(typeof(Plugin).Namespace + ".Pages.yourYear.html", typeof(Plugin).Assembly.GetManifestResourceNames());
     }
 
     /// <summary>

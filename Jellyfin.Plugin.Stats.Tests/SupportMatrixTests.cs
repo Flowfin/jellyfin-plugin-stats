@@ -24,10 +24,9 @@ namespace Jellyfin.Plugin.Stats.Tests;
 public class SupportMatrixTests
 {
     /// <summary>
-    /// The cell every unreleased row carries, and the version in build.yaml that
-    /// makes it true.
+    /// The cell a row carries while its line has no release.
     /// </summary>
-    private const string NoneReleased = "none released";
+    private const string NoReleaseYet = "no release yet";
 
     /// <summary>
     /// The one line ending every pattern here is written against.
@@ -41,26 +40,21 @@ public class SupportMatrixTests
     private static readonly string LineFeed = ((char)10).ToString();
 
     /// <summary>
-    /// Where the document writes the version that is waiting for its first tag.
+    /// A release heading in CHANGELOG.md: four numbers on a line of their own
+    /// under two hashes, which is what a release is in this tree before it is
+    /// a tag.
     /// </summary>
     /// <remarks>
-    /// This was the literal <c>0.0.0.0</c>, on the reading that the version in
-    /// <c>build.yaml</c> moves when a release is cut. It does not. Issue #133
-    /// settled the sequence as raising the number first and tagging second,
-    /// because a release deleted to correct its number burns that tag
-    /// permanently, so there is a window in which the file names a version that
-    /// nothing has published. Pinned to the old literal, this check refused
-    /// exactly the first step of that sequence.
-    /// <para>
-    /// What it compares instead is the file against the number the document
-    /// declares is awaiting a tag, which is the same shape of statement as
-    /// every other row here: two written numbers that have to agree. It keeps
-    /// the force the old constant had, because the rows still say nothing has
-    /// been released and the comparison still has to be brought along when that
-    /// stops being true.
-    /// </para>
+    /// The newest tag is what the plugin versions column is really about, and
+    /// this reads the changelog in its place on purpose. The suite reads no
+    /// network and no git, and the checkout the test workflow runs in carries
+    /// no tags, so a check against the tag itself would pass on every runner
+    /// for want of anything to compare. The heading is the tracked record of
+    /// the same fact, written in the change that raises the version, and
+    /// whether heading and tag agree is read by the command
+    /// docs/support-matrix.md pastes rather than by this file. Issue #332.
     /// </remarks>
-    private const string AwaitingItsFirstTag = "(?m)^    awaiting its first tag:[ ]*(?<value>[0-9.]+)$";
+    private const string ReleaseHeading = "(?m)^## (?<value>[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)$";
 
     /// <summary>
     /// A row of the table, under the framework it is about.
@@ -162,28 +156,59 @@ public class SupportMatrixTests
     }
 
     /// <summary>
-    /// The plugin versions column stays honest across the first release. While
-    /// build.yaml carries the unreleased version, every row says so; the moment
-    /// it does not, a row still saying so fails here and the table has to be
-    /// brought along with the release.
+    /// The plugin versions column names the newest release of each line, and
+    /// says no release yet for a line that has none. A release cut without the
+    /// table moving, or a row promising a version no release carries, fails
+    /// here, which is the failure this whole file is about read against the
+    /// one column that moves with a tag rather than with the build.
+    /// </summary>
+    /// <remarks>
+    /// Which line a release belongs to is read off its leading number, which
+    /// is what issue #133 made that number mean: the 10.11 line's stream
+    /// starts at 0.1.0.0 and the 12.0 line's at 1.0.0.0. The mapping is a
+    /// switch beside the floor mappings above, for the same reason those are:
+    /// a third line needs its stream declared before its row can be checked.
+    /// </remarks>
+    [Fact]
+    public void ThePluginVersionsColumnNamesTheNewestReleaseOfEachLine()
+    {
+        var released = Released();
+
+        foreach (var row in Table())
+        {
+            var newest = released
+                .Where(version => version.Major == StreamOf(row.Framework))
+                .OrderByDescending(version => version)
+                .FirstOrDefault();
+
+            Assert.Equal(newest is null ? NoReleaseYet : newest.ToString(4), row.PluginVersions);
+        }
+    }
+
+    /// <summary>
+    /// The version build.yaml carries is never below the newest release of its
+    /// line. It may be above it, because issue #133 settled the sequence as
+    /// raising the number first and tagging second, so there is a window in
+    /// which the file names a version nothing has published; what it may not
+    /// do is name one that has, or an older one, because the next tag takes
+    /// its number from this file and a release already exists for it.
     /// </summary>
     [Fact]
-    public void ThePluginVersionsColumnAgreesWithTheVersionTheBuildCarries()
+    public void TheVersionTheBuildCarriesIsNotBelowTheNewestRelease()
     {
-        var version = Captured(
+        var version = Version.Parse(Captured(
             File.ReadAllText(Path.Combine(RepositoryRoot(), "build.yaml")),
             "(?m)^version:[ ]*\"(?<value>[^\"]*)\"",
-            "build.yaml");
+            "build.yaml"));
 
-        if (Table().Any(row => string.Equals(row.PluginVersions, NoneReleased, StringComparison.Ordinal)))
-        {
-            var awaiting = Captured(
-                File.ReadAllText(Path.Combine(RepositoryRoot(), "docs", "support-matrix.md")),
-                AwaitingItsFirstTag,
-                "the plugin versions section of docs/support-matrix.md");
+        var newest = Released()
+            .Where(released => released.Major == version.Major)
+            .OrderByDescending(released => released)
+            .FirstOrDefault();
 
-            Assert.Equal(awaiting, version);
-        }
+        Assert.True(
+            newest is null || version >= newest,
+            "build.yaml carries " + version + " and CHANGELOG.md says " + newest + " is released, so the next tag would name a version that already exists.");
     }
 
     /// <summary>
@@ -298,6 +323,41 @@ public class SupportMatrixTests
             _ => throw new Xunit.Sdk.XunitException(
                 "The table has a row for " + framework + " and no floor property is named for it. A framework added to the build needs its floor declared before this table can be checked against it.")
         };
+    }
+
+    /// <summary>
+    /// Names the version stream a framework's releases are numbered in: the
+    /// leading number every release of that line carries.
+    /// </summary>
+    /// <param name="framework">The framework a row is about.</param>
+    /// <returns>The major version the line's releases start at.</returns>
+    private static int StreamOf(string framework)
+    {
+        return framework switch
+        {
+            "net9.0" => 0,
+            "net10.0" => 1,
+            _ => throw new Xunit.Sdk.XunitException(
+                "The table has a row for " + framework + " and no version stream is named for it. A framework added to the build needs its release numbering declared before its plugin versions cell can be checked.")
+        };
+    }
+
+    /// <summary>
+    /// Reads every release heading out of CHANGELOG.md.
+    /// </summary>
+    /// <remarks>
+    /// Read rather than counted: a changelog with no release heading is a
+    /// tree with no release, and every row then has to say so, which the
+    /// caller asserts. Nothing here requires one to exist.
+    /// </remarks>
+    /// <returns>The versions with a heading of their own, in file order.</returns>
+    private static IReadOnlyList<Version> Released()
+    {
+        var text = File.ReadAllText(Path.Combine(RepositoryRoot(), "CHANGELOG.md")).ReplaceLineEndings(LineFeed);
+
+        return Regex.Matches(text, ReleaseHeading)
+            .Select(match => Version.Parse(match.Groups["value"].Value))
+            .ToList();
     }
 
     /// <summary>

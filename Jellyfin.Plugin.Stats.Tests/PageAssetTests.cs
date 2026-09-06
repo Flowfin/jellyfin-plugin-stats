@@ -88,6 +88,32 @@ public class PageAssetTests
     }
 
     /// <summary>
+    /// The plugin declares the settings page to the server and nothing else,
+    /// while the three assembled views stay embedded below. The two sets are
+    /// held apart on purpose: the cases after this one prove the views are
+    /// still built, and this one proves nobody can open them, because a
+    /// declared page the dashboard cannot run is a blank page with a heading
+    /// in front of every administrator. Measured on issue #329 against
+    /// 10.11.11: the dashboard translates every <c>${</c> in a plugin page
+    /// before inserting it and the modules are template literals, so the
+    /// script that reaches the document does not parse.
+    /// </summary>
+    /// <remarks>
+    /// Issue #335 serves the page code from the plugin and is the change that
+    /// widens this set again. Until it lands, a page added to the declaration
+    /// fails here, which is the failure this exists against: a view declared
+    /// before it renders. Issue #332.
+    /// </remarks>
+    [Fact]
+    public void ThePluginDeclaresOnlyTheSettingsPageUntilTheViewsRender()
+    {
+        var declared = Assert.Single(Pages());
+
+        Assert.Equal("Playback Statistics", declared.Name);
+        Assert.Equal(typeof(Plugin).Namespace + ".Configuration.configPage.html", declared.EmbeddedResourcePath);
+    }
+
+    /// <summary>
     /// A page asset in the project that never reaches the assembly is a page
     /// nobody can serve, and an embedded asset with no tracked source is one
     /// nobody reviewed. Either way the set this suite walks would be the wrong

@@ -113,32 +113,35 @@ codecs afterwards. A reason the plugin inferred would be a guess presented in
 the same column as an observation, and an administrator acting on the chart
 cannot tell the two apart.
 
-## What is not built yet
+## What serves the two answers
 
-Both halves of the arithmetic above are now written down in code rather than
-only here. `DeliveryMethodShares` folds a sequence of rows into the four figures
+Both halves of the arithmetic above are code, and both are read by the query
+layer. `DeliveryMethodShares` folds a sequence of rows into the four figures
 and counts the rows it was given, so what it reports adds up to the plays it
 read. `TranscodeReasonBreakdown` folds the same sequence into one row per reason
 and counts the plays under each, so the rows add up to more:
 
     git grep -n "public static DeliveryMethodShares Over\|public static TranscodeReasonBreakdown Over" -- Jellyfin.Plugin.Stats/Aggregation/
-    Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:94:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
+    Jellyfin.Plugin.Stats/Aggregation/DeliveryMethodShares.cs:133:    public static DeliveryMethodShares Over(IEnumerable<PlayRecord> plays)
     Jellyfin.Plugin.Stats/Aggregation/TranscodeReasonBreakdown.cs:174:    public static TranscodeReasonBreakdown Over(IEnumerable<PlayRecord> plays)
 
-Both take a sequence and not a range, because choosing the range is a query and
-there is none. They are the arithmetic under a report rather than reports, and
-nothing calls either of them. No query layer exists and no endpoint exists:
+Both take a sequence and not a range, because choosing the range is a query,
+and the query is `AggregateQueries`, which reads a bounded window out of the
+store and hands the rows to each fold:
 
-    git grep -lE "ControllerBase|ApiController|HttpGet|HttpPost" -- '*.cs'
-    tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs
+    git grep -n "DeliveryMethodShares\.Over\|TranscodeReasonBreakdown\.Over" -- Jellyfin.Plugin.Stats/Reports/AggregateQueries.cs
+    Jellyfin.Plugin.Stats/Reports/AggregateQueries.cs:160:            DeliveryMethodShares.Over(plays),
+    Jellyfin.Plugin.Stats/Reports/AggregateQueries.cs:315:        => TranscodeReasonBreakdown.Over(Read(window));
+    Jellyfin.Plugin.Stats/Reports/AggregateQueries.cs:733:            TranscodeReasonBreakdown.Over(plays),
 
-The single hit is a near miss under `tools/invariants`, which is not compiled
-into either project.
-
-So this document describes what the stored rows support and what a report over
-them will therefore say. It is not a report that one exists. Issue #53 stays
-open on the shares over a range, on the split by client under the consent rule,
-and on serving any of it; issue #51 holds the query layer all three need.
+The delivery shares reach an administrator on the usage route, one row per day
+with the four figures beside it, and both folds are in the server's year;
+`AggregateReportsController` is where the four server-wide routes are, and
+`docs/no-custom-query-surface.md` says what each of them takes. The reason
+breakdown has a query and a drawing module, `Pages/whyTheServerTranscodes.js`,
+and no page yet: the module is on no page the plugin declares, which issue #336
+is the stage for. Issues #53 and #51, which this section once held open, are
+closed with the layer and the routes.
 
 One thing the reason fold does not do is invent a row for a play that recorded
 nothing. Most plays record no reason because the server passed them through and
