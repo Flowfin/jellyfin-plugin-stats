@@ -1,180 +1,168 @@
+<!-- markdownlint-disable MD033 MD041 -->
+
 > [!NOTE]
 >
 > **Part of [Flowfin](https://github.com/Flowfin).** It works with any Jellyfin
 > server, and with the Flowfin clients.
+>
+> **Status: In-Development**, the first rung of the maturity ladder
+> (In-Development, Alpha, Beta, Release Candidate, Full Release). It is
+> installed by adding this project's own repository to Jellyfin, see
+> [Installing](#installing).
 
-# Playback Statistics
+<h1 align="center">Playback Statistics</h1>
 
-A Jellyfin plugin that turns playback into statistics the server owner and the
-people using it can actually read: what was played, when, from which client,
-how much of it was watched, and how often the server had to transcode.
+<p align="center">
+<img alt="Playback Statistics" src="https://raw.githubusercontent.com/Flowfin/jellyfin-plugin-stats/master/img/logo.png" width="240"/>
+<br/>
+<br/>
+<a href="https://github.com/Flowfin/jellyfin-plugin-stats/blob/master/LICENSE">
+<img alt="GPL-3.0-or-later" src="https://img.shields.io/github/license/Flowfin/jellyfin-plugin-stats.svg"/>
+</a>
+<a href="https://github.com/Flowfin/jellyfin-plugin-stats/releases">
+<img alt="Latest release for Jellyfin 10.11" src="https://img.shields.io/github/v/release/Flowfin/jellyfin-plugin-stats?filter=0.*&amp;display_name=tag&amp;label=Jellyfin%2010.11"/>
+</a>
+<a href="https://github.com/Flowfin/jellyfin-plugin-stats/releases">
+<img alt="Latest release for Jellyfin 12" src="https://img.shields.io/github/v/release/Flowfin/jellyfin-plugin-stats?filter=1.*&amp;display_name=tag&amp;label=Jellyfin%2012"/>
+</a>
+<a href="https://github.com/Flowfin/jellyfin-plugin-stats/actions/workflows/test.yaml">
+<img alt="Build status" src="https://github.com/Flowfin/jellyfin-plugin-stats/actions/workflows/test.yaml/badge.svg"/>
+</a>
+<a href="https://github.com/Flowfin/jellyfin-plugin-stats/wiki">
+<img alt="Documentation" src="https://img.shields.io/badge/docs-wiki-blue"/>
+</a>
+<a href="https://securityscorecards.dev/viewer/?uri=github.com/Flowfin/jellyfin-plugin-stats">
+<img alt="OpenSSF Scorecard" src="https://api.securityscorecards.dev/projects/github.com/Flowfin/jellyfin-plugin-stats/badge"/>
+</a>
+</p>
 
-Statistics respect each user's privacy. Personal detail is visible only to the
-user it is about, unless that user chooses otherwise, and server-wide views name
-nobody.
+<p align="center">
+Playback statistics for a Jellyfin server, recorded by the server itself and
+kept private to the person they are about.
+</p>
 
-## State of the work
+## What it is
 
-Plays are recorded, kept and read back. The capture path, the store, the
-aggregation over it and the actions that answer from it are built, and the
-settings page and two report pages are declared to the server. What is not built
-is the page a user opens about their own numbers, and the per-user reads behind
-it, which is issue #61. Every section below says which parts are built and which
-are not, so nothing here reads as a promise about today.
+The server records one row per finished play into a SQLite file of its own:
+what was played, when, from which client and device, how much was watched,
+whether it reached the end, and whether the server had to transcode and why.
+Nothing leaves the server.
 
-## Which servers it runs on
+A signed-in person reads their own figures, their own year and their own
+consent, and deletes their own history. An administrator reads the server-wide
+reports, which name nobody. The one exception is the server's year in review,
+where an account is named only if that account itself recorded its agreement to
+be named. No route hands one account another account's rows, and an
+administrator is refused there like anybody else.
 
-Two server lines are supported: Jellyfin 10.11, which runs on .NET 9, and
-Jellyfin 12.0, which runs on .NET 10. One artifact is built per line, and a
-server outside those lines is not supported.
+Today those answers are served over the server's API and no statistics page is
+drawn in the dashboard. The views are built and are not shown yet: the
+dashboard translates a plugin page before it inserts it, which breaks the code
+the views are written in, so the plugin declares its settings page and nothing
+else until it serves that code itself. That is release 0.2.0.0, issues
+[#335](https://github.com/Flowfin/jellyfin-plugin-stats/issues/335) and
+[#336](https://github.com/Flowfin/jellyfin-plugin-stats/issues/336), and the
+page a person opens about themselves is
+[#337](https://github.com/Flowfin/jellyfin-plugin-stats/issues/337).
 
-The version detail is in [the support matrix](docs/support-matrix.md): the
-framework each artifact targets, the oldest server of its line each is compiled
-against, and the abi its package declares to a server. Every cell of that table
-is checked against the value the build uses, so it is read there rather than
-repeated here where the two could disagree.
+## What it is not
 
-## What it stores and who can see it
-
-One row per play in the plugin's own data folder: which user played which item,
-when it started and stopped, how much was watched, the client and device it
-played on, and whether the server transcoded and why. No network address, no
-user agent and no library file path is kept.
-
-[What this plugin records, and who can read it](docs/what-is-stored.md) is the
-account of it, column by column, with the readers and the absences named. Its
-field list is compared against the statement the store runs, so it cannot fall
-behind the schema without a red check.
-
-Those rows are written today. The subscription, the gate that decides whether a
-play is recorded, and the queue that opens the store are assembled in one place:
-
-    grep -E 'new QueuedPlayWriter|new CaptureGate|AddSingleton<IPlaybackEventSink' Jellyfin.Plugin.Stats/PluginServiceRegistrator.cs
-            serviceCollection.AddSingleton(provider => new QueuedPlayWriter(
-            serviceCollection.AddSingleton<IPlaySink>(provider => new CaptureGate(
-            serviceCollection.AddSingleton<IPlaybackEventSink>(provider => provider.GetRequiredService<PlayTracker>());
-
-They are read back too. Every action the plugin serves, matched by name rather
-than by line so this paste does not go stale the next time a method moves:
-
-    grep -oE 'ActionResult<[A-Za-z]+>> [A-Za-z]+' Jellyfin.Plugin.Stats/Api/*.cs
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<TopTitles>> GetTopTitles
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<BreakdownReport>> GetBreakdown
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:ActionResult<DailyUsage>> GetDailyUsage
-    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:ActionResult<ConsentState>> GetConsent
-    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:ActionResult<ConsentState>> SetConsent
-    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:ActionResult<PlaysDeleted>> DeleteMyPlays
-    Jellyfin.Plugin.Stats/Api/YourYearController.cs:ActionResult<YearsHeld>> GetYears
-    Jellyfin.Plugin.Stats/Api/YourYearController.cs:ActionResult<YearInReview>> GetYear
-
-The three on `AggregateReportsController` are the server-wide reports and name
-nobody. The other five answer about one account, and each of them asks whether
-the caller is that account before it reads anything:
-
-    grep -c 'CallerIdentity.AsksForTheirOwnRows' Jellyfin.Plugin.Stats/Api/Your*.cs
-    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:2
-    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:1
-    Jellyfin.Plugin.Stats/Api/YourYearController.cs:2
-
-What is still a plan rather than a description is the page a user opens about
-themselves. The plays, watched time, top items and completion the top of this
-file promises a user have no per-user read behind them: the five above answer a
-calendar year, which years an account has, and the consent and deletion
-controls. That page and those reads are issue #61.
+- Not a recap application that wants a key over the whole server.
+- No custom query endpoint. Every request chooses from a closed set of shapes.
+- No call to anything outside the server. No network address, no user agent and
+  no library file path is stored.
+- No elevated route to one person's history. An administrator cannot read, and
+  cannot record, what an account said about being named.
 
 ## Installing
 
-The 10.11 line has published its first release, and the 12.0 line has not:
-
-    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq '.[].tag_name'
-    0.1.0.0-stable
-
 Distribution is through Flowfin's own plugin manifest rather than the official
-catalogue, so installing means adding one repository URL to the server's plugin
-repository list and then installing the plugin from the catalogue that URL
-serves. The address is
+catalogue. Add one address under **Dashboard > Plugins > Repositories**:
 
-    https://flowfin.dev/manifest.json
+```text
+https://flowfin.dev/manifest.json
+```
 
-and it is added once: one manifest carries every Flowfin plugin, so a server
-that has it for one of them already has it for this one. One archive per server
-line, and the server picks the one matching its version.
+Then find **Playback Statistics** under **Dashboard > Plugins > Catalog**,
+install it, and **restart Jellyfin**. One manifest carries every Flowfin
+plugin, so a server that has the address for one of them already has it for
+this one.
 
-What that address answers about this plugin, and the version a 10.11 server
-would take from it:
+Two server lines are served from that one address, and the server takes the
+archive matching the line it is on: **Jellyfin 10.11** on .NET 9, whose version
+stream starts at `0.1.0.0`, and **Jellyfin 12.0** on .NET 10, whose stream
+starts at `1.0.0.0`. **The leading number says which server line a release is
+for and not how finished the plugin is.** The 12.0 line has published nothing
+yet.
 
-    curl -s https://flowfin.dev/manifest.json \
-      | jq -r '.[] | select(.name == "Playback Statistics") | .versions[] | "\(.version) targetAbi \(.targetAbi)"'
-    0.1.0.0 targetAbi 10.11.0.0
-
-A 12.0 server finds nothing to install under that entry until the 12.0 line
-publishes, which is issue #80.
-
-This route was followed once on a fresh server, and what happened is written
-down. A dispatched job, `Reading of the install route`, starts a 10.11 server
-in a container, hands it the address above and nothing else, asks it to
-install the plugin from the catalogue that address serves, restarts it, and
-reads whether the plugin is listed active at the version the catalogue
-offered. `docs/headless-tests.md` says why that is a reading and not a test.
-It was taken on 2026-09-03:
-
-    gh run view 33749480051 --repo Flowfin/jellyfin-plugin-stats \
-      --json status,conclusion,headSha --jq '"\(.status) \(.conclusion) \(.headSha)"'
-    completed success f1513385249b89e6780ddc2ddf3ef00f6607cc65
-
-and this is the reading, from that run's log:
-
-    a fresh 10.11.11 server, given the address, was offered Playback Statistics 0.1.0.0 from it,
-    fetched the archive the catalogue named, found its checksum to be the one
-    the catalogue carries, 69dbb5648e0ef0ec73e1cf087d6f8e2d,
-    and loaded it at the next start, active, at that version
-
-The server did the checking. It hashes the archive it fetched and refuses the
-install when the hash is not the checksum the catalogue carries, so an install
-that completed is one where the two agreed at the server. What the run proves is
-the day it was taken and nothing about the days nobody dispatched it; a reader
-who wants today's answer dispatches it again rather than trusting this
-paragraph.
-
-The two lines are told apart by the version number, because a catalogue admits
-one tag shape and a suffix cannot carry the difference. The 10.11 line's
-releases start at `0.1.0.0` and the 12.0 line's start at `1.0.0.0`. **The
-leading number says which server line a release is for and not how finished the
-plugin is.** `1.0.0.0` is the same unfinished interface `0.1.0.0` carries, built
-from the same source, and reading it as a mature release and the other as a
-provisional one is the mistake this paragraph exists against.
+Upgrading, uninstalling and what removing the plugin deletes are on the
+[Installation](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Installation)
+wiki page.
 
 ## Configuration
 
-The plugin's settings page appears on the server dashboard under Plugins, and
-the fields on it are this plugin's own rather than the upstream template's:
+The settings page is at **Dashboard > Plugins > Playback Statistics**: whether
+plays are recorded at all, which accounts and item types are left out, how long
+a raw play row and how long a daily aggregate are kept, the zone a day is
+counted in, and two caps on what a report may ask for. The two retention
+windows delete rather than hide, and one of the two deletions cannot be undone.
+The
+[Configuration](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Configuration)
+wiki page says what each setting accepts and what changing it does not do.
 
-    grep -oE 'id="[A-Z][A-Za-z]+"' Jellyfin.Plugin.Stats/Configuration/configPage.html | grep -v '^id="Stats'
-    id="CaptureEnabled"
-    id="PlayRowRetentionDays"
-    id="DailyAggregateRetentionDays"
-    id="RollupTimeZone"
-    id="ExcludedUserIds"
-    id="ExcludedItemTypes"
-    id="MaximumRangeDays"
-    id="MaximumRowsPerResponse"
+## Documentation
 
-[The configuration reference](docs/configuration.md) is the account of each one:
-what it does, what it accepts, what it defaults to, and what changing it does
-not do. It is read there rather than repeated here, where the two could
-disagree.
+Full documentation is in the
+**[Wiki](https://github.com/Flowfin/jellyfin-plugin-stats/wiki)**:
 
-## Building from source
+- [Installation](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Installation),
+  [Pages](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Pages),
+  [Configuration](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Configuration),
+  [Troubleshooting](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Troubleshooting).
+- [What is stored and who can read it](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/What-is-stored-and-who-can-read-it),
+  [Privacy, consent and deletion](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Privacy-consent-and-deletion),
+  [Transcode reasons](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Transcode-reasons).
+- [Support matrix and releases](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Support-matrix-and-releases),
+  [Release process](https://github.com/Flowfin/jellyfin-plugin-stats/wiki/Release-process),
+  [Changelog](CHANGELOG.md).
 
-Requires the .NET SDK for the line you are building against.
+The checked detail stays in this repository, because the test suite reads it:
+[configuration](docs/configuration.md),
+[what is stored](docs/what-is-stored.md),
+[the support matrix](docs/support-matrix.md),
+[transcode reasons](docs/transcode-reasons.md),
+[where the data lives](docs/plugin-data.md),
+[what the log contains](docs/what-the-log-contains.md).
 
-    dotnet build
+## Privacy and security
 
-    dotnet publish -c Release
+Statistics respect each user's privacy: personal detail is readable only by the
+account it is about, server-wide answers name nobody, and an account appears by
+name in the server's year in review only where that account recorded its own
+agreement. The server log carries identifiers and never a user name or an item
+title, and the store deliberately holds no network address, no user agent and
+no file path.
+
+Found a vulnerability? Please report it **privately** through GitHub's
+["Report a vulnerability"](https://github.com/Flowfin/jellyfin-plugin-stats/security/advisories/new),
+not the public issue tracker. [SECURITY.md](SECURITY.md) says what is in scope
+and what is not.
+
+## Contributing
+
+Issues and pull requests are welcome. Building needs the .NET SDK for the line
+you are building against, .NET 9 for Jellyfin 10.11 and .NET 10 for Jellyfin
+12.0, and the test suite runs on both, so the .NET 10 SDK is what a full run
+takes. Node 24 runs the page module suite.
+
+```text
+dotnet build
+dotnet test
+npm test
+```
 
 ## Licence
 
-GPL-3.0-or-later. The full text is in [LICENSE](LICENSE). Jellyfin's own
-libraries are GPLv3, so a plugin linked against them is GPLv3 once compiled.
-
-See [NOTICE.md](NOTICE.md) for the intended-use notice.
+GPL-3.0-or-later, in [LICENSE](LICENSE). Jellyfin's own libraries are GPLv3, so
+a plugin linked against them is GPLv3 once compiled. See [NOTICE.md](NOTICE.md)
+for the intended-use notice.
