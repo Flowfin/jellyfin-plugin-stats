@@ -16,17 +16,27 @@ version: "0.1.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Playback statistics, kept private to the user they are about"
+# What the installed version does and nothing it does not. The views that show
+# usage over time, clients and devices and transcoding are built and are not
+# shown yet: the dashboard cannot run them as served, so no page but the
+# settings page is declared until they render, which is issue #335. Naming
+# them here before then promises a page an administrator opens and finds
+# blank.
 description: >
-  Records what was played on this server and shows it back as statistics: usage
-  over time, the clients and devices people play from, and how often the server
-  had to transcode. Personal detail is visible only to the user it is about
-  unless that user chooses otherwise, and server-wide views name nobody.
+  Records what was played on this server, one row per finished play, in a
+  SQLite file of its own. An administrator sets what is captured and for how
+  long it is kept on the settings page. A signed-in user reads their own
+  figures, their own year and their own consent over the server's API, and
+  deletes their own history there; nobody reads another person's rows. No
+  statistics page is shown in the dashboard yet.
 category: "Administration"
 owner: "Flowfin"
 artifacts:
 - "Jellyfin.Plugin.Stats.dll"
-# Required by the packaging tool: without this key it fails with KeyError.
-# The entries themselves are in CHANGELOG.md, which is the one place they are
-# written.
-changelog: >
-  The entries for each release are in CHANGELOG.md in the repository.
+# One sentence per release, newest first, in the shape a catalogue shows
+# under the version. CHANGELOG.md carries the entries in full; this carries
+# what a person choosing a version in the dashboard reads, so a version with
+# nothing under it is not a state this file may reach. The next release adds
+# its line above the last one in the same change that raises the version.
+changelog: |
+  0.1.0.0: First release on the 10.11 line. Records one row per finished play into a SQLite file of its own, with a settings page for what is captured and how long it is kept, and three routes a signed-in user opens about themselves: their year, their consent, and the deletion of their own history. Binds Microsoft.Data.Sqlite 9.0.11.0, which a 10.11.0 server does not ship, so on that server it loads and then records nothing; 0.1.1.0 repairs that.

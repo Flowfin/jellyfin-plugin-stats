@@ -13,19 +13,26 @@ per-user viewing history, and the question the design turns on is who can see
 whose numbers. That is what I would ask of this tree first.
 
 The state of the tree changes how you read the rest of this file. Plays are
-captured and stored today, nothing reads them back, and the plugin serves no
-endpoint at all:
+captured and stored, and ten actions on five controllers read them back:
 
-    gh api 'search/code?q=repo:Flowfin/jellyfin-plugin-stats+ControllerBase' \
-      --jq '.total_count, (.items[].path)'
-    3
-    docs/no-custom-query-surface.md
-    docs/transcode-reasons.md
-    docs/what-is-stored.md
+    git grep -n '\[Http\(Get\|Post\|Put\|Delete\)' -- 'Jellyfin.Plugin.Stats/Api/*.cs'
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:162:    [HttpGet("Top")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:254:    [HttpGet("Breakdown")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:341:    [HttpGet("Usage")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:428:    [HttpGet("Year/{year:int}")]
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:67:    [HttpGet]
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:118:    [HttpPut]
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:108:    [HttpDelete]
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs:128:    [HttpGet("{window}")]
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:161:    [HttpGet]
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:225:    [HttpGet("{year:int}")]
 
-All three hits are prose. The only C# file matching `HttpGet` is
-`tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs`, which
-lives outside the project directory and is not compiled in.
+Six of them are about one account and answer only that account, whoever asks;
+four are server-wide, answer an administrator only, and name nobody unless that
+person recorded their consent. `AuthorizationMatrixTests` holds every row of
+that table, and the release a server installs today carries three of the five
+controllers, consent, history and year, and neither the aggregate reports nor
+the statistics route, which is what `CHANGELOG.md` says under `0.1.0.0`.
 
 ## Reporting
 
@@ -49,10 +56,12 @@ advisory queue I read.
 
 Four things make a report easy to act on. The server line, because 10.11 on
 .NET 9 and 12.0 on .NET 10 are both supported and do not behave identically. The
-commit, because with no release a finding is against a tree. What the attacker
-holds at the start, which decides everything: no account on the server, an
-ordinary account, an administrator account, or read access to the server's data
-directory. And what they ended up with that they should not have.
+version, if the plugin was installed from a release, or the commit, if it was
+built from `master`, because the two differ and a finding is against one of
+them. What the attacker holds at the start, which decides everything: no account
+on the server, an ordinary account, an administrator account, or read access to
+the server's data directory. And what they ended up with that they should not
+have.
 
 Please do not attach a `plays.db` or an archive exported from a live server.
 That file is exactly the data this policy exists to protect. The shape of a row
@@ -69,12 +78,17 @@ fetch. A user name, an identifier, a total, a stored setting or a token inside a
 shipped page asset is a vulnerability here, whatever put it there. So is a page
 loading a script, a style or a font from another host: that is unreviewed code
 in a signed-in administrator's dashboard, over a request that tells its host
-which server opened the page.
+which server opened the page. One page is declared today and four are embedded;
+the three views are withheld until they render, and every one of the four is
+public in the sense above.
 
-**Anything that reads a row back.** When the first reporting endpoint lands, it
-has to answer whether a signed-in user can obtain rows belonging to a different
-user, and whether a caller with no account can obtain any row at all. Until
-then, a report about an endpoint has to name the branch it is on.
+**A row reaching the wrong caller.** The rule every route holds is that a
+signed-in account sees its own rows and nobody else's, and that an administrator
+is refused on a personal route by the same line as everybody else. A caller
+obtaining another account's rows, on any route and whatever they send, is the
+finding this plugin exists to prevent. So is a caller with no account obtaining
+any row at all, and so is a server-wide answer naming an account that holds no
+consent record, because consent is the only thing that puts a name on one.
 
 **A row written that the gate should have refused.** `CaptureGate.Records` is
 the one place deciding whether a play is recorded, and three of the four
@@ -86,9 +100,10 @@ it is read by the retention sweep after the row is already written, so it
 belongs under the heading below rather than this one.
 
 **A deletion that does not delete.** Deleting a user, the daily retention sweep,
-the daily sweep for accounts the server no longer has, and uninstalling the
-plugin are the four routes by which history goes away. Rows surviving any of
-them, or freed space still holding readable rows afterwards, is a finding.
+the daily sweep for accounts the server no longer has, a user deleting their own
+history, and uninstalling the plugin are the five routes by which history goes
+away. Rows surviving any of them, or freed space still holding readable rows
+afterwards, is a finding. A consent record surviving its account is one too.
 
 The uninstall is the route worth aiming at, because it is the one where a
 deletion that did not delete leaves an unencrypted per-user history on a disk
@@ -112,12 +127,17 @@ state in a line this plugin writes is a finding, at any level.
 **A statement whose shape depends on its input.** Every SQL statement in the
 store is a constant with bound parameters. One assembled from strings, or a
 caller-supplied column, sort or query fragment reaching SQLite, is a finding.
+`docs/no-custom-query-surface.md` says what the ten actions take instead.
 
 **The archive reader.** `PlayArchive.Import` parses JSON Lines this process did
 not write, and it is the only parser here reading outside input. Nothing in the
-running plugin calls it yet, only the test suite. A crash, unbounded memory, or
-a row landing in the store that the format should have refused is worth sending
-even so.
+running plugin calls it, only the test suite:
+
+    git grep -n 'PlayArchive\.Import' -- 'Jellyfin.Plugin.Stats/*.cs' ; echo "exit=$?"
+    exit=1
+
+A crash, unbounded memory, or a row landing in the store that the format should
+have refused is worth sending even so.
 
 ## What is not a vulnerability here
 
@@ -136,24 +156,30 @@ backup of everybody's viewing history. `docs/plugin-data.md` gives the path and
 it, and filesystem access to the host is outside what a plugin can defend
 against. An operator is not the attacker in this model.
 
-**Missing privacy features.** There is no consent record, a user cannot read,
-export or delete their own history, and an administrator cannot read anybody's
-through the plugin either. `docs/what-is-stored.md` states each of the three as
-an absence: the consent record against issue #42, the per-user read, export and
-delete against issues #43 and #46, and the administrator's with no issue behind
-it yet. Those are things this plugin does not have yet.
+**Absent privacy features.** A user cannot stop their own plays being recorded,
+and cannot export their own history; `docs/what-is-stored.md` states both as
+absences under "What this plugin does not have yet". An administrator cannot
+read anybody's detail through this plugin, and that one is a rule rather than
+an absence: an elevated route to one person's rows is not part of the plan and
+would be a decision of its own. None of the three is a finding. An
+administrator reaching a person's rows through this plugin would be.
 
 **Findings in Jellyfin itself, or in another plugin sharing the server.** I can
 fix only what is in this tree. Report those to the project that owns them.
 
-**A package claiming to be this plugin.** There is no release:
+**A package claiming to be this plugin.** One release exists, and it carries
+its own checksums:
 
-    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
-    0
+    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq '.[] | .tag_name, (.assets[].name)'
+    0.1.0.0-stable
+    playback-statistics_0.1.0.0.md5
+    playback-statistics_0.1.0.0.sha256
+    playback-statistics_0.1.0.0.zip
+    playback-statistics_0.1.0.0.zip.meta.json
 
-so anything offering an installable `Jellyfin.Plugin.Stats.dll` as this plugin
-today did not come from here. Tell me, but as an impersonation rather than as a
-bug in this code.
+An archive offered as this plugin whose checksum is not the one on that
+release, or under a version that release list does not carry, did not come from
+here. Tell me, but as an impersonation rather than as a bug in this code.
 
 **A dependency advisory with no path from this plugin.** A scanner naming a
 package in the graph is a starting point. Show which call in this tree reaches
@@ -162,9 +188,11 @@ it and what an attacker gets, or it is a dependency bump. The graph is pinned in
 
 ## Versions, and what happens after you report
 
-With no release, the version that matters is the default branch, `master`. When
-releases exist there will be one package per supported server line, and a fix
-will land on `master` and go out in the next package on each.
+There is one package per supported server line, and one release so far, on the
+10.11 line: `0.1.0.0`. The 12.0 line has none. `master` is ahead of that
+release, so a finding is against the version installed or against a commit,
+and the report should say which. A fix lands on `master` and goes out in the
+next package on each line that has one.
 
 I read the advisory, say what I found, and tell you if I disagree and why. If it
 is real I fix it on `master`, publish the advisory, and credit you by whatever

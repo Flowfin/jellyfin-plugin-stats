@@ -63,18 +63,18 @@ public class UsageOverTimePageTests
     }
 
     /// <summary>
-    /// The assembled page is one the server is told about. A page nobody
-    /// declares is embedded, unreachable and invisible, which is the one failure
-    /// this whole route exists to remove.
+    /// The assembled page is embedded under the name the plugin will declare it
+    /// by. It is not declared today: the dashboard cannot run the page as it is
+    /// served, so the declaration is withheld until issue #335 serves the code
+    /// from the plugin, and <see cref="PageAssetTests"/> holds the declared set
+    /// to the settings page alone until then. What this case keeps is the
+    /// other half, that the page is still built and still in the assembly, so
+    /// that stage has a page to declare rather than one to rebuild. Issue #332.
     /// </summary>
     [Fact]
-    public void TheAssembledPageIsDeclaredToTheServer()
+    public void TheAssembledPageIsEmbeddedUnderTheNameItWillBeDeclaredBy()
     {
-        var plugin = (Plugin)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Plugin));
-
-        var page = Assert.Single(plugin.GetPages(), declared => declared.Name == Plugin.UsageOverTimePage);
-
-        Assert.Equal(typeof(Plugin).Namespace + ".Pages.usageOverTime.html", page.EmbeddedResourcePath);
+        Assert.Contains(typeof(Plugin).Namespace + ".Pages.usageOverTime.html", typeof(Plugin).Assembly.GetManifestResourceNames());
     }
 
     /// <summary>

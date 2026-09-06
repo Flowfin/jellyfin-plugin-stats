@@ -46,29 +46,53 @@ at all.
 
 ## What the endpoints take, and where the choices come from
 
-There are four endpoints now, and the section this replaces said there were two:
+There are five controllers and ten actions, and the section this replaces
+counted four of them:
 
     git grep -lE "ControllerBase|ApiController|HttpGet|HttpPost" -- '*.cs'
     Jellyfin.Plugin.Stats.Tests/AValueTheEndpointCannotReadTests.cs
     Jellyfin.Plugin.Stats.Tests/AuthorizationMatrixTests.cs
+    Jellyfin.Plugin.Stats.Tests/UsageOverTimePageTests.cs
+    Jellyfin.Plugin.Stats.Tests/YourStatisticsPageTests.cs
     Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs
     Jellyfin.Plugin.Stats/Api/YourConsentController.cs
     Jellyfin.Plugin.Stats/Api/YourHistoryController.cs
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs
     Jellyfin.Plugin.Stats/Api/YourYearController.cs
     tools/invariants/near-miss/no-query-from-the-request/SecondSortOrder.cs
     tools/invariants/near-miss/no-time-offset-from-the-request/DaysInTheCallersZone.cs
 
-The two under `tools/invariants` are near misses and are not compiled. The two
-suite files walk the actions by reflection, one asking who each of them admits
-and the other what each of them takes.
+The two under `tools/invariants` are near misses and are not compiled. Of the
+four suite files, two walk the actions by reflection, one asking who each of
+them admits and the other what each of them takes, and two read a route
+attribute out of a controller to hold a page module to the address it asks.
+The ten actions themselves:
 
-The whole set of values those endpoints take is readable in one command:
+    git grep -n '\[Http\(Get\|Post\|Put\|Delete\)' -- 'Jellyfin.Plugin.Stats/Api/*.cs'
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:162:    [HttpGet("Top")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:254:    [HttpGet("Breakdown")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:341:    [HttpGet("Usage")]
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:428:    [HttpGet("Year/{year:int}")]
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:67:    [HttpGet]
+    Jellyfin.Plugin.Stats/Api/YourConsentController.cs:118:    [HttpPut]
+    Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:108:    [HttpDelete]
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs:128:    [HttpGet("{window}")]
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:161:    [HttpGet]
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:225:    [HttpGet("{year:int}")]
+
+The whole set of values those actions take is readable in one command:
 
     git grep -nE 'FromQuery|FromRoute|FromBody|FromForm|FromHeader' -- 'Jellyfin.Plugin.Stats/Api/*.cs'
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:147:        [FromQuery] DateTimeOffset? from,
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:148:        [FromQuery] DateTimeOffset? to,
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:149:        [FromQuery] string? grouping,
-    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:150:        [FromQuery] string? order)
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:169:        [FromQuery] DateTimeOffset? from,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:170:        [FromQuery] DateTimeOffset? to,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:171:        [FromQuery] string? grouping,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:172:        [FromQuery] string? order)
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:261:        [FromQuery] DateTimeOffset? from,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:262:        [FromQuery] DateTimeOffset? to,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:263:        [FromQuery] string? dimension)
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:348:        [FromQuery] DateTimeOffset? from,
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:349:        [FromQuery] DateTimeOffset? to)
+    Jellyfin.Plugin.Stats/Api/AggregateReportsController.cs:434:    public async Task<ActionResult<ServerYearInReview>> GetServerYear([FromRoute] int year)
     Jellyfin.Plugin.Stats/Api/ClosedSet.cs:21:/// <c>[FromQuery] TopListOrder? order</c> reads as closed and is not, and what
     Jellyfin.Plugin.Stats/Api/YourConsentController.cs:72:    public async Task<ActionResult<ConsentState>> GetConsent([FromRoute] Guid userId)
     Jellyfin.Plugin.Stats/Api/YourConsentController.cs:126:        [FromRoute] Guid userId,
@@ -76,22 +100,31 @@ The whole set of values those endpoints take is readable in one command:
     Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:115:        [FromRoute] Guid userId,
     Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:116:        [FromQuery] DateTimeOffset? from,
     Jellyfin.Plugin.Stats/Api/YourHistoryController.cs:117:        [FromQuery] DateTimeOffset? to)
-    Jellyfin.Plugin.Stats/Api/YourYearController.cs:146:    public async Task<ActionResult<YearInReview>> GetYear([FromRoute] Guid userId, [FromRoute] int year)
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs:135:        [FromRoute] Guid userId,
+    Jellyfin.Plugin.Stats/Api/YourStatisticsController.cs:136:        [FromRoute] string window)
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:166:    public async Task<ActionResult<YearsHeld>> GetYears([FromRoute] Guid userId)
+    Jellyfin.Plugin.Stats/Api/YourYearController.cs:231:    public async Task<ActionResult<YearInReview>> GetYear([FromRoute] Guid userId, [FromRoute] int year)
 
-An account, a year, four window instants, one answer a person gives about
-themselves, a grouping and an order. The hit in `ClosedSet.cs` is a sentence in
-a remark rather than a parameter, and it is the shape that file exists to refuse.
-Not one of the values named is a column, a table or an expression.
+An account, two years, eight window instants, one answer a person gives about
+themselves, a grouping, an order, a dimension and a window name. The hit in
+`ClosedSet.cs` is a sentence in a remark rather than a parameter, and it is the
+shape that file exists to refuse. Not one of the values named is a column, a
+table or an expression.
 
-## The grouping and the order are the ones this document is about
+## The grouping, the order, the dimension and the window are the ones this document is about
 
-They are the first filter and the first sort in this plugin, they arrive as
-strings, and neither reaches anything until it has been compared against a list
-written out in the source. `ClosedSet<T>` is that comparison. The spellings are
+They are the filters and the sort in this plugin, they arrive as strings, and
+none of them reaches anything until it has been compared against a list written
+out in the source. `ClosedSet<T>` is that comparison. The spellings are
 declared beside the endpoint rather than derived from the enumeration behind
 them, so adding a member to that enumeration does not silently widen what a
-caller may ask for, and a value in neither set is refused before the store is
-opened.
+caller may ask for, and a value in no set is refused before the store is
+opened. The grouping and the order were the first two and are the ones the
+rest of this section is written about; the dimension a breakdown is cut by and
+the window a person's own figures are read over arrived later and go through
+the same comparison, and the account is absent from the dimension's
+enumeration rather than only from its spellings, so no request can ask for a
+breakdown by person whatever it writes.
 
 Refused, not defaulted. A choice named and left blank is not a choice nobody
 made, so `?order=` is a 400 rather than whichever member happens to be first.
