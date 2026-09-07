@@ -7,7 +7,7 @@ imageUrl: "https://raw.githubusercontent.com/Flowfin/jellyfin-plugin-stats/maste
 # 0.1.0.0; the 12.0 line's stream starts at 1.0.0.0. Issue #133 is where that
 # was settled and README.md says the same thing where a reader meets the
 # number.
-version: "0.1.0.0"
+version: "0.1.1.0"
 # The 10.11 server line, which runs on .NET 9. This file is one manifest and
 # jprm reads one targetAbi out of it, so the 12.0 line's artifact is packaged
 # from a copy of this file with these two keys replaced; the packaging workflow
@@ -39,4 +39,5 @@ artifacts:
 # nothing under it is not a state this file may reach. The next release adds
 # its line above the last one in the same change that raises the version.
 changelog: |
+  0.1.1.0: Binds the SQLite stack the floor server of the 10.11 line ships, Microsoft.Data.Sqlite 9.0.10, so the plugin opens its store on a 10.11.0 server instead of recording nothing there. A save the plugin refuses no longer replaces the running configuration until a restart. Adds four aggregate reports an administrator reads over the API and two more routes a signed-in user opens about themselves, with day-by-day rollups behind them and a row fewer than two accounts stand behind withheld or folded. No statistics page is shown in the dashboard yet.
   0.1.0.0: First release on the 10.11 line. Records one row per finished play into a SQLite file of its own, with a settings page for what is captured and how long it is kept, and three routes a signed-in user opens about themselves: their year, their consent, and the deletion of their own history. Binds Microsoft.Data.Sqlite 9.0.11.0, which a 10.11.0 server does not ship, so on that server it loads and then records nothing; 0.1.1.0 repairs that.

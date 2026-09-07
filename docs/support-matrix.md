@@ -6,7 +6,7 @@ that matches the version it reports.
 
 | server line | framework | oldest server the artifact is built against | the SQLite that server ships | targetAbi the package declares | newest released plugin version |
 | --- | --- | --- | --- | --- | --- |
-| 10.11 | net9.0 | 10.11.0 | 9.0.10 | 10.11.0.0 | 0.1.0.0 |
+| 10.11 | net9.0 | 10.11.0 | 9.0.10 | 10.11.0.0 | 0.1.1.0 |
 | 12.0 | net10.0 | 12.0.0-rc1 | 10.0.9 | 12.0.0.0 | no release yet |
 
 Every cell in that table is checked against the value the build uses, by
@@ -75,12 +75,18 @@ those are different statements.
 
 ## Plugin versions
 
-One release exists, on the 10.11 line, and it is the version the row names:
+The newest tag of the 10.11 line is the version the row names, and what that
+tag is is derived rather than written here, because a number in this paragraph
+drifts against the releases it describes:
 
-    gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq 'length'
-    1
     gh api repos/Flowfin/jellyfin-plugin-stats/releases --jq '.[].tag_name'
-    0.1.0.0-stable
+
+The row and the newest heading in `CHANGELOG.md` move in the change that raises
+`version`, and the tag is pushed on the merge of that change. So between the two
+there is a window in which this row names a version the command above does not
+print yet, and a reader who finds one meeting the other should read the window
+rather than a defect. What the window may not become is permanent: a heading
+that never got its tag is a release that does not exist.
 
 The 12.0 line has none. Its stream starts at `1.0.0.0`, which is the decision
 issue #133 recorded, and no artifact for that line has been tagged.
@@ -95,7 +101,7 @@ so the newest tag is represented in the tree by the newest `## X.Y.Z.W`
 heading in `CHANGELOG.md` whose leading number is the line's stream: `0` for
 10.11, `1` for 12.0. A line with no such heading says `no release yet`. Whether
 that heading and the tag agree is the one part no test here reads, and it is
-read by the two commands above; a release cut without a heading is refused
+read by the command above; a release cut without a heading is refused
 before that by `docs/RELEASING.md`'s own step of raising the version and the
 changelog in one change.
 
@@ -105,8 +111,10 @@ deleted to correct its number burns that tag permanently. So the file is
 allowed above the newest heading and refused below it:
 
     grep -n '^version:' build.yaml
-    10:version: "0.1.0.0"
+    10:version: "0.1.1.0"
 
-That is equal today, because the version has not been raised for the next
-release yet. When it is, this table does not move, because nothing has been
-released by the raise; it moves with the heading, in the release change.
+That is equal today, because the raise and the heading landed in one change,
+which is what the release step asks for. A raise that lands on its own leaves
+the file above the newest heading, and this table does not move for it: nothing
+has been released by a raise, and the row moves with the heading rather than
+with the number.

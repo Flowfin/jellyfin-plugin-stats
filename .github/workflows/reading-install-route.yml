@@ -15,6 +15,12 @@
 # the two checksums agree - and not one of them was a server fetching the
 # archive and loading the plugin. This run is that.
 #
+# It runs once per server rather than once. The two legs are the floor of the
+# 10.11 line and the newest patch of it, because the failure this plugin has
+# already shipped was visible on the floor alone: a release that loads on
+# 10.11.11 and records nothing on 10.11.0 passes a reading taken on one of
+# them. Which servers those are is the matrix below and is not listed here.
+#
 # Nothing from this tree is installed. The server is handed the address the
 # README gives a person, and what it installs is whatever that address serves,
 # so the reading is of the published route and not of the checkout. A run
@@ -39,11 +45,30 @@ concurrency:
 
 jobs:
   install-route:
-    name: Follow the documented install route on a fresh server
+    name: Follow the documented install route on a fresh ${{ matrix.server }} server
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
+    strategy:
+      # One leg per server the reading is about, and a red leg does not take
+      # the other down with it: what is wanted here is which of the two
+      # servers installed and loaded the plugin, and a cancelled sibling
+      # answers that for neither.
+      fail-fast: false
+      matrix:
+        include:
+          # The floor of the 10.11 line, and the leg this matrix exists for.
+          # 0.1.0.0 bound a SQLite stack this server does not carry, loaded
+          # here and then recorded nothing, and the reading that would have
+          # shown it ran on the newest patch of the line alone. Issue #334.
+          - server: '10.11.0'
+            image: jellyfin/jellyfin@sha256:59417f441213e236a9f907d4e71a13472042409d85f9e9310dbdd87ee33d7bd4
+          # The newest patch of the same line, which is the one server this
+          # reading ran on until the leg above landed. The same digest as the
+          # settings page reading, so those two readings stay of one server.
+          - server: '10.11.11'
+            image: jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db
     env:
       # The one address README.md tells a person to add. It is the whole of
       # what the server is given, and it is written here once rather than
@@ -62,8 +87,15 @@ jobs:
       # A real server, on the oldest line this plugin declares support for,
       # pinned by digest for the same reason every action above is pinned by
       # commit: a reading against an image that moved is a reading of
-      # something else. The same digest as the settings page reading, so the
-      # two readings are of one server.
+      # something else. Which digest is the matrix's answer rather than this
+      # step's, so the two servers are one procedure read twice.
+      #
+      # WHICH SERVER THIS WAS DID NOT USED TO BE A QUESTION, AND THE COMMENT
+      # HERE READ AS THOUGH IT NAMED THE FLOOR. One digest stood here, the
+      # newest patch of the 10.11 line, and "the oldest line" names the line
+      # rather than the oldest server on it. So the floor of that line was the
+      # one server this route was never read on, which is the server 0.1.0.0
+      # loaded on and then recorded nothing on.
       #
       # The port is published on the loopback address alone. It is a port on
       # the runner either way, which is the departure this file declares; what
@@ -74,6 +106,11 @@ jobs:
       # address. The server writes as root inside the container and this job
       # reads what it wrote afterwards.
       - name: Start a fresh server
+        env:
+          # Through the environment rather than interpolated into the script,
+          # which is what the workflow security gate holds every run block on
+          # this board to.
+          IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
           mkdir -p server/config server/cache
@@ -82,7 +119,7 @@ jobs:
             --publish 127.0.0.1:8096:8096 \
             --volume "${PWD}/server/config:/config" \
             --volume "${PWD}/server/cache:/cache" \
-            jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db
+            "${IMAGE}"
           docker ps
 
       - name: Add the address and install the plugin from it

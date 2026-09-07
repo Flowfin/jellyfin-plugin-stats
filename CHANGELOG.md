@@ -22,8 +22,29 @@ and the number in `build.yaml` moves first, as issue #133 settled.
 
 ## Unreleased
 
-What has landed on `master` since `0.1.0.0-stable` and is in no release yet.
+What has landed on `master` since `0.1.1.0-stable` and is in no release yet.
 The change that raises the version moves these under its heading.
+
+Nothing yet.
+
+## 0.1.1.0
+
+Cut as `0.1.1.0-stable` on the 10.11 line only, from the merge of the change
+that raised `version` in `build.yaml`. This heading is written before that tag
+exists, which is the sequence the section above describes and issue #133
+settled. The 12.0 line still has no release: its stream starts at `1.0.0.0` and
+waits for a 12.0.0 that is not a release candidate.
+
+What this release is for: 0.1.0.0 bound a SQLite stack no 10.11.0 server
+carries, so on the floor server of its own line it loaded and then recorded
+nothing. That is repaired here, and the floor is now read on every dispatch of
+the install-route reading rather than only the newest patch of the line.
+
+What a server installs that 0.1.0.0 did not: four aggregate reports an
+administrator reads over the server's API, two further routes a signed-in user
+opens about themselves, and the day-by-day rollups both are read from. Still no
+statistics page in the dashboard: the three views are built, embedded and
+tested, and they are not declared, for the reason the entry below gives.
 
 - The SQLite stack the plugin binds is the one the floor server of each line
   ships: `Microsoft.Data.Sqlite 9.0.10` on the 10.11 line and `10.0.9` on the
